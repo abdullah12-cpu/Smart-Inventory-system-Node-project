@@ -555,7 +555,6 @@ This is the one most vendors don't track but matters most:
 - **Search**: Postgres full-text search (Phase 1) → Meilisearch / Typesense (Phase 2)
 
 ### 7.5 DevOps & Tooling
-- **Containerization**: Docker + Docker Compose for local
 - **Orchestration**: Coolify / Railway / Render
 - **Frontend hosting**: Vercel
 - **CI/CD**: GitHub Actions (lint, test, build, deploy)
@@ -676,8 +675,8 @@ procurement_recommendations (product_id, source_id, ranked_position,
 
 | Role | Tasks |
 |---|---|
-| **FS** | Repo setup (Turborepo monorepo), Docker Compose, GitHub Actions CI; final DB schema + Prisma migrations + seed data (incl. invoice + billing tables); Auth (JWT + RBAC) + 3-portal routing; Product / Category / Supplier CRUD (Admin) |
-| **ML** | FastAPI microservice scaffolding + Docker; configure pgvector & TimescaleDB extensions; embed-model selection (BGE / OpenAI); synthetic-data generator for forecasting/basket training; notebook + experiment-tracking setup |
+| **FS** | Repo setup (Turborepo monorepo), GitHub Actions CI; final DB schema + Prisma migrations + seed data (incl. invoice + billing tables); Auth (JWT + RBAC) + 3-portal routing; Product / Category / Supplier CRUD (Admin) |
+| **ML** | FastAPI microservice scaffolding; configure pgvector & TimescaleDB extensions; embed-model selection (BGE / OpenAI); synthetic-data generator for forecasting/basket training; notebook + experiment-tracking setup |
 
 **Joint:** Lock the API contract between Core and ML services (OpenAPI schema).
 
