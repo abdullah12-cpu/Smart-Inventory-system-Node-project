@@ -1,0 +1,6 @@
+admin.sql
+apps/web/src/components/BuyerPortal.tsx
+apps/web/src/components/DistributorPortal.tsx
+.next/
+node_modules/
+*.tsbuildinfo
