@@ -1,0 +1,809 @@
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const pool = require('./db');
+
+const app = express();
+const port = process.env.PORT || 5001;
+
+app.use(cors());
+app.use(bodyParser.json());
+
+// Initialize Database Table and Seed Predefined Accounts
+async function initDb() {
+  const client = await pool.connect();
+  try {
+    // Create users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(50) NOT NULL, -- 'admin', 'distributor', 'buyer'
+        
+        -- Distributor fields
+        business_name VARCHAR(255),
+        contact_name VARCHAR(255),
+        ntn_code VARCHAR(100),
+        warehouse_region VARCHAR(50),
+        credit_request VARCHAR(100),
+        
+        -- Buyer fields
+        buyer_store_name VARCHAR(255),
+        buyer_contact_name VARCHAR(255),
+        buyer_phone VARCHAR(50),
+        buyer_address TEXT,
+        buyer_region VARCHAR(50),
+        
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create products table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        product_id VARCHAR(50) UNIQUE NOT NULL,
+        sku VARCHAR(100) UNIQUE NOT NULL,
+        barcode VARCHAR(100),
+        product_name VARCHAR(255) NOT NULL,
+        short_description TEXT,
+        brand VARCHAR(100),
+        category VARCHAR(100),
+        unit VARCHAR(50),
+        weight NUMERIC(10, 2),
+        status VARCHAR(50) DEFAULT 'ACTIVE',
+        low_stock_threshold INTEGER,
+        overstock_threshold INTEGER,
+        dead_stock_days INTEGER,
+        prices JSONB NOT NULL,
+        inventory JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create orders table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        order_id VARCHAR(50) UNIQUE NOT NULL,
+        order_number VARCHAR(100) UNIQUE NOT NULL,
+        order_type VARCHAR(50) NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+        subtotal NUMERIC(15, 2) NOT NULL,
+        discount_total NUMERIC(15, 2) NOT NULL,
+        tax_total NUMERIC(15, 2) NOT NULL,
+        total_amount NUMERIC(15, 2) NOT NULL,
+        currency VARCHAR(10) DEFAULT 'PKR',
+        order_date VARCHAR(100),
+        items_summary TEXT,
+        items JSONB NOT NULL,
+        customer_email VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create quotations table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS quotations (
+        id SERIAL PRIMARY KEY,
+        quotation_id VARCHAR(50) UNIQUE NOT NULL,
+        quotation_number VARCHAR(100) UNIQUE NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'DRAFT',
+        total_amount NUMERIC(15, 2) NOT NULL,
+        valid_until VARCHAR(100) NOT NULL,
+        created_at VARCHAR(100) NOT NULL
+      );
+    `);
+
+    // Create suppliers table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id SERIAL PRIMARY KEY,
+        supplier_id VARCHAR(50) UNIQUE NOT NULL,
+        company_name VARCHAR(255) NOT NULL,
+        contact_person VARCHAR(255),
+        email VARCHAR(255),
+        phone VARCHAR(100),
+        city VARCHAR(100),
+        country VARCHAR(100),
+        reliability_score INTEGER DEFAULT 100,
+        lead_time_days INTEGER DEFAULT 0
+      );
+    `);
+
+    // Create invoices table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id SERIAL PRIMARY KEY,
+        invoice_id VARCHAR(50) UNIQUE NOT NULL,
+        invoice_number VARCHAR(100) UNIQUE NOT NULL,
+        status VARCHAR(50) DEFAULT 'SENT',
+        total_amount NUMERIC(15, 2) NOT NULL,
+        amount_paid NUMERIC(15, 2) DEFAULT 0,
+        due_date VARCHAR(100),
+        late_payment_probability NUMERIC(5, 2) DEFAULT 0
+      );
+    `);
+
+    // Create payments table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payments (
+        id SERIAL PRIMARY KEY,
+        payment_id VARCHAR(50) UNIQUE NOT NULL,
+        customer_name VARCHAR(255) NOT NULL,
+        amount NUMERIC(15, 2) NOT NULL,
+        payment_method VARCHAR(100),
+        reference_no VARCHAR(100),
+        payment_date VARCHAR(100),
+        status VARCHAR(50) DEFAULT 'RECORDED'
+      );
+    `);
+
+    // Create stock_movements table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS stock_movements (
+        id SERIAL PRIMARY KEY,
+        movement_id VARCHAR(50) UNIQUE NOT NULL,
+        product_id VARCHAR(50) NOT NULL,
+        product_name VARCHAR(255) NOT NULL,
+        warehouse_id VARCHAR(50) NOT NULL,
+        warehouse_name VARCHAR(255) NOT NULL,
+        movement_type VARCHAR(50) NOT NULL,
+        quantity INTEGER NOT NULL,
+        notes TEXT,
+        performed_by VARCHAR(255),
+        created_at VARCHAR(100)
+      );
+    `);
+
+    // Create audit_logs table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id SERIAL PRIMARY KEY,
+        audit_id VARCHAR(50) UNIQUE NOT NULL,
+        table_name VARCHAR(100) NOT NULL,
+        record_id VARCHAR(50) NOT NULL,
+        action VARCHAR(50) NOT NULL,
+        performed_by VARCHAR(255) NOT NULL,
+        notes TEXT,
+        created_at VARCHAR(100) NOT NULL
+      );
+    `);
+
+    // Seed predefined admin
+    await client.query(`
+      INSERT INTO users (email, password, role, contact_name)
+      VALUES ('saif@commerceiq.com', 'demopassword', 'admin', 'Saif Shahzad')
+      ON CONFLICT (email) DO NOTHING;
+    `);
+
+    // Seed predefined distributor
+    await client.query(`
+      INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request)
+      VALUES ('asim@commerceiq.com', 'demopassword', 'distributor', 'Asim Raza', 'Asim Distribution Pak', 'wh-1', '500000')
+      ON CONFLICT (email) DO NOTHING;
+    `);
+
+    // Seed predefined buyer
+    await client.query(`
+      INSERT INTO users (email, password, role, buyer_contact_name, buyer_store_name, buyer_region, buyer_address, buyer_phone)
+      VALUES ('demo@commerceiq.com', 'demopassword', 'buyer', 'Demo Buyer', 'Demo B2B Buyer Store', 'wh-1', 'Saddar, Karachi', '+92 300 0000000')
+      ON CONFLICT (email) DO NOTHING;
+    `);
+
+    console.log("Database tables initialized, predefined users seeded successfully in PostgreSQL!");
+  } catch (err) {
+    console.error("Error during database tables initialization:", err);
+  } finally {
+    client.release();
+  }
+}
+
+// Invoke DB initialization
+initDb();
+
+// Login endpoint
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password, portal } = req.body;
+  if (!email || !password || !portal) {
+    return res.status(400).json({ success: false, message: 'Please provide email, password, and portal context.' });
+  }
+
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials or account does not exist.' });
+    }
+
+    const user = result.rows[0];
+
+    // Simple plain-text password comparison
+    if (user.password !== password) {
+      return res.status(401).json({ success: false, message: 'Incorrect password.' });
+    }
+
+    // Role vs Portal Context validation
+    // Portal can be 'admin', 'distributor', 'buyer'.
+    // DB user role can be 'admin', 'distributor', 'buyer'.
+    if (user.role !== portal) {
+      return res.status(403).json({ 
+        success: false, 
+        message: `Role mismatch. This account is registered as a ${user.role}, but you are trying to sign into the ${portal} portal.` 
+      });
+    }
+
+    // Map to frontend user session structure
+    let sessionUser = {
+      user_id: `u-${user.id}`,
+      email: user.email,
+      role_name: user.role === 'admin' ? 'Super Admin' : (user.role === 'distributor' ? 'Inventory Manager' : 'B2B Buyer'),
+      profile_image: user.role === 'admin' 
+        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop'
+        : (user.role === 'distributor' 
+            ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&fit=crop'
+            : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&fit=crop')
+    };
+
+    if (user.role === 'buyer') {
+      sessionUser.first_name = user.buyer_contact_name || 'Buyer';
+      sessionUser.last_name = '';
+    } else {
+      const names = (user.contact_name || '').split(' ');
+      sessionUser.first_name = names[0] || 'User';
+      sessionUser.last_name = names.slice(1).join(' ') || '';
+    }
+
+    return res.json({
+      success: true,
+      message: 'Logged in successfully.',
+      user: sessionUser
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    return res.status(500).json({ success: false, message: 'Database error during login.' });
+  }
+});
+
+// Register Distributor endpoint
+app.post('/api/auth/register-distributor', async (req, res) => {
+  const { businessName, contactName, ntnCode, regEmail, warehouseRegion, creditRequest } = req.body;
+  if (!businessName || !contactName || !regEmail) {
+    return res.status(400).json({ success: false, message: 'Required fields missing.' });
+  }
+
+  try {
+    // Check if user exists
+    const checkUser = await pool.query('SELECT * FROM users WHERE email = $1', [regEmail]);
+    if (checkUser.rows.length > 0) {
+      return res.status(400).json({ success: false, message: 'An account with this email is already registered.' });
+    }
+
+    // Insert distributor with default password 'demopassword'
+    await pool.query(
+      `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [regEmail, 'demopassword', 'distributor', contactName, businessName, warehouseRegion, creditRequest]
+    );
+
+    return res.status(201).json({ success: true, message: 'Distributor application registered successfully.' });
+  } catch (err) {
+    console.error('Distributor registration error:', err);
+    return res.status(500).json({ success: false, message: 'Database error during distributor registration.' });
+  }
+});
+
+// Register Buyer endpoint
+app.post('/api/auth/register-buyer', async (req, res) => {
+  const { buyerStoreName, buyerContactName, buyerPhone, buyerEmail, buyerAddress, buyerRegion } = req.body;
+  if (!buyerStoreName || !buyerContactName || !buyerEmail) {
+    return res.status(400).json({ success: false, message: 'Required fields missing.' });
+  }
+
+  try {
+    // Check if user exists
+    const checkUser = await pool.query('SELECT * FROM users WHERE email = $1', [buyerEmail]);
+    if (checkUser.rows.length > 0) {
+      return res.status(400).json({ success: false, message: 'An account with this email is already registered.' });
+    }
+
+    // Insert buyer with default password 'demopassword'
+    await pool.query(
+      `INSERT INTO users (email, password, role, buyer_contact_name, buyer_store_name, buyer_region, buyer_address, buyer_phone) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [buyerEmail, 'demopassword', 'buyer', buyerContactName, buyerStoreName, buyerRegion, buyerAddress, buyerPhone]
+    );
+
+    return res.status(201).json({ success: true, message: 'Buyer registered successfully.' });
+  } catch (err) {
+    console.error('Buyer registration error:', err);
+    return res.status(500).json({ success: false, message: 'Database error during buyer registration.' });
+  }
+});
+
+// GET all products
+app.get('/api/products', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM products ORDER BY id ASC');
+    const products = result.rows.map(row => ({
+      product_id: row.product_id,
+      sku: row.sku,
+      barcode: row.barcode,
+      product_name: row.product_name,
+      short_description: row.short_description || '',
+      brand: row.brand || '',
+      category: row.category || '',
+      unit: row.unit || 'Units',
+      weight: parseFloat(row.weight || 0),
+      status: row.status || 'ACTIVE',
+      low_stock_threshold: row.low_stock_threshold || 0,
+      overstock_threshold: row.overstock_threshold || 0,
+      dead_stock_days: row.dead_stock_days || 0,
+      prices: typeof row.prices === 'string' ? JSON.parse(row.prices) : row.prices,
+      inventory: typeof row.inventory === 'string' ? JSON.parse(row.inventory) : row.inventory
+    }));
+    return res.json(products);
+  } catch (err) {
+    console.error('Error fetching products:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching products.' });
+  }
+});
+
+// POST (UPSERT) product
+app.post('/api/products', async (req, res) => {
+  const prod = req.body;
+  if (!prod.product_id || !prod.sku || !prod.product_name) {
+    return res.status(400).json({ success: false, message: 'Missing product ID, SKU, or name.' });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO products (
+        product_id, sku, barcode, product_name, short_description, brand, 
+        category, unit, weight, status, low_stock_threshold, overstock_threshold, 
+        dead_stock_days, prices, inventory
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      ON CONFLICT (sku) DO UPDATE SET 
+        barcode = EXCLUDED.barcode,
+        product_name = EXCLUDED.product_name,
+        short_description = EXCLUDED.short_description,
+        brand = EXCLUDED.brand,
+        category = EXCLUDED.category,
+        unit = EXCLUDED.unit,
+        weight = EXCLUDED.weight,
+        status = EXCLUDED.status,
+        low_stock_threshold = EXCLUDED.low_stock_threshold,
+        overstock_threshold = EXCLUDED.overstock_threshold,
+        dead_stock_days = EXCLUDED.dead_stock_days,
+        prices = EXCLUDED.prices,
+        inventory = EXCLUDED.inventory`,
+      [
+        prod.product_id,
+        prod.sku,
+        prod.barcode,
+        prod.product_name,
+        prod.short_description || '',
+        prod.brand || '',
+        prod.category || '',
+        prod.unit || 'Units',
+        prod.weight || 0,
+        prod.status || 'ACTIVE',
+        prod.low_stock_threshold || 0,
+        prod.overstock_threshold || 0,
+        prod.dead_stock_days || 0,
+        JSON.stringify(prod.prices || {}),
+        JSON.stringify(prod.inventory || [])
+      ]
+    );
+
+    return res.status(201).json({ success: true, message: 'Product created/updated successfully.' });
+  } catch (err) {
+    console.error('Error inserting product:', err);
+    return res.status(500).json({ success: false, message: 'Database error during product creation.' });
+  }
+});
+
+// GET all orders
+app.get('/api/orders', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM orders ORDER BY id DESC');
+    const orders = result.rows.map(row => ({
+      order_id: row.order_id,
+      order_number: row.order_number,
+      order_type: row.order_type,
+      status: row.status,
+      subtotal: parseFloat(row.subtotal),
+      discount_total: parseFloat(row.discount_total),
+      tax_total: parseFloat(row.tax_total),
+      total_amount: parseFloat(row.total_amount),
+      currency: row.currency,
+      order_date: row.order_date,
+      items_summary: row.items_summary,
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items,
+      customer_email: row.customer_email
+    }));
+    return res.json(orders);
+  } catch (err) {
+    console.error('Error fetching orders:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching orders.' });
+  }
+});
+
+// POST a new order (with auto quotation generation if type is B2C / placed by buyer)
+app.post('/api/orders', async (req, res) => {
+  const ord = req.body;
+  if (!ord.order_id || !ord.order_number || !ord.total_amount) {
+    return res.status(400).json({ success: false, message: 'Required order details missing.' });
+  }
+
+  try {
+    // Insert order
+    const result = await pool.query(
+      `INSERT INTO orders (
+        order_id, order_number, order_type, status, subtotal, discount_total, 
+        tax_total, total_amount, currency, order_date, items_summary, items, customer_email
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *`,
+      [
+        ord.order_id,
+        ord.order_number,
+        ord.order_type || 'B2C',
+        ord.status || 'PENDING',
+        ord.subtotal || 0,
+        ord.discount_total || 0,
+        ord.tax_total || 0,
+        ord.total_amount,
+        ord.currency || 'PKR',
+        ord.order_date || new Date().toISOString(),
+        ord.items_summary || '',
+        JSON.stringify(ord.items || []),
+        ord.customer_email || 'demo@commerceiq.com'
+      ]
+    );
+
+    // If order type is B2C (placed by a buyer/retailer), auto-generate a matching Quotation in status 'NEGOTIATING' for the distributor
+    if (ord.order_type === 'B2C') {
+      const quoteId = `q-${Date.now()}`;
+      const quoteNumber = `QUO-2026-${ord.order_number.split('-')[2]}`;
+      await pool.query(
+        `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          quoteId,
+          quoteNumber,
+          'NEGOTIATING',
+          ord.total_amount,
+          new Date(Date.now() + 15*24*60*60*1000).toISOString(),
+          new Date().toISOString()
+        ]
+      );
+    }
+
+    const row = result.rows[0];
+    const savedOrder = {
+      order_id: row.order_id,
+      order_number: row.order_number,
+      order_type: row.order_type,
+      status: row.status,
+      subtotal: parseFloat(row.subtotal),
+      discount_total: parseFloat(row.discount_total),
+      tax_total: parseFloat(row.tax_total),
+      total_amount: parseFloat(row.total_amount),
+      currency: row.currency,
+      order_date: row.order_date,
+      items_summary: row.items_summary,
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items,
+      customer_email: row.customer_email
+    };
+
+    return res.status(201).json(savedOrder);
+  } catch (err) {
+    console.error('Error creating order:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating order.' });
+  }
+});
+
+// PUT update order status
+app.put('/api/orders/:order_id/status', async (req, res) => {
+  const { order_id } = req.params;
+  const { status } = req.body;
+  if (!status) {
+    return res.status(400).json({ success: false, message: 'Required status missing.' });
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *',
+      [status, order_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Order not found.' });
+    }
+    return res.json({ success: true, order: result.rows[0] });
+  } catch (err) {
+    console.error('Error updating order status:', err);
+    return res.status(500).json({ success: false, message: 'Database error updating order status.' });
+  }
+});
+
+// GET all quotations
+app.get('/api/quotations', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM quotations ORDER BY id DESC');
+    const quotations = result.rows.map(row => ({
+      quotation_id: row.quotation_id,
+      quotation_number: row.quotation_number,
+      status: row.status,
+      total_amount: parseFloat(row.total_amount),
+      valid_until: row.valid_until,
+      created_at: row.created_at
+    }));
+    return res.json(quotations);
+  } catch (err) {
+    console.error('Error fetching quotations:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching quotations.' });
+  }
+});
+// POST new quotation
+app.post('/api/quotations', async (req, res) => {
+  const q = req.body;
+  if (!q.quotation_id || !q.quotation_number || !q.total_amount) {
+    return res.status(400).json({ success: false, message: 'Missing quotation details.' });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        q.quotation_id,
+        q.quotation_number,
+        q.status || 'DRAFT',
+        q.total_amount,
+        q.valid_until || new Date(Date.now() + 15*24*60*60*1000).toISOString(),
+        q.created_at || new Date().toISOString()
+      ]
+    );
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Error creating quotation:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating quotation.' });
+  }
+});
+
+// PUT update quotation status
+app.put('/api/quotations/:quotation_id/status', async (req, res) => {
+  const { quotation_id } = req.params;
+  const { status, total_amount } = req.body;
+  if (!status) {
+    return res.status(400).json({ success: false, message: 'Required status missing.' });
+  }
+
+  try {
+    let result;
+    if (total_amount !== undefined) {
+      result = await pool.query(
+        'UPDATE quotations SET status = $1, total_amount = $2 WHERE quotation_id = $3 RETURNING *',
+        [status, total_amount, quotation_id]
+      );
+    } else {
+      result = await pool.query(
+        'UPDATE quotations SET status = $1 WHERE quotation_id = $2 RETURNING *',
+        [status, quotation_id]
+      );
+    }
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Quotation not found.' });
+    }
+    return res.json({ success: true, quotation: result.rows[0] });
+  } catch (err) {
+    console.error('Error updating quotation status:', err);
+    return res.status(500).json({ success: false, message: 'Database error updating quotation status.' });
+  }
+});
+
+// GET all suppliers
+app.get('/api/suppliers', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM suppliers ORDER BY id DESC');
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching suppliers:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching suppliers.' });
+  }
+});
+
+// POST new supplier
+app.post('/api/suppliers', async (req, res) => {
+  const s = req.body;
+  if (!s.supplier_id || !s.company_name) {
+    return res.status(400).json({ success: false, message: 'Required supplier fields missing.' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO suppliers (supplier_id, company_name, contact_person, email, phone, city, country, reliability_score, lead_time_days)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [s.supplier_id, s.company_name, s.contact_person || '', s.email || '', s.phone || '', s.city || '', s.country || '', s.reliability_score || 100, s.lead_time_days || 0]
+    );
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Error creating supplier:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating supplier.' });
+  }
+});
+
+// PUT update supplier
+app.put('/api/suppliers/:id', async (req, res) => {
+  const { id } = req.params;
+  const s = req.body;
+  try {
+    await pool.query(
+      `UPDATE suppliers SET company_name = $1, contact_person = $2, email = $3, phone = $4, city = $5, country = $6, reliability_score = $7, lead_time_days = $8
+       WHERE supplier_id = $9`,
+      [s.company_name, s.contact_person || '', s.email || '', s.phone || '', s.city || '', s.country || '', s.reliability_score || 100, s.lead_time_days || 0, id]
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Error updating supplier:', err);
+    return res.status(500).json({ success: false, message: 'Database error updating supplier.' });
+  }
+});
+
+// DELETE supplier
+app.delete('/api/suppliers/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM suppliers WHERE supplier_id = $1', [id]);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting supplier:', err);
+    return res.status(500).json({ success: false, message: 'Database error deleting supplier.' });
+  }
+});
+
+// GET all invoices
+app.get('/api/invoices', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM invoices ORDER BY id DESC');
+    const invoices = result.rows.map(row => ({
+      invoice_id: row.invoice_id,
+      invoice_number: row.invoice_number,
+      status: row.status,
+      total_amount: parseFloat(row.total_amount),
+      amount_paid: parseFloat(row.amount_paid),
+      due_date: row.due_date,
+      late_payment_probability: parseFloat(row.late_payment_probability || 0)
+    }));
+    return res.json(invoices);
+  } catch (err) {
+    console.error('Error fetching invoices:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching invoices.' });
+  }
+});
+
+// POST new invoice
+app.post('/api/invoices', async (req, res) => {
+  const inv = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO invoices (invoice_id, invoice_number, status, total_amount, amount_paid, due_date, late_payment_probability)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (invoice_id) DO NOTHING`,
+      [inv.invoice_id, inv.invoice_number, inv.status || 'SENT', inv.total_amount, inv.amount_paid || 0, inv.due_date || new Date().toISOString(), inv.late_payment_probability || 0]
+    );
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Error creating invoice:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating invoice.' });
+  }
+});
+
+// PUT update invoice payment
+app.put('/api/invoices/:id', async (req, res) => {
+  const { id } = req.params;
+  const { amount_paid, status } = req.body;
+  try {
+    await pool.query(
+      `UPDATE invoices SET amount_paid = $1, status = $2 WHERE invoice_id = $3`,
+      [amount_paid, status, id]
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Error updating invoice:', err);
+    return res.status(500).json({ success: false, message: 'Database error updating invoice.' });
+  }
+});
+
+// GET all payments
+app.get('/api/payments', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM payments ORDER BY id DESC');
+    const payments = result.rows.map(row => ({
+      payment_id: row.payment_id,
+      customer_name: row.customer_name,
+      amount: parseFloat(row.amount),
+      payment_method: row.payment_method,
+      reference_no: row.reference_no,
+      payment_date: row.payment_date,
+      status: row.status
+    }));
+    return res.json(payments);
+  } catch (err) {
+    console.error('Error fetching payments:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching payments.' });
+  }
+});
+
+// POST new payment
+app.post('/api/payments', async (req, res) => {
+  const p = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO payments (payment_id, customer_name, amount, payment_method, reference_no, payment_date, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [p.payment_id, p.customer_name, p.amount, p.payment_method || '', p.reference_no || '', p.payment_date || new Date().toISOString(), p.status || 'RECORDED']
+    );
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Error creating payment:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating payment.' });
+  }
+});
+
+// GET all stock movements
+app.get('/api/stock-movements', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM stock_movements ORDER BY id DESC');
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching stock movements:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching stock movements.' });
+  }
+});
+
+// POST new stock movement
+app.post('/api/stock-movements', async (req, res) => {
+  const m = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO stock_movements (movement_id, product_id, product_name, warehouse_id, warehouse_name, movement_type, quantity, notes, performed_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [m.movement_id, m.product_id, m.product_name, m.warehouse_id, m.warehouse_name, m.movement_type, m.quantity, m.notes || '', m.performed_by || '', m.created_at || new Date().toISOString()]
+    );
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Error creating stock movement:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating stock movement.' });
+  }
+});
+
+// GET all audit logs
+app.get('/api/audit-logs', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM audit_logs ORDER BY id DESC');
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching audit logs:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching audit logs.' });
+  }
+});
+
+// POST new audit log
+app.post('/api/audit-logs', async (req, res) => {
+  const a = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO audit_logs (audit_id, table_name, record_id, action, performed_by, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [a.audit_id, a.table_name, a.record_id, a.action, a.performed_by, a.notes || '', a.created_at || new Date().toISOString()]
+    );
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Error creating audit log:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating audit log.' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`CommerceIQ Auth API Server running on port ${port}`);
+});

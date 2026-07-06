@@ -3,3 +3,10 @@ apps/web/src/components/BuyerPortal.tsx
 .next/
 node_modules/
 *.tsbuildinfo
+.DS_Store
+**/ .DS_Store
+**/.DS_Store
+dist/
+build/
+.env
+.env.local

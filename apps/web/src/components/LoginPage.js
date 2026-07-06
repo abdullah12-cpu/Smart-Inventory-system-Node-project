@@ -9,7 +9,9 @@ import {
   User,
   Building2,
   ArrowLeft,
-  CheckCircle2
+  CheckCircle2,
+  Phone,
+  MapPin
 } from "lucide-react";
 import PortalSelector from "@/components/PortalSelector";
 import { useStore } from "@/lib/store";
@@ -18,8 +20,8 @@ export default function LoginPage({
   initialMode = "login",
   onBackToLanding
 }) {
-  const { addNotification } = useStore();
-  const [mode, setMode] = useState(initialMode);
+  const { addNotification, setCurrentUser } = useStore();
+  const [mode, setMode] = useState(initialMode === "register" ? "register_distributor" : initialMode);
   const [portal, setPortal] = useState("buyer");
   const [showPwd, setShowPwd] = useState(false);
   const [email, setEmail] = useState("demo@commerceiq.com");
@@ -30,13 +32,42 @@ export default function LoginPage({
   const [regEmail, setRegEmail] = useState("");
   const [warehouseRegion, setWarehouseRegion] = useState("wh-1");
   const [creditRequest, setCreditRequest] = useState("500000");
+  const [buyerStoreName, setBuyerStoreName] = useState("");
+  const [buyerContactName, setBuyerContactName] = useState("");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [buyerEmail, setBuyerEmail] = useState("");
+  const [buyerAddress, setBuyerAddress] = useState("");
+  const [buyerRegion, setBuyerRegion] = useState("wh-1");
   const [registerSuccess, setRegisterSuccess] = useState(false);
-  const handleSubmitLogin = (e) => {
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmitLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) return;
-    onLogin(portal);
+    setErrorMsg("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password, portal }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setCurrentUser(data.user);
+        onLogin(portal);
+      } else {
+        setErrorMsg(data.message || "Invalid email or password.");
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Failed to connect to authentication service.");
+    }
   };
+
   const handlePrefill = (role) => {
+    setErrorMsg("");
     if (role === "admin") {
       setEmail("saif@commerceiq.com");
       setPortal("admin");
@@ -49,18 +80,80 @@ export default function LoginPage({
     }
     setPassword("demopassword");
   };
-  const handleSubmitRegister = (e) => {
+
+  const handleSubmitRegister = async (e) => {
     e.preventDefault();
     if (!businessName || !contactName || !regEmail) return;
-    addNotification({
-      title: "B2B Registration Applied",
-      message: `B2B partnership requested by ${businessName} (Contact: ${contactName}). Region: ${warehouseRegion === "wh-1" ? "Karachi" : "Lahore"}. Credit limit request: Rs ${parseInt(creditRequest).toLocaleString()}.`,
-      severity: "INFO",
-      trigger_type: "CREDIT_LIMIT_BREACH"
-    });
-    setRegisterSuccess(true);
+    try {
+      const response = await fetch("/api/auth/register-distributor", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          businessName,
+          contactName,
+          ntnCode,
+          regEmail,
+          warehouseRegion,
+          creditRequest,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        addNotification({
+          title: "B2B Partnership Registration Applied",
+          message: `B2B partnership requested by ${businessName} (Contact: ${contactName}). Region: ${warehouseRegion === "wh-1" ? "Karachi" : "Lahore"}. Credit limit request: Rs ${parseInt(creditRequest).toLocaleString()}.`,
+          severity: "INFO",
+          trigger_type: "CREDIT_LIMIT_BREACH"
+        });
+        setRegisterSuccess(true);
+      } else {
+        alert(data.message || "Distributor registration failed.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to connect to registration service.");
+    }
   };
-  return /* @__PURE__ */ jsxs("div", { className: "min-h-screen bg-[#F8FAFC] text-[#0F172A] flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300", children: [
+
+  const handleSubmitBuyerRegister = async (e) => {
+    e.preventDefault();
+    if (!buyerStoreName || !buyerContactName || !buyerEmail) return;
+    try {
+      const response = await fetch("/api/auth/register-buyer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          buyerStoreName,
+          buyerContactName,
+          buyerPhone,
+          buyerEmail,
+          buyerAddress,
+          buyerRegion,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        addNotification({
+          title: "New Buyer Account Registered",
+          message: `Buyer profile registered for ${buyerStoreName} (Contact: ${buyerContactName}). Location: ${buyerAddress || "Not specified"}. Preferred Depot: ${buyerRegion === "wh-1" ? "Karachi" : "Lahore"}.`,
+          severity: "INFO",
+          trigger_type: "BUYER_REGISTRATION"
+        });
+        setRegisterSuccess(true);
+      } else {
+        alert(data.message || "Buyer registration failed.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to connect to registration service.");
+    }
+  };
+  return /* @__PURE__ */ jsxs("div", {
+    className: "min-h-screen bg-[#F8FAFC] text-[#0F172A] flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300", children: [
     /* @__PURE__ */ jsx(
       "div",
       {
@@ -79,83 +172,101 @@ export default function LoginPage({
         }
       }
     ),
-    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-3xl shadow-xl w-full max-w-[460px] p-8 sm:p-10 z-10 flex flex-col gap-6 animate-card-entrance", children: [
-      onBackToLanding && /* @__PURE__ */ jsxs(
-        "button",
-        {
-          onClick: onBackToLanding,
-          className: "flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#0F172A] transition-colors border-0 bg-transparent cursor-pointer self-start -mt-2 -ml-2 p-2 rounded-lg hover:bg-[#F8FAFC]",
-          children: [
-            /* @__PURE__ */ jsx(ArrowLeft, { size: 14 }),
-            " Back to info"
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsx("div", { className: "flex justify-center -mt-2", children: /* @__PURE__ */ jsx(
-        "div",
-        {
-          className: "w-12 h-12 bg-[#4F46E5] rounded-2xl flex items-center justify-center text-white font-extrabold text-xl shadow-[0_4px_12px_rgba(79,70,229,0.2)]",
-          style: { fontFamily: "Outfit, sans-serif" },
-          children: "IQ"
-        }
-      ) }),
-      mode === "login" ? /* @__PURE__ */ jsxs(Fragment, { children: [
-        /* @__PURE__ */ jsxs("div", { className: "text-center", children: [
-          /* @__PURE__ */ jsx(
-            "h1",
-            {
-              className: "text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight",
-              style: { fontFamily: "Outfit, sans-serif" },
-              children: "Sign in to CommerceIQ"
-            }
-          ),
-          /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Enter credentials or select a fast prefill demo user" })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 flex flex-col gap-2", children: [
-          /* @__PURE__ */ jsx("p", { className: "text-[9px] text-[#4F46E5] font-bold uppercase tracking-wider", children: "Fast-track Demo Logins" }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-1.5", children: [
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                type: "button",
-                onClick: () => handlePrefill("admin"),
-                className: "px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-[10px] font-bold rounded-lg border border-[#C7D2FE] transition-all cursor-pointer",
-                children: "Super Admin"
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                type: "button",
-                onClick: () => handlePrefill("distributor"),
-                className: "px-2 py-1.5 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-100 transition-all cursor-pointer",
-                children: "Distributor"
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                type: "button",
-                onClick: () => handlePrefill("buyer"),
-                className: "px-2 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-lg border border-slate-200 transition-all cursor-pointer",
-                children: "B2B Buyer"
-              }
-            )
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxs(
-          "form",
+    /* @__PURE__ */ jsxs("div", {
+      className: "bg-white border border-[#E2E8F0] rounded-3xl shadow-xl w-full max-w-[460px] p-8 sm:p-10 z-10 flex flex-col gap-6 animate-card-entrance", children: [
+        onBackToLanding && /* @__PURE__ */ jsxs(
+          "button",
           {
-            onSubmit: handleSubmitLogin,
-            className: "flex flex-col gap-4 text-xs",
+            onClick: onBackToLanding,
+            className: "flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#0F172A] transition-colors border-0 bg-transparent cursor-pointer self-start -mt-2 -ml-2 p-2 rounded-lg hover:bg-[#F8FAFC]",
             children: [
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1.5", children: [
+            /* @__PURE__ */ jsx(ArrowLeft, { size: 14 }),
+              " Back to info"
+            ]
+          }
+        ),
+      /* @__PURE__ */ jsx("div", {
+          className: "flex justify-center -mt-2", children: /* @__PURE__ */ jsx(
+            "div",
+            {
+              className: "w-12 h-12 bg-[#4F46E5] rounded-2xl flex items-center justify-center text-white font-extrabold text-xl shadow-[0_4px_12px_rgba(79,70,229,0.2)]",
+              style: { fontFamily: "Outfit, sans-serif" },
+              children: "IQ"
+            }
+          )
+        }),
+        mode === "login" ? /* @__PURE__ */ jsxs(Fragment, {
+          children: [
+        /* @__PURE__ */ jsxs("div", {
+            className: "text-center", children: [
+          /* @__PURE__ */ jsx(
+              "h1",
+              {
+                className: "text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight",
+                style: { fontFamily: "Outfit, sans-serif" },
+                children: "Sign in to CommerceIQ"
+              }
+            ),
+          /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Enter credentials or select a fast prefill demo user" })
+            ]
+          }),
+        /* @__PURE__ */ jsxs("div", {
+            className: "bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 flex flex-col gap-2", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-[9px] text-[#4F46E5] font-bold uppercase tracking-wider", children: "Fast-track Demo Logins" }),
+          /* @__PURE__ */ jsxs("div", {
+              className: "grid grid-cols-3 gap-1.5", children: [
+            /* @__PURE__ */ jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => handlePrefill("admin"),
+                  className: "px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-[10px] font-bold rounded-lg border border-[#C7D2FE] transition-all cursor-pointer",
+                  children: "Super Admin"
+                }
+              ),
+            /* @__PURE__ */ jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => handlePrefill("distributor"),
+                  className: "px-2 py-1.5 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-100 transition-all cursor-pointer",
+                  children: "Distributor"
+                }
+              ),
+            /* @__PURE__ */ jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => handlePrefill("buyer"),
+                  className: "px-2 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-lg border border-slate-200 transition-all cursor-pointer",
+                  children: "B2B Buyer"
+                }
+              )
+              ]
+            })
+            ]
+          }),
+        errorMsg && /* @__PURE__ */ jsx("div", {
+          className: "bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-xl text-[11px] font-medium text-center animate-fade-up -mt-2",
+          children: errorMsg
+        }),
+        /* @__PURE__ */ jsxs(
+            "form",
+            {
+              onSubmit: handleSubmitLogin,
+              className: "flex flex-col gap-4 text-xs",
+              children: [
+              /* @__PURE__ */ jsxs("div", {
+                className: "flex flex-col gap-1.5", children: [
                 /* @__PURE__ */ jsx("label", { className: "text-[11px] font-semibold text-[#475569]", children: "Select Portal Context" }),
                 /* @__PURE__ */ jsx(PortalSelector, { value: portal, onChange: setPortal })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1.5", children: [
+                ]
+              }),
+              /* @__PURE__ */ jsxs("div", {
+                className: "flex flex-col gap-1.5", children: [
                 /* @__PURE__ */ jsx("label", { className: "text-[11px] font-semibold text-[#475569]", children: "Email Address" }),
-                /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+                /* @__PURE__ */ jsxs("div", {
+                  className: "relative", children: [
                   /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Mail, { size: 15 }) }),
                   /* @__PURE__ */ jsx(
                     "input",
@@ -168,10 +279,14 @@ export default function LoginPage({
                       required: true
                     }
                   )
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1.5", children: [
-                /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
+                  ]
+                })
+                ]
+              }),
+              /* @__PURE__ */ jsxs("div", {
+                className: "flex flex-col gap-1.5", children: [
+                /* @__PURE__ */ jsxs("div", {
+                  className: "flex items-center justify-between", children: [
                   /* @__PURE__ */ jsx("label", { className: "text-[11px] font-semibold text-[#475569]", children: "Password" }),
                   /* @__PURE__ */ jsx(
                     "a",
@@ -181,8 +296,10 @@ export default function LoginPage({
                       children: "Forgot Password?"
                     }
                   )
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+                  ]
+                }),
+                /* @__PURE__ */ jsxs("div", {
+                  className: "relative", children: [
                   /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Lock, { size: 15 }) }),
                   /* @__PURE__ */ jsx(
                     "input",
@@ -204,8 +321,10 @@ export default function LoginPage({
                       children: showPwd ? /* @__PURE__ */ jsx(EyeOff, { size: 15 }) : /* @__PURE__ */ jsx(Eye, { size: 15 })
                     }
                   )
-                ] })
-              ] }),
+                  ]
+                })
+                ]
+              }),
               /* @__PURE__ */ jsx(
                 "button",
                 {
@@ -214,188 +333,420 @@ export default function LoginPage({
                   children: "Sign In"
                 }
               )
+              ]
+            }
+          ),
+        /* @__PURE__ */ jsxs("div", {
+            className: "text-center text-xs text-[#64748B] mt-2 flex flex-col gap-2", children: [
+              /* @__PURE__ */ jsxs("div", {
+                children: [
+                  "Register as Distributor?",
+                  " ",
+                  /* @__PURE__ */ jsx(
+                    "button",
+                    {
+                      onClick: () => setMode("register_distributor"),
+                      className: "font-semibold text-[#4F46E5] hover:underline border-0 bg-transparent cursor-pointer",
+                      children: "Register B2B Account"
+                    }
+                  )
+                ]
+              }),
+              /* @__PURE__ */ jsxs("div", {
+                children: [
+                  "Register as Buyer?",
+                  " ",
+                  /* @__PURE__ */ jsx(
+                    "button",
+                    {
+                      onClick: () => setMode("register_buyer"),
+                      className: "font-semibold text-[#10B981] hover:underline border-0 bg-transparent cursor-pointer",
+                      children: "Register Buyer Account"
+                    }
+                  )
+                ]
+              })
             ]
-          }
-        ),
-        /* @__PURE__ */ jsxs("div", { className: "text-center text-xs text-[#64748B] mt-2", children: [
-          "Apply for distributor or buyer access?",
-          " ",
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              onClick: () => setMode("register"),
-              className: "font-semibold text-[#4F46E5] hover:underline border-0 bg-transparent cursor-pointer",
-              children: "Register B2B Account"
-            }
-          )
-        ] })
-      ] }) : /* @__PURE__ */ jsx(Fragment, { children: registerSuccess ? /* @__PURE__ */ jsxs("div", { className: "text-center flex flex-col items-center gap-4 py-6 animate-fade-up", children: [
+          })
+          ]
+        }) : /* @__PURE__ */ jsx(Fragment, {
+          children: registerSuccess ? /* @__PURE__ */ jsxs("div", {
+            className: "text-center flex flex-col items-center gap-4 py-6 animate-fade-up", children: [
         /* @__PURE__ */ jsx("div", { className: "w-12 h-12 bg-emerald-50 text-[#10B981] rounded-2xl flex items-center justify-center border border-emerald-100", children: /* @__PURE__ */ jsx(CheckCircle2, { size: 24 }) }),
-        /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsxs("div", {
+              children: [
           /* @__PURE__ */ jsx(
-            "h3",
-            {
-              className: "text-lg font-bold text-[#0F172A]",
-              style: { fontFamily: "Outfit, sans-serif" },
-              children: "Partnership Request Received"
-            }
-          ),
-          /* @__PURE__ */ jsxs("p", { className: "text-xs text-[#64748B] mt-1.5 leading-relaxed", children: [
-            "We have received your application for **",
-            businessName,
-            "**. An Admin representative will review your credit request of **Rs",
-            " ",
-            parseInt(creditRequest).toLocaleString(),
-            "** shortly."
-          ] })
-        ] }),
+                "h3",
+                {
+                  className: "text-lg font-bold text-[#0F172A]",
+                  style: { fontFamily: "Outfit, sans-serif" },
+                  children: mode === "register_buyer" ? "Buyer Account Created" : "Partnership Request Received"
+                }
+              ),
+          /* @__PURE__ */ jsxs("p", {
+                className: "text-xs text-[#64748B] mt-1.5 leading-relaxed", children: mode === "register_buyer" ? [
+                  "Your buyer profile for **",
+                  buyerStoreName,
+                  "** has been successfully registered. You can now log in using your credentials to access the wholesale catalog."
+                ] : [
+                  "We have received your application for **",
+                  businessName,
+                  "**. An Admin representative will review your credit request of **Rs",
+                  " ",
+                  parseInt(creditRequest || "0").toLocaleString(),
+                  "** shortly."
+                ]
+              })
+              ]
+            }),
         /* @__PURE__ */ jsx(
-          "button",
-          {
-            onClick: () => {
-              setRegisterSuccess(false);
-              setMode("login");
-            },
-            className: "mt-4 px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg border-0 cursor-pointer transition-colors",
-            children: "Return to Login"
-          }
-        )
-      ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-        /* @__PURE__ */ jsxs("div", { className: "text-center", children: [
-          /* @__PURE__ */ jsx(
-            "h1",
-            {
-              className: "text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight",
-              style: { fontFamily: "Outfit, sans-serif" },
-              children: "Register B2B Partnership"
-            }
-          ),
-          /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Submit wholesale license detail to establish warehouse links" })
-        ] }),
-        /* @__PURE__ */ jsxs(
-          "form",
-          {
-            onSubmit: handleSubmitRegister,
-            className: "flex flex-col gap-4 text-xs",
+              "button",
+              {
+                onClick: () => {
+                  setRegisterSuccess(false);
+                  setMode("login");
+                },
+                className: "mt-4 px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg border-0 cursor-pointer transition-colors",
+                children: "Return to Login"
+              }
+            )
+            ]
+          }) : mode === "register_buyer" ? /* @__PURE__ */ jsxs(Fragment, {
             children: [
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1", children: [
-                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Business Company Name *" }),
-                /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+        /* @__PURE__ */ jsxs("div", {
+              className: "text-center", children: [
+          /* @__PURE__ */ jsx(
+                "h1",
+                {
+                  className: "text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight",
+                  style: { fontFamily: "Outfit, sans-serif" },
+                  children: "Register Buyer Account"
+                }
+              ),
+          /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Create a buyer profile to view catalog and place orders" })
+              ]
+            }),
+        /* @__PURE__ */ jsxs(
+              "form",
+              {
+                onSubmit: handleSubmitBuyerRegister,
+                className: "flex flex-col gap-4 text-xs",
+                children: [
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Retail Store / Business Name *" }),
+                /* @__PURE__ */ jsxs("div", {
+                    className: "relative", children: [
                   /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Building2, { size: 14 }) }),
                   /* @__PURE__ */ jsx(
-                    "input",
-                    {
-                      className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                      placeholder: "e.g. Lahore Electronics Hub",
-                      value: businessName,
-                      onChange: (e) => setBusinessName(e.target.value),
-                      required: true
-                    }
-                  )
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1", children: [
+                      "input",
+                      {
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
+                        placeholder: "e.g. Al-Madina Super Mart",
+                        value: buyerStoreName,
+                        onChange: (e) => setBuyerStoreName(e.target.value),
+                        required: true
+                      }
+                    )
+                    ]
+                  })
+                  ]
+                }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
                 /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Contact Person Name *" }),
-                /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+                /* @__PURE__ */ jsxs("div", {
+                    className: "relative", children: [
                   /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(User, { size: 14 }) }),
                   /* @__PURE__ */ jsx(
-                    "input",
-                    {
-                      className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                      placeholder: "e.g. Kashif Raza",
-                      value: contactName,
-                      onChange: (e) => setContactName(e.target.value),
-                      required: true
-                    }
-                  )
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "NTN Code *" }),
-                  /* @__PURE__ */ jsx(
-                    "input",
-                    {
-                      className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                      placeholder: "e.g. 772819-A",
-                      value: ntnCode,
-                      onChange: (e) => setNtnCode(e.target.value),
-                      required: true
-                    }
-                  )
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Email address *" }),
-                  /* @__PURE__ */ jsx(
-                    "input",
-                    {
-                      className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                      type: "email",
-                      placeholder: "b2b@company.com",
-                      value: regEmail,
-                      onChange: (e) => setRegEmail(e.target.value),
-                      required: true
-                    }
-                  )
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Primary Depot Link" }),
-                  /* @__PURE__ */ jsxs(
+                      "input",
+                      {
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
+                        placeholder: "e.g. Muhammad Ali",
+                        value: buyerContactName,
+                        onChange: (e) => setBuyerContactName(e.target.value),
+                        required: true
+                      }
+                    )
+                    ]
+                  })
+                  ]
+                }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "grid grid-cols-2 gap-3", children: [
+                /* @__PURE__ */ jsxs("div", {
+                    className: "flex flex-col gap-1", children: [
+                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Phone / Mobile *" }),
+                  /* @__PURE__ */ jsxs("div", {
+                      className: "relative", children: [
+                    /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Phone, { size: 14 }) }),
+                    /* @__PURE__ */ jsx(
+                        "input",
+                        {
+                          className: "w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
+                          placeholder: "e.g. +92 300 1234567",
+                          value: buyerPhone,
+                          onChange: (e) => setBuyerPhone(e.target.value),
+                          required: true
+                        }
+                      )
+                      ]
+                    })
+                    ]
+                  }),
+                /* @__PURE__ */ jsxs("div", {
+                    className: "flex flex-col gap-1", children: [
+                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Email Address *" }),
+                  /* @__PURE__ */ jsxs("div", {
+                      className: "relative", children: [
+                    /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Mail, { size: 14 }) }),
+                    /* @__PURE__ */ jsx(
+                        "input",
+                        {
+                          className: "w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
+                          type: "email",
+                          placeholder: "buyer@store.com",
+                          value: buyerEmail,
+                          onChange: (e) => setBuyerEmail(e.target.value),
+                          required: true
+                        }
+                      )
+                      ]
+                    })
+                    ]
+                  })
+                  ]
+                }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Preferred Warehouse Depot" }),
+                /* @__PURE__ */ jsxs(
                     "select",
                     {
-                      className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                      value: warehouseRegion,
-                      onChange: (e) => setWarehouseRegion(e.target.value),
+                      className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
+                      value: buyerRegion,
+                      onChange: (e) => setBuyerRegion(e.target.value),
                       children: [
-                        /* @__PURE__ */ jsx("option", { value: "wh-1", children: "Karachi Depot" }),
-                        /* @__PURE__ */ jsx("option", { value: "wh-2", children: "Lahore Depot" })
+                      /* @__PURE__ */ jsx("option", { value: "wh-1", children: "Karachi Depot" }),
+                      /* @__PURE__ */ jsx("option", { value: "wh-2", children: "Lahore Depot" })
                       ]
                     }
                   )
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1", children: [
+                  ]
+                }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Delivery / Shipping Address *" }),
+                /* @__PURE__ */ jsxs("div", {
+                    className: "relative", children: [
+                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(MapPin, { size: 14 }) }),
+                  /* @__PURE__ */ jsx(
+                      "input",
+                      {
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
+                        placeholder: "e.g. Shop 12, Main Commercial Area, DHA",
+                        value: buyerAddress,
+                        onChange: (e) => setBuyerAddress(e.target.value),
+                        required: true
+                      }
+                    )
+                    ]
+                  })
+                  ]
+                }),
+              /* @__PURE__ */ jsx(
+                  "button",
+                  {
+                    type: "submit",
+                    className: "w-full py-3 bg-[#10B981] hover:bg-[#059669] text-white font-bold text-xs rounded-lg mt-2 cursor-pointer border-0 shadow-sm transition-all",
+                    children: "Submit Buyer Application"
+                  }
+                )
+                ]
+              }
+            ),
+        /* @__PURE__ */ jsxs("div", {
+              className: "text-center text-xs text-[#64748B] mt-2", children: [
+                "Already have a registered account?",
+                " ",
+          /* @__PURE__ */ jsx(
+                  "button",
+                  {
+                    onClick: () => setMode("login"),
+                    className: "font-semibold text-[#4F46E5] hover:underline border-0 bg-transparent cursor-pointer",
+                    children: "Sign In instead"
+                  }
+                )
+              ]
+            })
+            ]
+          }) : /* @__PURE__ */ jsxs(Fragment, {
+            children: [
+        /* @__PURE__ */ jsxs("div", {
+              className: "text-center", children: [
+          /* @__PURE__ */ jsx(
+                "h1",
+                {
+                  className: "text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight",
+                  style: { fontFamily: "Outfit, sans-serif" },
+                  children: "Register B2B Partnership"
+                }
+              ),
+          /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Submit wholesale license detail to establish warehouse links" })
+              ]
+            }),
+        /* @__PURE__ */ jsxs(
+              "form",
+              {
+                onSubmit: handleSubmitRegister,
+                className: "flex flex-col gap-4 text-xs",
+                children: [
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Business Company Name *" }),
+                /* @__PURE__ */ jsxs("div", {
+                    className: "relative", children: [
+                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Building2, { size: 14 }) }),
+                  /* @__PURE__ */ jsx(
+                      "input",
+                      {
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        placeholder: "e.g. Lahore Electronics Hub",
+                        value: businessName,
+                        onChange: (e) => setBusinessName(e.target.value),
+                        required: true
+                      }
+                    )
+                    ]
+                  })
+                  ]
+                }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Contact Person Name *" }),
+                /* @__PURE__ */ jsxs("div", {
+                    className: "relative", children: [
+                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(User, { size: 14 }) }),
+                  /* @__PURE__ */ jsx(
+                      "input",
+                      {
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        placeholder: "e.g. Kashif Raza",
+                        value: contactName,
+                        onChange: (e) => setContactName(e.target.value),
+                        required: true
+                      }
+                    )
+                    ]
+                  })
+                  ]
+                }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "grid grid-cols-2 gap-3", children: [
+                /* @__PURE__ */ jsxs("div", {
+                    className: "flex flex-col gap-1", children: [
+                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "NTN Code *" }),
+                  /* @__PURE__ */ jsx(
+                      "input",
+                      {
+                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        placeholder: "e.g. 772819-A",
+                        value: ntnCode,
+                        onChange: (e) => setNtnCode(e.target.value),
+                        required: true
+                      }
+                    )
+                    ]
+                  }),
+                /* @__PURE__ */ jsxs("div", {
+                    className: "flex flex-col gap-1", children: [
+                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Email address *" }),
+                  /* @__PURE__ */ jsx(
+                      "input",
+                      {
+                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        type: "email",
+                        placeholder: "b2b@company.com",
+                        value: regEmail,
+                        onChange: (e) => setRegEmail(e.target.value),
+                        required: true
+                      }
+                    )
+                    ]
+                  })
+                  ]
+                }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "grid grid-cols-2 gap-3", children: [
+                /* @__PURE__ */ jsxs("div", {
+                    className: "flex flex-col gap-1", children: [
+                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Primary Depot Link" }),
+                  /* @__PURE__ */ jsxs(
+                      "select",
+                      {
+                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        value: warehouseRegion,
+                        onChange: (e) => setWarehouseRegion(e.target.value),
+                        children: [
+                        /* @__PURE__ */ jsx("option", { value: "wh-1", children: "Karachi Depot" }),
+                        /* @__PURE__ */ jsx("option", { value: "wh-2", children: "Lahore Depot" })
+                        ]
+                      }
+                    )
+                    ]
+                  }),
+                /* @__PURE__ */ jsxs("div", {
+                    className: "flex flex-col gap-1", children: [
                   /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Credit Request (Rs)" }),
                   /* @__PURE__ */ jsx(
-                    "input",
-                    {
-                      className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                      type: "number",
-                      value: creditRequest,
-                      onChange: (e) => setCreditRequest(e.target.value)
-                    }
-                  )
-                ] })
-              ] }),
+                      "input",
+                      {
+                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        type: "number",
+                        value: creditRequest,
+                        onChange: (e) => setCreditRequest(e.target.value)
+                      }
+                    )
+                    ]
+                  })
+                  ]
+                }),
               /* @__PURE__ */ jsx(
-                "button",
-                {
-                  type: "submit",
-                  className: "w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold text-xs rounded-lg mt-2 cursor-pointer border-0 shadow-sm transition-all",
-                  children: "Submit B2B Application"
-                }
-              )
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs("div", { className: "text-center text-xs text-[#64748B] mt-2", children: [
-          "Already have a registered account?",
-          " ",
+                  "button",
+                  {
+                    type: "submit",
+                    className: "w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold text-xs rounded-lg mt-2 cursor-pointer border-0 shadow-sm transition-all",
+                    children: "Submit B2B Application"
+                  }
+                )
+                ]
+              }
+            ),
+        /* @__PURE__ */ jsxs("div", {
+              className: "text-center text-xs text-[#64748B] mt-2", children: [
+                "Already have a registered account?",
+                " ",
           /* @__PURE__ */ jsx(
-            "button",
-            {
-              onClick: () => setMode("login"),
-              className: "font-semibold text-[#4F46E5] hover:underline border-0 bg-transparent cursor-pointer",
-              children: "Sign In instead"
-            }
-          )
-        ] })
-      ] }) }),
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-center gap-1.5 text-[10px] text-[#94A3B8] pt-2 border-t border-[#E2E8F0] mt-1", children: [
+                  "button",
+                  {
+                    onClick: () => setMode("login"),
+                    className: "font-semibold text-[#4F46E5] hover:underline border-0 bg-transparent cursor-pointer",
+                    children: "Sign In instead"
+                  }
+                )
+              ]
+            })
+            ]
+          })
+        }),
+      /* @__PURE__ */ jsxs("div", {
+          className: "flex items-center justify-center gap-1.5 text-[10px] text-[#94A3B8] pt-2 border-t border-[#E2E8F0] mt-1", children: [
         /* @__PURE__ */ jsx(Shield, { size: 12 }),
         /* @__PURE__ */ jsx("span", { children: "Secured wholesale pipeline \xB7 CommerceIQ" })
-      ] })
-    ] })
-  ] });
+          ]
+        })
+      ]
+    })
+    ]
+  });
 }

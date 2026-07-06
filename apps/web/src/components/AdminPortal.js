@@ -34,36 +34,6 @@ const AVAILABLE_USER_ROLES = [
     profile_image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
     role_name: "Super Admin",
     is_active: true
-  },
-  {
-    user_id: "u-2",
-    first_name: "Asim",
-    last_name: "Raza",
-    email: "asim@commerceiq.com",
-    phone: "+92 301 7654321",
-    profile_image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&fit=crop",
-    role_name: "Inventory Manager",
-    is_active: true
-  },
-  {
-    user_id: "u-3",
-    first_name: "Rehan",
-    last_name: "Qureshi",
-    email: "rehan@commerceiq.com",
-    phone: "+92 302 5554321",
-    profile_image: "https://images.unsplash.com/photo-1628157582853-a796fa650a6a?w=100&fit=crop",
-    role_name: "Accountant",
-    is_active: true
-  },
-  {
-    user_id: "u-4",
-    first_name: "Kamil",
-    last_name: "Shah",
-    email: "kamil@commerceiq.com",
-    phone: "+92 303 9994321",
-    profile_image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&fit=crop",
-    role_name: "Analyst",
-    is_active: true
   }
 ];
 function PaymentMethodIcon({ method }) {
@@ -88,9 +58,13 @@ export default function AdminPortal({ onLogout }) {
     stockMovements,
     auditLogs,
     recordPaymentAllocation,
+    dispatchOrder,
     addSupplier,
     updateSupplier,
-    deleteSupplier
+    deleteSupplier,
+    approveOrder,
+    quotations,
+    updateQuotationStatus
   } = useStore();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [search, setSearch] = useState("");
@@ -164,6 +138,24 @@ export default function AdminPortal({ onLogout }) {
       setAllocInvoiceId(openInvoices[0].invoice_id);
     }
   }, [invoices, allocInvoiceId]);
+
+  const handleApproveOrder = async (orderId) => {
+    const success = await approveOrder(orderId);
+    if (success) {
+      alert("Order approved successfully!");
+    } else {
+      alert("Failed to approve order.");
+    }
+  };
+
+  const handleShipOrder = async (orderId) => {
+    try {
+      await dispatchOrder(orderId);
+      alert("Order shipped successfully! Invoice generated.");
+    } catch (e) {
+      alert("Failed to ship order.");
+    }
+  };
   useEffect(() => {
     if (allocInvoiceId) {
       const selectedInv = invoices.find((i) => i.invoice_id === allocInvoiceId);
@@ -248,6 +240,17 @@ export default function AdminPortal({ onLogout }) {
             children: [
               /* @__PURE__ */ jsx(Box, { size: 18 }),
               /* @__PURE__ */ jsx("span", { children: "Orders & Ledgers" })
+            ]
+          }
+        ),
+        canAccessBilling && /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setActiveTab("negotiations"),
+            className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "negotiations" ? "active" : ""}`,
+            children: [
+              /* @__PURE__ */ jsx(Database, { size: 18 }),
+              /* @__PURE__ */ jsx("span", { children: "Quote Negotiations" })
             ]
           }
         ),
@@ -1201,12 +1204,13 @@ export default function AdminPortal({ onLogout }) {
                       /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Order No" }),
                       /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Type" }),
                       /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Status" }),
-                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Total Amount" })
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Total Amount" }),
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Actions" })
                     ] }) }),
                     /* @__PURE__ */ jsx("tbody", { children: filteredOrders.length === 0 ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx(
                       "td",
                       {
-                        colSpan: 4,
+                        colSpan: 5,
                         className: "text-center py-8 text-xs text-[#94A3B8] font-medium",
                         children: "No orders match filter."
                       }
@@ -1217,7 +1221,11 @@ export default function AdminPortal({ onLogout }) {
                         children: [
                           /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", { children: [
                             /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: o.order_number }),
-                            /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#94A3B8] mt-0.5", children: formatDate(o.order_date) })
+                            /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-medium mt-0.5", children: [
+                              o.order_type === "B2C" ? "Buyer Request: " : "Distributor Request: ",
+                              o.customer_email || "demo@commerceiq.com"
+                            ] }),
+                            /* @__PURE__ */ jsx("div", { className: "text-[9px] text-[#94A3B8] mt-0.5", children: formatDate(o.order_date) })
                           ] }) }),
                           /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(
                             Badge,
@@ -1227,7 +1235,23 @@ export default function AdminPortal({ onLogout }) {
                             }
                           ) }),
                           /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(OrderStatusBadge, { status: o.status }) }),
-                          /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(o.total_amount) })
+                          /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(o.total_amount) }),
+                          /* @__PURE__ */ jsxs("td", { className: "px-6 py-3.5 text-center flex justify-center gap-1.5", children: [
+                            o.status === "PENDING" && (
+                              /* @__PURE__ */ jsx("button", {
+                                onClick: () => handleApproveOrder(o.order_id),
+                                className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                children: "Approve"
+                              })
+                            ),
+                            (o.status === "CONFIRMED" || o.status === "PROCESSING") && (
+                              /* @__PURE__ */ jsx("button", {
+                                onClick: () => handleShipOrder(o.order_id),
+                                className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                children: "Ship"
+                              })
+                            )
+                          ] })
                         ]
                       },
                       o.order_id
@@ -1451,6 +1475,103 @@ export default function AdminPortal({ onLogout }) {
                 )) })
               ] }) })
             ] })
+          ] })
+        ] }),
+        activeTab === "negotiations" && /* @__PURE__ */ jsxs("div", { className: "page-container animate-cross-fade flex flex-col gap-6", children: [
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx(
+              "h1",
+              {
+                className: "text-2xl font-bold text-[#0F172A]",
+                style: { fontFamily: "Outfit, sans-serif" },
+                children: "Wholesale Quotations & Negotiations"
+              }
+            ),
+            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Review incoming quotes from distributors, approve standard submissions, reject requests, or propose counter pricing." })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
+            /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
+              /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Quotations Registry" }),
+              /* @__PURE__ */ jsx(
+                Badge,
+                {
+                  text: `${quotations.length} Active Records`,
+                  variant: "neutral"
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsx("div", { className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
+              /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
+                /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Quote Number" }),
+                /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Submitted On" }),
+                /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Estimated Value" }),
+                /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Status" }),
+                /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Actions" })
+              ] }) }),
+              /* @__PURE__ */ jsx("tbody", { children: quotations.length === 0 ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx(
+                "td",
+                {
+                  colSpan: 5,
+                  className: "text-center py-10 text-[#94A3B8] font-medium",
+                  children: "No quotation requests logged in database."
+                }
+              ) }) : quotations.map((q) => /* @__PURE__ */ jsxs(
+                "tr",
+                {
+                  className: "data-row border-b border-[#E2E8F0]",
+                  children: [
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: q.quotation_number }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-[#64748B]", children: formatDate(q.created_at) }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: formatCurrency(q.total_amount) }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(Badge, {
+                      text: q.status,
+                      variant: q.status === "APPROVED" || q.status === "ACCEPTED" ? "success" : q.status === "NEGOTIATING" ? "warning" : q.status === "REJECTED" ? "danger" : "neutral"
+                    }) }),
+                    /* @__PURE__ */ jsxs("td", { className: "px-6 py-3.5 text-center flex justify-center gap-2", children: [
+                      (q.status === "DRAFT" || q.status === "NEGOTIATING") && /* @__PURE__ */ jsxs(Fragment, { children: [
+                        /* @__PURE__ */ jsx("button", {
+                          onClick: () => {
+                            if (confirm(`Approve quotation ${q.quotation_number} for Rs ${q.total_amount.toLocaleString()}?`)) {
+                              updateQuotationStatus(q.quotation_id, "APPROVED");
+                            }
+                          },
+                          className: "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
+                          children: "Approve"
+                        }),
+                        /* @__PURE__ */ jsx("button", {
+                          onClick: () => {
+                            const val = prompt(`Propose counter-offer for quotation ${q.quotation_number} (Current: Rs ${q.total_amount.toLocaleString()}):`);
+                            if (val) {
+                              const parsed = parseFloat(val);
+                              if (!isNaN(parsed) && parsed > 0) {
+                                updateQuotationStatus(q.quotation_id, "NEGOTIATING", parsed);
+                              } else {
+                                alert("Invalid amount entered.");
+                              }
+                            }
+                          },
+                          className: "px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
+                          children: "Counter"
+                        }),
+                        /* @__PURE__ */ jsx("button", {
+                          onClick: () => {
+                            if (confirm(`Reject quotation request ${q.quotation_number}?`)) {
+                              updateQuotationStatus(q.quotation_id, "REJECTED");
+                            }
+                          },
+                          className: "px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
+                          children: "Reject"
+                        })
+                      ] }),
+                      q.status === "APPROVED" && /* @__PURE__ */ jsx("span", { className: "text-[#10B981] font-bold text-[10px]", children: "Approved & Ready" }),
+                      q.status === "ACCEPTED" && /* @__PURE__ */ jsx("span", { className: "text-emerald-600 font-bold text-[10px]", children: "Accepted by Distributor" }),
+                      q.status === "REJECTED" && /* @__PURE__ */ jsx("span", { className: "text-rose-600 font-bold text-[10px]", children: "Rejected" })
+                    ] })
+                  ]
+                },
+                q.quotation_id
+              )) })
+            ] }) })
           ] })
         ] }),
         activeTab === "settings" && /* @__PURE__ */ jsxs("div", { className: "page-container animate-cross-fade flex flex-col gap-6", children: [

@@ -24,7 +24,9 @@ export default function BuyerPortal({ onLogout }) {
     addToCart,
     updateCartQty,
     clearCart,
-    markNotificationRead
+    markNotificationRead,
+    placeOrder,
+    currentUser
   } = useStore();
   const [activeTab, setActiveTab] = useState("catalog");
   const [search, setSearch] = useState("");
@@ -64,6 +66,37 @@ export default function BuyerPortal({ onLogout }) {
     0
   );
   const buyerOrders = orders.filter((o) => o.order_type === "B2C");
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+    const tax = cartTotal * 0.18;
+    const itemsSummary = cart.map(item => `${item.qty}x ${item.product.product_name}`).join(", ");
+    const orderData = {
+      order_id: `o-${Date.now()}`,
+      order_number: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      order_type: "B2C",
+      status: "PENDING",
+      subtotal: cartTotal,
+      discount_total: 0,
+      tax_total: tax,
+      total_amount: cartTotal + tax,
+      items_summary: itemsSummary,
+      items: cart.map(item => ({
+        product_id: item.product.product_id,
+        product_name: item.product.product_name,
+        price: item.product.prices.RETAIL,
+        qty: item.qty
+      })),
+      customer_email: currentUser?.email || "demo@commerceiq.com"
+    };
+
+    const success = await placeOrder(orderData);
+    if (success) {
+      clearCart();
+      setActiveTab("orders");
+    } else {
+      alert("Failed to place order. Connection error.");
+    }
+  };
   return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
     /* @__PURE__ */ jsxs("header", { className: "h-[75px] bg-[#4F46E5] flex items-center justify-between px-8 flex-shrink-0 relative z-20 text-white shadow-lg", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
@@ -395,13 +428,7 @@ export default function BuyerPortal({ onLogout }) {
             /* @__PURE__ */ jsxs(
               "button",
               {
-                onClick: () => {
-                  alert(
-                    `Checkout process simulated successfully! Total Order Value: ${formatCurrency(cartTotal)}`
-                  );
-                  clearCart();
-                  setActiveTab("orders");
-                },
+                onClick: handleCheckout,
                 className: "w-full py-3 bg-[#4F46E5] text-white font-bold rounded-xl text-xs hover:bg-[#4338CA] hover:shadow-[0_4px_12px_rgba(79,70,229,0.2)] transition-all border-0 cursor-pointer flex items-center justify-center gap-2",
                 children: [
                   /* @__PURE__ */ jsx(CheckCircle, { size: 15 }),

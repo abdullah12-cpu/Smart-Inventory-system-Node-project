@@ -18,35 +18,10 @@ import {
   AlertCircle
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { KpiCard, OrderStatusBadge } from "@/components/ui";
+import { KpiCard, OrderStatusBadge, InvoiceStatusBadge, LatePaymentRiskBadge, Badge } from "@/components/ui";
 import Modal from "@/components/Modal";
 import { formatCurrency, formatDate } from "@/lib/data";
-const MOCK_QUOTATIONS = [
-  {
-    quotation_id: "q1",
-    quotation_number: "QUO-2026-00001",
-    status: "ACCEPTED",
-    total_amount: 3681600,
-    valid_until: "2026-07-20T00:00:00Z",
-    created_at: "2026-07-01T00:00:00Z"
-  },
-  {
-    quotation_id: "q2",
-    quotation_number: "QUO-2026-00002",
-    status: "NEGOTIATING",
-    total_amount: 145e4,
-    valid_until: "2026-07-25T00:00:00Z",
-    created_at: "2026-07-02T00:00:00Z"
-  },
-  {
-    quotation_id: "q3",
-    quotation_number: "QUO-2026-00003",
-    status: "DRAFT",
-    total_amount: 85e4,
-    valid_until: "2026-07-30T00:00:00Z",
-    created_at: "2026-07-03T00:00:00Z"
-  }
-];
+const MOCK_QUOTATIONS = [];
 const MOCK_LEDGER = [
   {
     id: "l1",
@@ -124,7 +99,7 @@ function QuoteStatusBadge({ status }) {
   );
 }
 export default function DistributorPortal({ onLogout }) {
-  const { orders, products } = useStore();
+  const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices } = useStore();
   const [activeTab, setActiveTab] = useState("catalog");
   const [quoteSearch, setQuoteSearch] = useState("");
   const [quoteStatusFilter, setQuoteStatusFilter] = useState("all");
@@ -165,22 +140,55 @@ export default function DistributorPortal({ onLogout }) {
     setLimitIncreaseToast("Limit increase request sent to Accounts.");
     setTimeout(() => setLimitIncreaseToast(""), 3e3);
   };
-  const handleSubmitCounter = () => {
+  const handleSubmitCounter = async () => {
     setIsCounterMode(false);
     setQuoteDetailsOpen(false);
     setCounterValue("");
+
+    if (activeQuote) {
+      try {
+        const parsed = parseFloat(counterValue);
+        const amt = !isNaN(parsed) && parsed > 0 ? parsed : undefined;
+        await updateQuotationStatus(activeQuote.quotation_id, "NEGOTIATING", amt);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     setActionToast("Counter offer submitted for review.");
     setTimeout(() => setActionToast(""), 3e3);
   };
-  const handleAcceptQuote = () => {
+  const handleAcceptQuote = async () => {
     setQuoteDetailsOpen(false);
+
+    if (activeQuote) {
+      try {
+        const success = await updateQuotationStatus(activeQuote.quotation_id, "ACCEPTED");
+        if (success) {
+          const orderNumber = activeQuote.quotation_number.replace("QUO-", "ORD-");
+          const matchedOrder = orders.find(o => o.order_number === orderNumber);
+          if (matchedOrder) {
+            await fetch(`/api/orders/${matchedOrder.order_id}/status`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "PROCESSING" })
+            });
+            const ordRes = await fetch("/api/orders");
+            if (ordRes.ok) setOrders(await ordRes.json());
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     setActionToast(
       "Quotation accepted successfully! Generating Sales Order..."
     );
     setTimeout(() => setActionToast(""), 3e3);
   };
   const filteredQuotations = useMemo(() => {
-    return MOCK_QUOTATIONS.filter((q) => {
+    return (quotations || []).filter((q) => {
       const matchSearch = !quoteSearch || q.quotation_number.toLowerCase().includes(quoteSearch.toLowerCase());
       let matchStatus = false;
       if (quoteStatusFilter === "PENDING_ACCEPTANCE") {
@@ -190,7 +198,7 @@ export default function DistributorPortal({ onLogout }) {
       }
       return matchSearch && matchStatus;
     });
-  }, [quoteSearch, quoteStatusFilter]);
+  }, [quotations, quoteSearch, quoteStatusFilter]);
   const b2bOrders = orders.filter((o) => o.order_type === "B2B");
   const filteredOrders = useMemo(() => {
     return b2bOrders.filter((o) => {
@@ -294,7 +302,7 @@ export default function DistributorPortal({ onLogout }) {
                   className: activeTab === "ledger" ? "text-blue-600" : ""
                 }
               ),
-              "Statement & Ledger"
+              "Invoices & Ledger"
             ]
           }
         ),
@@ -487,7 +495,7 @@ export default function DistributorPortal({ onLogout }) {
               KpiCard,
               {
                 label: "Active Quotations",
-                value: MOCK_QUOTATIONS.length,
+                value: (quotations || []).length,
                 icon: /* @__PURE__ */ jsx(FileText, { size: 18 }),
                 iconBg: "#EFF6FF",
                 iconColor: "#3B82F6",
@@ -501,7 +509,7 @@ export default function DistributorPortal({ onLogout }) {
               {
                 label: "Total Bid Value",
                 value: formatCurrency(
-                  MOCK_QUOTATIONS.reduce((a, b) => a + b.total_amount, 0)
+                  (quotations || []).reduce((a, b) => a + Number(b.total_amount || 0), 0)
                 ),
                 icon: /* @__PURE__ */ jsx(DollarSign, { size: 18 }),
                 iconBg: "#F0FDF4",
@@ -513,7 +521,7 @@ export default function DistributorPortal({ onLogout }) {
               KpiCard,
               {
                 label: "Pending Acceptance",
-                value: MOCK_QUOTATIONS.filter(
+                value: (quotations || []).filter(
                   (q) => q.status === "SENT" || q.status === "NEGOTIATING"
                 ).length,
                 trend: "Action required",
@@ -707,7 +715,7 @@ export default function DistributorPortal({ onLogout }) {
                   children: "Statement of Account"
                 }
               ),
-              /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-1 text-xs", children: "A running ledger computed directly from the customer_ledger_view." })
+              /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-1 text-xs", children: "A running ledger of invoices computed dynamically from database logs." })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-end gap-3", children: [
               /* @__PURE__ */ jsxs("div", { className: "text-right", children: [
@@ -717,7 +725,7 @@ export default function DistributorPortal({ onLogout }) {
                   {
                     className: "text-2xl font-bold text-red-600",
                     style: { fontFamily: "Outfit, sans-serif" },
-                    children: formatCurrency(88e4)
+                    children: formatCurrency(invoices ? invoices.reduce((sum, inv) => sum + (inv.status !== "PAID" ? inv.total_amount - inv.amount_paid : 0), 0) : 0)
                   }
                 )
               ] }),
@@ -757,11 +765,11 @@ export default function DistributorPortal({ onLogout }) {
           /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 gap-4", children: [
             /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] p-4 rounded-xl flex flex-col justify-center shadow-sm", children: [
               /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "0 - 30 Days" }),
-              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-[#0F172A] mt-1", children: formatCurrency(15e4) })
+              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-[#0F172A] mt-1", children: formatCurrency(invoices ? invoices.reduce((sum, inv) => sum + (inv.status !== "PAID" ? inv.total_amount - inv.amount_paid : 0), 0) : 0) })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "bg-amber-50 border border-amber-200 p-4 rounded-xl flex flex-col justify-center shadow-sm", children: [
               /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-amber-700 uppercase tracking-wider", children: "31 - 60 Days" }),
-              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-amber-800 mt-1", children: formatCurrency(73e4) })
+              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-amber-800 mt-1", children: formatCurrency(0) })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 p-4 rounded-xl flex flex-col justify-center shadow-sm", children: [
               /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-red-700 uppercase tracking-wider", children: "61 - 90 Days" }),
@@ -774,33 +782,34 @@ export default function DistributorPortal({ onLogout }) {
           ] }),
           /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col mt-2", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
             /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Date" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Type" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Reference" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Debit (Owed)" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Credit (Paid)" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Running Balance" })
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Invoice Number" }),
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Due Date" }),
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Billed (Debit)" }),
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Settled (Credit)" }),
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-center", children: "Status" }),
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-center", children: "Late Risk tier" })
             ] }) }),
-            /* @__PURE__ */ jsx("tbody", { children: MOCK_LEDGER.map((entry) => /* @__PURE__ */ jsxs(
+            /* @__PURE__ */ jsx("tbody", { children: invoices.length === 0 ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx(
+              "td",
+              {
+                colSpan: 6,
+                className: "text-center py-8 text-[#94A3B8] font-medium",
+                children: "No invoices logged in database."
+              }
+            ) }) : invoices.map((inv) => /* @__PURE__ */ jsxs(
               "tr",
               {
                 className: "border-b border-[#E2E8F0] hover:bg-slate-50 transition-colors",
                 children: [
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-[#64748B]", children: formatDate(entry.ts) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(
-                    "span",
-                    {
-                      className: `px-2 py-0.5 rounded text-[10px] font-bold uppercase ${entry.ref_type === "invoice" ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`,
-                      children: entry.ref_type
-                    }
-                  ) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-medium text-[#0F172A]", children: entry.ref_id }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-medium text-slate-700", children: entry.debit > 0 ? formatCurrency(entry.debit) : "-" }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-medium text-emerald-600", children: entry.credit > 0 ? formatCurrency(entry.credit) : "-" }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(entry.running_balance) })
+                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: inv.invoice_number }),
+                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-[#64748B]", children: formatDate(inv.due_date) }),
+                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-semibold text-slate-700", children: formatCurrency(inv.total_amount) }),
+                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-emerald-600", children: formatCurrency(inv.amount_paid) }),
+                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx(InvoiceStatusBadge, { status: inv.status }) }),
+                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx(LatePaymentRiskBadge, { probability: inv.late_payment_probability }) })
                 ]
               },
-              entry.id
+              inv.invoice_id
             )) })
           ] }) }) })
         ] }),
@@ -881,7 +890,7 @@ export default function DistributorPortal({ onLogout }) {
                   /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-xs mb-1", children: [
                     /* @__PURE__ */ jsx("span", { className: "text-[#64748B] font-medium", children: "Credit Limit Utilized" }),
                     /* @__PURE__ */ jsxs("span", { className: "font-bold text-[#0F172A]", children: [
-                      formatCurrency(88e4),
+                      formatCurrency(invoices ? invoices.reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0) : 0),
                       " / ",
                       formatCurrency(25e5)
                     ] })
@@ -890,7 +899,9 @@ export default function DistributorPortal({ onLogout }) {
                     "div",
                     {
                       className: "bg-blue-600 h-full rounded-full",
-                      style: { width: "35%" }
+                      style: {
+                        width: `${Math.min(100, Math.round(((invoices ? invoices.reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0) : 0) / 25e5) * 100))}%`
+                      }
                     }
                   ) })
                 ] }),
@@ -1245,12 +1256,29 @@ export default function DistributorPortal({ onLogout }) {
                 "button",
                 {
                   disabled: draftItems.length === 0,
-                  onClick: () => {
-                    setDraftModalOpen(false);
-                    setDraftItems([]);
-                    setActionToast("Quote Request formally submitted to vendor!");
-                    setTimeout(() => setActionToast(""), 3e3);
-                    setActiveTab("quotations");
+                  onClick: async () => {
+                    const total = draftItems.reduce(
+                      (sum, item) => sum + item.price * item.qty,
+                      0
+                    );
+                    const quoteData = {
+                      quotation_id: `q-${Date.now()}`,
+                      quotation_number: `QUO-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+                      status: "DRAFT",
+                      total_amount: total,
+                      valid_until: new Date(Date.now() + 15*24*60*60*1000).toISOString(),
+                      created_at: new Date().toISOString()
+                    };
+                    const success = await submitQuotationRequest(quoteData);
+                    if (success) {
+                      setDraftModalOpen(false);
+                      setDraftItems([]);
+                      setActionToast("Quote Request formally submitted to vendor!");
+                      setTimeout(() => setActionToast(""), 3e3);
+                      setActiveTab("quotations");
+                    } else {
+                      alert("Failed to submit quotation request.");
+                    }
                   },
                   className: "px-4 py-2 bg-blue-600 border-0 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors cursor-pointer shadow-sm active:scale-95 disabled:opacity-50",
                   children: "Submit Request"
