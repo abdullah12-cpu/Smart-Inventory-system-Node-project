@@ -569,19 +569,25 @@ export default function DistributorPortal({ onLogout }) {
                         ] })
                       ] })
                     ] }),
-                    /* @__PURE__ */ jsxs("div", { className: "text-right", children: [
-                      /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#64748B] uppercase font-bold tracking-wider mb-1", children: "Available" }),
-                      /* @__PURE__ */ jsxs(
-                        "div",
-                        {
-                          className: `text-sm font-bold ${availableQty > 100 ? "text-emerald-600" : "text-amber-600"}`,
-                          children: [
-                            availableQty.toLocaleString(),
-                            " ",
-                            p.unit
-                          ]
-                        }
-                      )
+                    /* @__PURE__ */ jsxs("div", { className: "text-right flex flex-col items-end gap-1", children: [
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#64748B] uppercase font-bold tracking-wider mr-1.5", children: "Stock:" }),
+                        /* @__PURE__ */ jsxs(
+                          "span",
+                          {
+                            className: `text-xs font-bold ${availableQty > 100 ? "text-emerald-600" : "text-amber-600"}`,
+                            children: [
+                              availableQty.toLocaleString(),
+                              " ",
+                              p.unit
+                            ]
+                          }
+                        )
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { className: "bg-orange-50 text-orange-600 border border-orange-100 rounded px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide inline-flex items-center mt-0.5", children: [
+                        "Min MOQ: ",
+                        p.min_wholesale_qty || 1
+                      ] })
                     ] })
                   ] }),
                   /* @__PURE__ */ jsx(
