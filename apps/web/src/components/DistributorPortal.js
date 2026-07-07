@@ -168,6 +168,9 @@ export default function DistributorPortal({ onLogout }) {
   const [counterValue, setCounterValue] = useState("");
   const [draftItems, setDraftItems] = useState([]);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
+  const [activeProductForQuote, setActiveProductForQuote] = useState(null);
+  const [quoteQuantity, setQuoteQuantity] = useState(1);
+
   const handleAddToQuote = (product) => {
     const minQty = product.min_wholesale_qty || 1;
     const availableQty = (product.inventory || []).reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
@@ -182,29 +185,46 @@ export default function DistributorPortal({ onLogout }) {
       return;
     }
 
+    setActiveProductForQuote(product);
+    setQuoteQuantity(minQty);
+  };
+
+  const handleConfirmAddToQuote = () => {
+    if (!activeProductForQuote) return;
+
+    const minQty = activeProductForQuote.min_wholesale_qty || 1;
+    const availableQty = (activeProductForQuote.inventory || []).reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+    const qty = parseInt(quoteQuantity);
+
+    if (isNaN(qty) || qty < minQty) {
+      alert(`Minimum wholesale requirement is ${minQty} units.`);
+      return;
+    }
+    if (qty > availableQty) {
+      alert(`Only ${availableQty} units available in stock.`);
+      return;
+    }
+
     setDraftItems((prev) => {
-      const existing = prev.find((item) => item.product_id === product.product_id);
+      const existing = prev.find((item) => item.product_id === activeProductForQuote.product_id);
       if (existing) {
-        const newQty = existing.qty + 1;
-        if (newQty > availableQty) {
-          alert(`Cannot add more. Only ${availableQty} units available in stock.`);
-          return prev;
-        }
         return prev.map(
-          (item) => item.product_id === product.product_id ? { ...item, qty: newQty } : item
+          (item) => item.product_id === activeProductForQuote.product_id ? { ...item, qty } : item
         );
       }
       return [...prev, { 
-        product_id: product.product_id, 
-        name: product.product_name, 
-        price: product.prices.DISTRIBUTOR, 
-        qty: minQty, 
+        product_id: activeProductForQuote.product_id, 
+        name: activeProductForQuote.product_name, 
+        price: activeProductForQuote.prices.DISTRIBUTOR, 
+        qty, 
         min_wholesale_qty: minQty,
         available_qty: availableQty 
       }];
     });
-    setAddToQuoteToast(`Added ${product.product_name} (Qty: ${minQty}) to Quote Draft`);
-    setTimeout(() => setAddToQuoteToast(""), 3e3);
+
+    setAddToQuoteToast(`Added ${activeProductForQuote.product_name} (Qty: ${qty}) to Quote Draft`);
+    setTimeout(() => setAddToQuoteToast(""), 3000);
+    setActiveProductForQuote(null);
   };
   const handleDownloadInvoices = () => {
     setDownloading(true);
@@ -1482,6 +1502,122 @@ export default function DistributorPortal({ onLogout }) {
             ] })
           ] })
         ] })
+      }
+    ),
+    
+    /* @__PURE__ */ jsx(
+      Modal,
+      {
+        open: !!activeProductForQuote,
+        onClose: () => setActiveProductForQuote(null),
+        title: "Configure Quote Request Item",
+        children: activeProductForQuote && (() => {
+          const minQty = activeProductForQuote.min_wholesale_qty || 1;
+          const availableQty = (activeProductForQuote.inventory || []).reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+          return /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-6 text-xs", children: [
+            /* @__PURE__ */ jsxs("div", { className: "flex gap-4 items-center bg-slate-50 p-4 rounded-xl border border-[#E2E8F0]", children: [
+              /* @__PURE__ */ jsx("div", { className: "w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#CBD5E1] flex-shrink-0 flex items-center justify-center", children: /* @__PURE__ */ jsx("img", {
+                src: activeProductForQuote.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
+                alt: activeProductForQuote.product_name,
+                className: "w-full h-full object-cover"
+              }) }),
+              /* @__PURE__ */ jsxs("div", { className: "flex-1 min-w-0", children: [
+                /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: activeProductForQuote.category }),
+                /* @__PURE__ */ jsx("h4", { className: "font-bold text-[#0F172A] mt-1.5 text-sm truncate", children: activeProductForQuote.product_name }),
+                /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-mono mt-0.5", children: [
+                  "Product Code: ",
+                  activeProductForQuote.sku
+                ] })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-4 text-center", children: [
+              /* @__PURE__ */ jsxs("div", { className: "bg-[#F0FDF4] p-3 rounded-lg border border-emerald-100", children: [
+                /* @__PURE__ */ jsx("p", { className: "text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1", children: "Distributor Rate" }),
+                /* @__PURE__ */ jsx("p", { className: "text-base font-extrabold text-[#16A34A]", children: formatCurrency(activeProductForQuote.prices.DISTRIBUTOR) })
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 p-3 rounded-lg border border-[#E2E8F0]", children: [
+                /* @__PURE__ */ jsx("p", { className: "text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1", children: "Available Stock" }),
+                /* @__PURE__ */ jsxs("p", { className: "text-base font-extrabold text-[#0F172A]", children: [
+                  availableQty.toLocaleString(),
+                  " ",
+                  activeProductForQuote.unit
+                ] })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "p-4 bg-blue-50/50 border border-blue-100 rounded-xl flex flex-col gap-3", children: [
+              /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
+                /* @__PURE__ */ jsxs("div", { children: [
+                  /* @__PURE__ */ jsx("p", { className: "font-bold text-[#0F172A] text-xs", children: "Wholesale Quantity" }),
+                  /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: [
+                    "Required MOQ: ",
+                    minQty,
+                    " ",
+                    activeProductForQuote.unit
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+                  /* @__PURE__ */ jsx("button", {
+                    type: "button",
+                    onClick: () => {
+                      setQuoteQuantity(prev => Math.max(minQty, prev - 1));
+                    },
+                    disabled: quoteQuantity <= minQty,
+                    className: "w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30",
+                    children: "-"
+                  }),
+                  /* @__PURE__ */ jsx("input", {
+                    type: "number",
+                    className: "w-16 h-8 text-center font-mono font-bold text-xs border border-[#CBD5E1] rounded-lg bg-white focus:outline-none focus:border-blue-500",
+                    value: quoteQuantity,
+                    onChange: (e) => {
+                      const val = parseInt(e.target.value);
+                      if (!isNaN(val)) {
+                        setQuoteQuantity(val);
+                      } else {
+                        setQuoteQuantity("");
+                      }
+                    },
+                    onBlur: () => {
+                      const val = parseInt(quoteQuantity);
+                      if (isNaN(val) || val < minQty) {
+                        setQuoteQuantity(minQty);
+                      } else if (val > availableQty) {
+                        setQuoteQuantity(availableQty);
+                      }
+                    }
+                  }),
+                  /* @__PURE__ */ jsx("button", {
+                    type: "button",
+                    onClick: () => {
+                      setQuoteQuantity(prev => Math.min(availableQty, prev + 1));
+                    },
+                    disabled: quoteQuantity >= availableQty,
+                    className: "w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30",
+                    children: "+"
+                  })
+                ] })
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center border-t border-blue-100/50 pt-2.5 mt-1 text-[10px] text-[#64748B]", children: [
+                /* @__PURE__ */ jsx("span", { children: "Subtotal Value" }),
+                /* @__PURE__ */ jsx("span", { className: "font-mono font-extrabold text-[#0F172A] text-sm", children: formatCurrency(activeProductForQuote.prices.DISTRIBUTOR * (quoteQuantity || 0)) })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex gap-3 justify-end pt-2 border-t border-[#F1F5F9]", children: [
+              /* @__PURE__ */ jsx("button", {
+                type: "button",
+                onClick: () => setActiveProductForQuote(null),
+                className: "px-4 py-2 bg-white border border-[#E2E8F0] text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 cursor-pointer",
+                children: "Cancel"
+              }),
+              /* @__PURE__ */ jsx("button", {
+                type: "button",
+                onClick: handleConfirmAddToQuote,
+                className: "px-5 py-2 bg-blue-600 border-0 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors cursor-pointer shadow-sm active:scale-95",
+                children: "Confirm & Add"
+              })
+            ] })
+          ] });
+        })()
       }
     ),
     limitIncreaseToast && /* @__PURE__ */ jsxs("div", { className: "fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0F172A] text-white px-5 py-3 rounded-full shadow-2xl animate-fade-up z-50 flex items-center gap-3", children: [
