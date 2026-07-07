@@ -1,5 +1,7 @@
-import { jsx, jsxs } from "react/jsx-runtime";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useState } from "react";
+import { useStore } from "@/lib/store";
+import { formatCurrency } from "@/lib/data";
 import {
   ArrowRight,
   Landmark,
@@ -10,6 +12,7 @@ import {
   ShieldAlert
 } from "lucide-react";
 export default function LandingPage({ onGetStarted, onRegisterClick }) {
+  const { products, invoices } = useStore();
   const [activeDemoTab, setActiveDemoTab] = useState("warehouse");
   const [selectedSimProduct, setSelectedSimProduct] = useState("cisco");
   const [paymentAllocated, setPaymentAllocated] = useState(false);
@@ -24,26 +27,46 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
       setPaymentAllocated(true);
     }
   };
-  const productStockData = {
-    cisco: {
-      name: "Cisco Fiber Catalyst 9300",
-      karachi: 42,
-      lahore: 18,
-      threshold: 15
-    },
-    corning: {
-      name: "Corning Fiber Optic Spool 4km",
-      karachi: 8,
-      lahore: 12,
-      threshold: 10
-    },
-    nvidia: {
-      name: "Nvidia Mellanox ConnectX-6",
-      karachi: 15,
-      lahore: 4,
-      threshold: 8
-    }
+  const ciscoDb = products.find(p => p.sku === 'SKU-CISCO-9300');
+  const corningDb = products.find(p => p.sku === 'SKU-CORNING-4KM');
+  const nvidiaDb = products.find(p => p.sku === 'SKU-NVIDIA-CX6');
+
+  const ciscoStock = {
+    name: ciscoDb?.product_name || "Cisco Fiber Catalyst 9300",
+    karachi: ciscoDb?.inventory.find(i => i.warehouse_id === 'wh-1' || i.warehouse_name.includes('Karachi'))?.quantity ?? 42,
+    lahore: ciscoDb?.inventory.find(i => i.warehouse_id === 'wh-2' || i.warehouse_name.includes('Lahore'))?.quantity ?? 18,
+    threshold: ciscoDb?.low_stock_threshold ?? 15
   };
+
+  const corningStock = {
+    name: corningDb?.product_name || "Corning Fiber Optic Spool 4km",
+    karachi: corningDb?.inventory.find(i => i.warehouse_id === 'wh-1' || i.warehouse_name.includes('Karachi'))?.quantity ?? 8,
+    lahore: corningDb?.inventory.find(i => i.warehouse_id === 'wh-2' || i.warehouse_name.includes('Lahore'))?.quantity ?? 12,
+    threshold: corningDb?.low_stock_threshold ?? 10
+  };
+
+  const nvidiaStock = {
+    name: nvidiaDb?.product_name || "Nvidia Mellanox ConnectX-6",
+    karachi: nvidiaDb?.inventory.find(i => i.warehouse_id === 'wh-1' || i.warehouse_name.includes('Karachi'))?.quantity ?? 15,
+    lahore: nvidiaDb?.inventory.find(i => i.warehouse_id === 'wh-2' || i.warehouse_name.includes('Lahore'))?.quantity ?? 4,
+    threshold: nvidiaDb?.low_stock_threshold ?? 8
+  };
+
+  const productStockData = {
+    cisco: ciscoStock,
+    corning: corningStock,
+    nvidia: nvidiaStock
+  };
+
+  const activeInvoice = invoices && invoices.length > 0 ? invoices.find(inv => inv.status !== 'PAID') || invoices[0] : null;
+  const simulatedInvoiceNo = activeInvoice ? activeInvoice.invoice_number : "INV-2026-8802";
+  const simulatedTotal = activeInvoice ? parseFloat(activeInvoice.total_amount) : 1280000;
+  const simulatedPaid = activeInvoice 
+    ? (paymentAllocated ? simulatedTotal : parseFloat(activeInvoice.amount_paid)) 
+    : (paymentAllocated ? 1280000 : 576000);
+  const simulatedProgress = Math.min(100, Math.round((simulatedPaid / (simulatedTotal || 1)) * 100));
+  const simulatedStatus = paymentAllocated ? "PAID" : (activeInvoice ? activeInvoice.status.replace(/_/g, ' ') : "PARTIALLY PAID");
+
   return /* @__PURE__ */ jsxs("div", { className: "min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans overflow-x-hidden relative selection:bg-[#4F46E5] selection:text-white transition-colors duration-300", children: [
     /* @__PURE__ */ jsx("div", { className: "absolute top-0 left-1/2 -translate-x-1/2 w-[85vw] h-[65vh] bg-gradient-to-b from-[#6366F1]/8 via-[#38BDF8]/2 to-transparent rounded-full blur-[110px] pointer-events-none z-0" }),
     /* @__PURE__ */ jsxs("header", { className: "h-16 border-b border-[#E2E8F0] bg-white/70 backdrop-blur-md flex items-center justify-between px-6 sm:px-16 z-20 sticky top-0 transition-all", children: [
@@ -270,30 +293,29 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
             /* @__PURE__ */ jsxs("div", { className: "flex flex-col sm:flex-row justify-between sm:items-center gap-2", children: [
               /* @__PURE__ */ jsxs("div", { children: [
                 /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#4F46E5] font-bold uppercase tracking-wider block", children: "B2B Wholesale Invoice" }),
-                /* @__PURE__ */ jsx("span", { className: "text-xs font-bold text-[#0F172A] mt-0.5 block", children: "INV-2026-8802 (Cisco Distribution Pakistan)" })
+                /* @__PURE__ */ jsx("span", { className: "text-xs font-bold text-[#0F172A] mt-0.5 block", children: `${simulatedInvoiceNo} (${activeInvoice ? 'Live DB Record' : 'Cisco Distribution Pakistan'})` })
               ] }),
               /* @__PURE__ */ jsx("div", { className: "flex gap-2", children: /* @__PURE__ */ jsx(
                 "span",
                 {
-                  className: `px-2 py-0.5 rounded text-[10px] font-bold ${paymentAllocated ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`,
-                  children: paymentAllocated ? "STATUS: PAID" : "STATUS: PARTIALLY PAID"
+                  className: `px-2 py-0.5 rounded text-[10px] font-bold ${simulatedStatus === "PAID" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`,
+                  children: `STATUS: ${simulatedStatus}`
                 }
               ) })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1.5", children: [
               /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-[10px] text-[#475569] font-medium", children: [
                 /* @__PURE__ */ jsxs("span", { children: [
-                  "Amount Received: Rs",
-                  " ",
-                  paymentAllocated ? "1,280,000" : "576,000"
+                  "Amount Received: ",
+                  formatCurrency(simulatedPaid)
                 ] }),
-                /* @__PURE__ */ jsx("span", { children: "Total Invoice: Rs 1,280,000" })
+                /* @__PURE__ */ jsxs("span", { children: ["Total Invoice: ", formatCurrency(simulatedTotal)] })
               ] }),
               /* @__PURE__ */ jsx("div", { className: "w-full bg-[#E2E8F0] h-2 rounded-full overflow-hidden", children: /* @__PURE__ */ jsx(
                 "div",
                 {
                   className: "h-full bg-emerald-500 transition-all duration-700 rounded-full",
-                  style: { width: `${paidProgress}%` }
+                  style: { width: `${simulatedProgress}%` }
                 }
               ) })
             ] }),

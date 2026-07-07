@@ -192,6 +192,37 @@ async function initDb() {
       ON CONFLICT (email) DO NOTHING;
     `);
 
+    // Seed predefined products
+    const prodCountResult = await client.query('SELECT COUNT(*) FROM products');
+    if (parseInt(prodCountResult.rows[0].count) === 0) {
+      await client.query(`
+        INSERT INTO products (
+          product_id, sku, barcode, product_name, short_description, brand, 
+          category, unit, weight, status, low_stock_threshold, overstock_threshold, 
+          dead_stock_days, prices, inventory
+        ) VALUES 
+        (
+          'p-1', 'SKU-CISCO-9300', '012345678901', 'Cisco Fiber Catalyst 9300', 
+          'High performance catalyst networking fiber switch.', 'Cisco', 'Networking', 'Units', 4.5, 'ACTIVE', 15, 60, 90, 
+          '{"RETAIL": 150000, "WHOLESALE": 120000, "LOYALTY": 135000}'::jsonb,
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "quantity": 42, "reserved_quantity": 0, "available_quantity": 42}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "quantity": 18, "reserved_quantity": 0, "available_quantity": 18}]'::jsonb
+        ),
+        (
+          'p-2', 'SKU-CORNING-4KM', '012345678902', 'Corning Fiber Optic Spool 4km', 
+          'High speed transmission single mode fiber optic spool.', 'Corning', 'Cables', 'Spools', 12.0, 'ACTIVE', 10, 40, 60, 
+          '{"RETAIL": 85000, "WHOLESALE": 68000, "LOYALTY": 75000}'::jsonb,
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "quantity": 8, "reserved_quantity": 0, "available_quantity": 8}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "quantity": 12, "reserved_quantity": 0, "available_quantity": 12}]'::jsonb
+        ),
+        (
+          'p-3', 'SKU-NVIDIA-CX6', '012345678903', 'Nvidia Mellanox ConnectX-6', 
+          'Dual-port smart Network Interface Card 200Gb/s.', 'Nvidia', 'Hardware', 'Units', 0.8, 'ACTIVE', 8, 30, 45, 
+          '{"RETAIL": 250000, "WHOLESALE": 200000, "LOYALTY": 220000}'::jsonb,
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "quantity": 15, "reserved_quantity": 0, "available_quantity": 15}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "quantity": 4, "reserved_quantity": 0, "available_quantity": 4}]'::jsonb
+        )
+      `);
+      console.log("Predefined catalog products seeded successfully in PostgreSQL!");
+    }
+
     console.log("Database tables initialized, predefined users seeded successfully in PostgreSQL!");
   } catch (err) {
     console.error("Error during database tables initialization:", err);
@@ -242,7 +273,15 @@ app.post('/api/auth/login', async (req, res) => {
         ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop'
         : (user.role === 'distributor' 
             ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&fit=crop'
-            : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&fit=crop')
+            : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&fit=crop'),
+      business_name: user.business_name || '',
+      ntn_code: user.ntn_code || '',
+      warehouse_region: user.warehouse_region || '',
+      credit_request: user.credit_request || '2500000',
+      buyer_store_name: user.buyer_store_name || '',
+      buyer_phone: user.buyer_phone || '',
+      buyer_address: user.buyer_address || '',
+      buyer_region: user.buyer_region || ''
     };
 
     if (user.role === 'buyer') {
