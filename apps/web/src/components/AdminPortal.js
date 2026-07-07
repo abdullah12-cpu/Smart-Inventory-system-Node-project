@@ -1081,10 +1081,10 @@ export default function AdminPortal({ onLogout }) {
               {
                 className: "text-2xl font-bold text-[#0F172A]",
                 style: { fontFamily: "Outfit, sans-serif" },
-                children: "Wholesale Order & Financial Invoices"
+                children: "Buyer & Distributor Orders"
               }
             ),
-            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Accounts receivable ledger tracking B2B/B2C purchase orders, credit term statuses, and payment probability scores." })
+            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Track incoming buyer and distributor orders, shipment status, and details." })
           ] }),
           (() => {
             const filteredOrders = orders.filter((o) => {
@@ -1216,7 +1216,7 @@ export default function AdminPortal({ onLogout }) {
               // Buyer Orders
               /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
                 /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
-                  /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Buyer Orders Ledger" }),
+                  /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Buyer Orders" }),
                   /* @__PURE__ */ jsx(
                     Badge,
                     {
@@ -1274,7 +1274,7 @@ export default function AdminPortal({ onLogout }) {
               // Distributor Orders
               /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
                 /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
-                  /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Distributor Orders Ledger" }),
+                  /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Distributor Orders" }),
                   /* @__PURE__ */ jsx(
                     Badge,
                     {
