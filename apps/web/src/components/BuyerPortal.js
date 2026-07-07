@@ -271,6 +271,14 @@ export default function BuyerPortal({ onLogout }) {
               className: "bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow",
               children: [
                 /* @__PURE__ */ jsxs("div", { children: [
+                  /* @__PURE__ */ jsx("div", { className: "w-full h-36 rounded-xl overflow-hidden mb-4 bg-slate-50 border border-[#E2E8F0] flex items-center justify-center", children: /* @__PURE__ */ jsx(
+                    "img",
+                    {
+                      src: p.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
+                      alt: p.product_name,
+                      className: "w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                    }
+                  ) }),
                   /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-start gap-2 mb-3", children: [
                     /* @__PURE__ */ jsx("span", { className: "text-[10px] bg-[#EEF2FF] text-[#4F46E5] font-bold px-2 py-0.5 rounded-[4px]", children: p.category }),
                     /* @__PURE__ */ jsx("span", { className: "text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-[4px] font-mono", children: p.sku })

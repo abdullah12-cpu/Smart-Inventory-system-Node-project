@@ -35,6 +35,8 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
   const [priceCustom, setPriceCustom] = useState("9500");
   const [stockKarachi, setStockKarachi] = useState("20");
   const [stockLahore, setStockLahore] = useState("15");
+  const [imageUrl, setImageUrl] = useState("https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop");
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!sku.trim()) {
@@ -45,9 +47,23 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
       alert("Validation Error: Barcode cannot be empty.");
       return;
     }
+    if (!/^\d+$/.test(barcode.trim())) {
+      alert("Validation Error: Barcode must contain only numbers.");
+      return;
+    }
     if (!name.trim()) {
       alert("Validation Error: Product Name cannot be empty.");
       return;
+    }
+
+    // Brand validation
+    const cleanedBrand = brand.trim();
+    if (cleanedBrand) {
+      const brandRegex = /^[a-zA-Z0-9\s.\-&]+$/;
+      if (!brandRegex.test(cleanedBrand) || !/[a-zA-Z]/.test(cleanedBrand)) {
+        alert("Validation Error: Brand name must be valid (should contain letters, and no random symbols like brackets).");
+        return;
+      }
     }
 
     // Duplicate checks
@@ -125,7 +141,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
       barcode: cleanedBarcode,
       product_name: name.trim(),
       short_description: desc.trim() || "No description provided.",
-      brand: brand.trim() || "Generic",
+      brand: cleanedBrand || "Generic",
       category: finalCategory,
       unit,
       weight: parsedWeight,
@@ -140,6 +156,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
         VIP: pVip,
         CUSTOM: pCust
       },
+      image_url: imageUrl.trim() || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
       inventory: [
         {
           warehouse_id: "wh-1",
@@ -170,6 +187,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     setIsCreatingCategory(false);
     setStockKarachi("20");
     setStockLahore("15");
+    setImageUrl("https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop");
   };
   return /* @__PURE__ */ jsx(Modal, { open, onClose, title: "Register New Product", children: /* @__PURE__ */ jsxs(
     "form",
@@ -290,6 +308,19 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
               }
             )
           ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Product Image URL" }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "url",
+              className: "input-field py-2 text-xs",
+              placeholder: "e.g. https://images.unsplash.com/photo-...",
+              value: imageUrl,
+              onChange: (e) => setImageUrl(e.target.value)
+            }
+          )
         ] }),
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Short Description" }),

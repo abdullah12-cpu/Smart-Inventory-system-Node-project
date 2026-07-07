@@ -489,13 +489,22 @@ export default function DistributorPortal({ onLogout }) {
               {
                 className: "bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3",
                 children: [
+                  /* @__PURE__ */ jsx("div", { className: "w-full h-36 rounded-xl overflow-hidden mb-1 bg-slate-50 border border-[#E2E8F0] flex items-center justify-center", children: /* @__PURE__ */ jsx(
+                    "img",
+                    {
+                      src: p.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
+                      alt: p.product_name,
+                      className: "w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                    }
+                  ) }),
                   /* @__PURE__ */ jsx("div", { className: "flex justify-between items-start", children: /* @__PURE__ */ jsxs("div", { children: [
                     /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: p.category }),
                     /* @__PURE__ */ jsx("h4", { className: "font-bold text-[#0F172A] mt-2 text-sm", children: p.product_name }),
                     /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-mono mt-1", children: [
                       "Product Code: ",
                       p.sku
-                    ] })
+                    ] }),
+                    /* @__PURE__ */ jsx("p", { className: "text-[11px] text-[#64748B] mt-2 leading-relaxed", children: p.short_description })
                   ] }) }),
                   /* @__PURE__ */ jsxs("div", { className: "mt-2 pt-3 border-t border-[#E2E8F0] flex justify-between items-end", children: [
                     /* @__PURE__ */ jsxs("div", { children: [

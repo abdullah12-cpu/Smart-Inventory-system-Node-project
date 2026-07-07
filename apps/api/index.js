@@ -66,6 +66,7 @@ async function initDb() {
     // Migrate existing DB if needed
     await client.query(`
       ALTER TABLE products ADD COLUMN IF NOT EXISTS total_product_limit INTEGER DEFAULT 100;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);
     `);
 
     // Create orders table
@@ -418,8 +419,8 @@ app.post('/api/products', async (req, res) => {
       `INSERT INTO products (
         product_id, sku, barcode, product_name, short_description, brand, 
         category, unit, weight, status, low_stock_threshold, overstock_threshold, 
-        dead_stock_days, total_product_limit, prices, inventory
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        dead_stock_days, total_product_limit, prices, inventory, image_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       ON CONFLICT (sku) DO UPDATE SET 
         barcode = EXCLUDED.barcode,
         product_name = EXCLUDED.product_name,
@@ -434,7 +435,8 @@ app.post('/api/products', async (req, res) => {
         dead_stock_days = EXCLUDED.dead_stock_days,
         total_product_limit = EXCLUDED.total_product_limit,
         prices = EXCLUDED.prices,
-        inventory = EXCLUDED.inventory`,
+        inventory = EXCLUDED.inventory,
+        image_url = EXCLUDED.image_url`,
       [
         prod.product_id,
         prod.sku,
@@ -451,7 +453,8 @@ app.post('/api/products', async (req, res) => {
         prod.dead_stock_days || 0,
         limit,
         JSON.stringify(prod.prices || {}),
-        JSON.stringify(prod.inventory || [])
+        JSON.stringify(prod.inventory || []),
+        prod.image_url || ''
       ]
     );
 
