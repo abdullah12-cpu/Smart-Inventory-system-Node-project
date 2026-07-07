@@ -37,16 +37,81 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
   const [stockLahore, setStockLahore] = useState("15");
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!sku || !barcode || !name) return;
-    const parsedWeight = parseFloat(weight) || 0;
-    const parsedLow = parseInt(lowStock) || 0;
-    const parsedLimit = parseInt(totalProductLimit) || 100;
-    const pRetail = parseFloat(priceRetail) || 0;
-    const pDist = parseFloat(priceDistributor) || 0;
-    const pVip = parseFloat(priceVip) || 0;
-    const pCust = parseFloat(priceCustom) || 0;
-    const qtyK = parseInt(stockKarachi) || 0;
-    const qtyL = parseInt(stockLahore) || 0;
+    if (!sku.trim()) {
+      alert("Validation Error: Product Code (SKU) cannot be empty.");
+      return;
+    }
+    if (!barcode.trim()) {
+      alert("Validation Error: Barcode cannot be empty.");
+      return;
+    }
+    if (!name.trim()) {
+      alert("Validation Error: Product Name cannot be empty.");
+      return;
+    }
+
+    // Duplicate checks
+    const cleanedSku = sku.trim().toUpperCase();
+    const cleanedBarcode = barcode.trim();
+    if ((products || []).some((p) => p.sku === cleanedSku)) {
+      alert(`Validation Error: A product with code/SKU "${cleanedSku}" already exists in the catalog.`);
+      return;
+    }
+    if ((products || []).some((p) => p.barcode === cleanedBarcode)) {
+      alert(`Validation Error: A product with Barcode "${cleanedBarcode}" already exists in the catalog.`);
+      return;
+    }
+
+    // Category validation
+    const finalCategory = isCreatingCategory ? newCategory.trim() : category.trim();
+    if (!finalCategory) {
+      alert("Validation Error: Category cannot be empty. Please select or enter a valid category name.");
+      return;
+    }
+
+    // Numbers validation
+    const parsedWeight = parseFloat(weight);
+    if (isNaN(parsedWeight) || parsedWeight <= 0) {
+      alert("Validation Error: Weight must be a positive number greater than 0.");
+      return;
+    }
+
+    const parsedLow = parseInt(lowStock);
+    if (isNaN(parsedLow) || parsedLow < 0) {
+      alert("Validation Error: Low Stock threshold cannot be negative.");
+      return;
+    }
+
+    const parsedLimit = parseInt(totalProductLimit);
+    if (isNaN(parsedLimit) || parsedLimit <= 0) {
+      alert("Validation Error: Total Product Limit must be a positive number greater than 0.");
+      return;
+    }
+
+    if (parsedLimit < parsedLow) {
+      alert(`Validation Error: Total Product Limit (${parsedLimit}) cannot be lower than Low Stock threshold (${parsedLow}).`);
+      return;
+    }
+
+    // Prices validation
+    const pRetail = parseFloat(priceRetail);
+    const pDist = parseFloat(priceDistributor);
+    const pVip = parseFloat(priceVip);
+    const pCust = parseFloat(priceCustom);
+
+    if (isNaN(pRetail) || pRetail < 0 || isNaN(pDist) || pDist < 0 || isNaN(pVip) || pVip < 0 || isNaN(pCust) || pCust < 0) {
+      alert("Validation Error: Price values cannot be negative or empty.");
+      return;
+    }
+
+    // Quantities validation
+    const qtyK = parseInt(stockKarachi);
+    const qtyL = parseInt(stockLahore);
+
+    if (isNaN(qtyK) || qtyK < 0 || isNaN(qtyL) || qtyL < 0) {
+      alert("Validation Error: Initial stock quantities cannot be negative or empty.");
+      return;
+    }
 
     if (qtyK + qtyL > parsedLimit) {
       alert(`Validation Error: The sum of Karachi Depot (${qtyK}) and Lahore Terminal (${qtyL}) stocks is ${qtyK + qtyL}, which exceeds the Total Product Limit of ${parsedLimit}.`);
@@ -56,12 +121,12 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     const newProdId = `p-${Date.now()}`;
     const newProduct = {
       product_id: newProdId,
-      sku: sku.trim().toUpperCase(),
-      barcode: barcode.trim(),
+      sku: cleanedSku,
+      barcode: cleanedBarcode,
       product_name: name.trim(),
       short_description: desc.trim() || "No description provided.",
       brand: brand.trim() || "Generic",
-      category,
+      category: finalCategory,
       unit,
       weight: parsedWeight,
       status: "ACTIVE",
