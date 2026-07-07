@@ -15,14 +15,14 @@ import ProductDrawer from "./ProductDrawer";
 import AddSkuModal from "./AddSkuModal";
 const ALIGN_TABS = [
   { id: "all", label: "My Products" },
-  { id: "LOW_STOCK", label: "Low Stock" },
-  { id: "NORMAL", label: "Normal" }
+  { id: "LOW_STOCK", label: "Low Stock" }
 ];
 export default function AdminDashboard({ search, mode }) {
   const { products } = useStore();
   const [tab, setTab] = useState("all");
   const [warehouseFilter, setWarehouseFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [stockTypeFilter, setStockTypeFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(null);
   const [addSkuOpen, setAddSkuOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -33,7 +33,7 @@ export default function AdminDashboard({ search, mode }) {
     setLoading(true);
     const timer = setTimeout(() => setLoading(false), 400);
     return () => clearTimeout(timer);
-  }, [tab, search, warehouseFilter, categoryFilter]);
+  }, [tab, search, warehouseFilter, categoryFilter, stockTypeFilter]);
   const categories = Array.from(new Set(products.map((p) => p.category)));
   useEffect(() => {
     const newFlashing = {};
@@ -108,7 +108,9 @@ export default function AdminDashboard({ search, mode }) {
       matchWarehouse = invItem ? invItem.quantity > 0 : false;
     }
     const matchCategory = categoryFilter === "all" || p.category === categoryFilter;
-    return matchSearch && matchTab && matchWarehouse && matchCategory;
+    const totalReserved = p.inventory.reduce((sum, inv) => sum + (inv.reserved_quantity || 0), 0);
+    const matchStockType = stockTypeFilter === "all" || (stockTypeFilter === "locked" && totalReserved > 0);
+    return matchSearch && matchTab && matchWarehouse && matchCategory && matchStockType;
   });
   const selectedProduct = selectedId != null ? products.find((p) => p.product_id === selectedId) : null;
   if (mode === "dashboard") {
@@ -259,6 +261,21 @@ export default function AdminDashboard({ search, mode }) {
             }
           )
         ] }),
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+          /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Stock Type:" }),
+          /* @__PURE__ */ jsxs(
+            "select",
+            {
+              value: stockTypeFilter,
+              onChange: (e) => setStockTypeFilter(e.target.value),
+              className: "px-2.5 py-1.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+              children: [
+                /* @__PURE__ */ jsx("option", { value: "all", children: "All Stock" }),
+                /* @__PURE__ */ jsx("option", { value: "locked", children: "Locked Stock (Reserved)" })
+              ]
+            }
+          )
+        ] }),
         /* @__PURE__ */ jsxs("div", { className: "ml-auto text-[10px] text-[#64748B] font-medium bg-[#EEF2FF] border border-[#C7D2FE] px-2.5 py-1 rounded-full", children: [
           "Filtered:",
           " ",
@@ -275,7 +292,6 @@ export default function AdminDashboard({ search, mode }) {
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Reserved" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Available" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Alert Status" }),
-          /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "System Status" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Retail Price" })
         ] }) }),
         /* @__PURE__ */ jsx("tbody", { children: loading ? Array.from({ length: 5 }).map((_, rowIdx) => /* @__PURE__ */ jsxs("tr", { className: "border-b border-[#E2E8F0]", children: [
@@ -291,12 +307,11 @@ export default function AdminDashboard({ search, mode }) {
           /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-10 h-3 rounded shimmer-skeleton ml-auto" }) }),
           /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-12 h-3 rounded shimmer-skeleton ml-auto" }) }),
           /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-16 h-4 rounded shimmer-skeleton mx-auto" }) }),
-          /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-14 h-4 rounded shimmer-skeleton mx-auto" }) }),
           /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-16 h-3 rounded shimmer-skeleton ml-auto" }) })
         ] }, rowIdx)) : filtered.length === 0 ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx(
           "td",
           {
-            colSpan: 8,
+            colSpan: 7,
             className: "text-center py-12 text-xs text-[#94A3B8] font-medium",
             children: "No products match the selected criteria."
           }
@@ -337,7 +352,6 @@ export default function AdminDashboard({ search, mode }) {
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-medium text-[#E11D48]", children: totalRes.toLocaleString("en-US") }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#4F46E5]", children: totalAvail.toLocaleString("en-US") }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsx(StockAlertBadge, { status: alertStatus }) }),
-                /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsx(ProductStatusBadge, { status: p.status }) }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#0F172A]", children: formatCurrency(p.prices.RETAIL) })
               ]
             },

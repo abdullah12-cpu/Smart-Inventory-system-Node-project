@@ -762,6 +762,36 @@ export function StoreProvider({ children }) {
     },
     [suppliers, currentUser]
   );
+  const deleteProduct = useCallback(
+    async (productId) => {
+      const found = products.find((p) => p.product_id === productId);
+      try {
+        await fetch(`/api/products/${productId}`, {
+          method: "DELETE"
+        });
+        setProducts((prev) => prev.filter((p) => p.product_id !== productId));
+
+        const newAudit = {
+          audit_id: `aud-${Date.now()}`,
+          table_name: "products",
+          record_id: productId,
+          action: "DELETE",
+          performed_by: `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role_name})`,
+          notes: `Removed product record: ${found?.product_name ?? productId} (SKU: ${found?.sku ?? "Unknown"}) from inventory catalog.`,
+          created_at: new Date().toISOString()
+        };
+        await fetch("/api/audit-logs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newAudit)
+        });
+        setAuditLogs((prev) => [newAudit, ...prev]);
+      } catch (err) {
+        console.error("Error deleting product:", err);
+      }
+    },
+    [products, currentUser]
+  );
   return /* @__PURE__ */ jsx(
     StoreContext.Provider,
     {
@@ -788,6 +818,7 @@ export function StoreProvider({ children }) {
         addSupplier,
         updateSupplier,
         deleteSupplier,
+        deleteProduct,
         cart,
         addToCart,
         updateCartQty,

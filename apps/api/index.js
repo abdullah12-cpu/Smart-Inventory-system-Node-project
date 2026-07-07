@@ -462,6 +462,29 @@ app.post('/api/products', async (req, res) => {
   }
 });
 
+// DELETE product
+app.delete('/api/products/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM products WHERE product_id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Product not found.' });
+    }
+    
+    // Log audit entry
+    await pool.query(
+      `INSERT INTO audit_logs (audit_id, table_name, record_id, action, performed_by, notes)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [`aud-del-prod-${Date.now()}`, 'products', id, 'DELETE', 'Admin User', `Deleted product ${result.rows[0].product_name} (SKU: ${result.rows[0].sku}) from inventory catalog.`]
+    );
+
+    return res.json({ success: true, message: 'Product deleted successfully.' });
+  } catch (err) {
+    console.error('Error deleting product:', err);
+    return res.status(500).json({ success: false, message: 'Database error during product deletion.' });
+  }
+});
+
 // GET all orders
 app.get('/api/orders', async (req, res) => {
   try {

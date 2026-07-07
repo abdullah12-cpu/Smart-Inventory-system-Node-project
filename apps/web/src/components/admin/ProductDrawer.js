@@ -18,7 +18,7 @@ import {
   History
 } from "lucide-react";
 export default function ProductDrawer({ product, open, onClose }) {
-  const { adjustWarehouseStock, updateProductAlertRules, stockMovements } = useStore();
+  const { adjustWarehouseStock, updateProductAlertRules, stockMovements, deleteProduct } = useStore();
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(
     product.inventory[0]?.warehouse_id || ""
   );
@@ -84,14 +84,29 @@ export default function ProductDrawer({ product, open, onClose }) {
       onClose,
       title: product.product_name,
       subtitle: `SKU: ${product.sku} | Barcode: ${product.barcode}`,
-      footer: /* @__PURE__ */ jsx(
-        "button",
-        {
-          onClick: onClose,
-          className: "w-full py-2.5 border border-[#E2E8F0] rounded-lg text-xs font-bold text-[#64748B] hover:bg-[#F8FAFC] transition-colors cursor-pointer bg-white",
-          children: "Close Sheet"
-        }
-      ),
+      footer: /* @__PURE__ */ jsxs("div", { className: "flex gap-2 w-full", children: [
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => {
+              if (window.confirm(`Are you sure you want to permanently delete "${product.product_name}" from the inventory catalog?`)) {
+                deleteProduct(product.product_id);
+                onClose();
+              }
+            },
+            className: "flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0",
+            children: "Delete Product"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: onClose,
+            className: "flex-1 py-2.5 border border-[#E2E8F0] rounded-lg text-xs font-bold text-[#64748B] hover:bg-[#F8FAFC] transition-colors cursor-pointer bg-white",
+            children: "Close Sheet"
+          }
+        )
+      ] }),
       children: [
         /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
           /* @__PURE__ */ jsx(ProductStatusBadge, { status: product.status }),
