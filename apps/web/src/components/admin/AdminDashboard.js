@@ -172,7 +172,7 @@ export default function AdminDashboard({ search, mode }) {
           {
             label: "STOCKOUT_RATE",
             value: `${stockoutRate}%`,
-            trend: lowStockCount > 0 ? `${lowStockCount} SKUs currently flagged` : "Healthy capacity limits",
+            trend: lowStockCount > 0 ? `${lowStockCount} products currently flagged` : "Healthy capacity limits",
             trendUp: stockoutRate < 10,
             icon: /* @__PURE__ */ jsx(ShieldAlert, { size: 18 }),
             iconBg: "#FEF2F2",
@@ -208,7 +208,7 @@ export default function AdminDashboard({ search, mode }) {
           className: "flex items-center gap-2 bg-[#4F46E5] text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-[#4338CA] transition-colors shadow-sm cursor-pointer border-0",
           children: [
             /* @__PURE__ */ jsx(Plus, { size: 16 }),
-            " Add SKU"
+            " Add Product"
           ]
         }
       )
@@ -281,12 +281,12 @@ export default function AdminDashboard({ search, mode }) {
           " ",
           /* @__PURE__ */ jsx("span", { className: "font-extrabold text-[#4F46E5]", children: filtered.length }),
           " ",
-          "SKUs"
+          "Products"
         ] })
       ] }),
       /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse", children: [
         /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
-          /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Product & SKU" }),
+          /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Product Details" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Brand & Category" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Quantity" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Reserved" }),
@@ -365,7 +365,7 @@ export default function AdminDashboard({ search, mode }) {
           loading ? 0 : filtered.length,
           " of ",
           products.length,
-          " SKUs"
+          " Products"
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "flex gap-2", children: [
           /* @__PURE__ */ jsx(
@@ -394,7 +394,7 @@ export default function AdminDashboard({ search, mode }) {
         open: addSkuOpen,
         onClose: () => setAddSkuOpen(false),
         onSuccess: (name) => {
-          setToast(`SKU catalog item "${name}" registered successfully!`);
+          setToast(`Product catalog item "${name}" registered successfully!`);
           setTimeout(() => setToast(""), 4e3);
         }
       }

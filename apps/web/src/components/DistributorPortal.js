@@ -458,7 +458,7 @@ export default function DistributorPortal({ onLogout }) {
                   "input",
                   {
                     className: "w-full pl-9 pr-4 py-2 border border-[#E2E8F0] rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 transition-colors shadow-sm",
-                    placeholder: "Search SKUs...",
+                    placeholder: "Search Products...",
                     value: catalogSearch,
                     onChange: (e) => setCatalogSearch(e.target.value)
                   }
@@ -493,7 +493,7 @@ export default function DistributorPortal({ onLogout }) {
                     /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: p.category }),
                     /* @__PURE__ */ jsx("h4", { className: "font-bold text-[#0F172A] mt-2 text-sm", children: p.product_name }),
                     /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-mono mt-1", children: [
-                      "SKU: ",
+                      "Product Code: ",
                       p.sku
                     ] })
                   ] }) }),

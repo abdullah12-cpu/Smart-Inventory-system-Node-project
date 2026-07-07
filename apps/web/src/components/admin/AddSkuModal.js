@@ -3,12 +3,27 @@ import { useState } from "react";
 import { useStore } from "@/lib/store";
 import Modal from "@/components/Modal";
 export default function AddSkuModal({ open, onClose, onSuccess }) {
-  const { addNewProduct } = useStore();
+  const { addNewProduct, products } = useStore();
   const [sku, setSku] = useState("");
   const [barcode, setBarcode] = useState("");
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("Networking");
+  const [newCategory, setNewCategory] = useState("");
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+
+  const defaultCategories = ["Networking", "Compute Cards", "Fiber Optics", "UPS & Power"];
+  const allCategories = Array.from(new Set([...defaultCategories, ...(products || []).map(p => p.category).filter(Boolean)]));
+
+  const handleCategoryChange = (val) => {
+    if (val === "__NEW__") {
+      setIsCreatingCategory(true);
+      setCategory("");
+    } else {
+      setIsCreatingCategory(false);
+      setCategory(val);
+    }
+  };
   const [desc, setDesc] = useState("");
   const [unit, setUnit] = useState("PCS");
   const [weight, setWeight] = useState("1.5");
@@ -85,10 +100,13 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     setName("");
     setBrand("");
     setDesc("");
+    setCategory("Networking");
+    setNewCategory("");
+    setIsCreatingCategory(false);
     setStockKarachi("20");
     setStockLahore("15");
   };
-  return /* @__PURE__ */ jsx(Modal, { open, onClose, title: "Register New SKU Catalog Item", children: /* @__PURE__ */ jsxs(
+  return /* @__PURE__ */ jsx(Modal, { open, onClose, title: "Register New Product", children: /* @__PURE__ */ jsxs(
     "form",
     {
       onSubmit: handleSubmit,
@@ -125,7 +143,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
           /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "SKU Code *" }),
+            /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Product Code *" }),
             /* @__PURE__ */ jsx(
               "input",
               {
@@ -160,14 +178,26 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
               "select",
               {
                 className: "input-field py-2 text-xs",
-                value: category,
-                onChange: (e) => setCategory(e.target.value),
+                value: isCreatingCategory ? "__NEW__" : category,
+                onChange: (e) => handleCategoryChange(e.target.value),
                 children: [
-                  /* @__PURE__ */ jsx("option", { value: "Networking", children: "Networking" }),
-                  /* @__PURE__ */ jsx("option", { value: "Compute Cards", children: "Compute Cards" }),
-                  /* @__PURE__ */ jsx("option", { value: "Fiber Optics", children: "Fiber Optics" }),
-                  /* @__PURE__ */ jsx("option", { value: "UPS & Power", children: "UPS & Power" })
+                  allCategories.map((cat) => /* @__PURE__ */ jsx("option", { value: cat, children: cat }, cat)),
+                  /* @__PURE__ */ jsx("option", { value: "__NEW__", children: "+ Add New Category" })
                 ]
+              }
+            ),
+            isCreatingCategory && /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "text",
+                className: "input-field py-1.5 text-xs mt-1.5",
+                placeholder: "New Category Name",
+                value: newCategory,
+                onChange: (e) => {
+                  setNewCategory(e.target.value);
+                  setCategory(e.target.value);
+                },
+                required: true
               }
             )
           ] }),
@@ -320,7 +350,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
           {
             type: "submit",
             className: "w-full py-2.5 mt-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold rounded-lg transition-colors border-0 cursor-pointer",
-            children: "Create SKU Catalog Item"
+            children: "Create Product"
           }
         )
       ]

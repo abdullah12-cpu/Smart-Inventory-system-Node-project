@@ -83,7 +83,7 @@ export default function ProductDrawer({ product, open, onClose }) {
       open,
       onClose,
       title: product.product_name,
-      subtitle: `SKU: ${product.sku} | Barcode: ${product.barcode}`,
+      subtitle: `Product Code: ${product.sku} | Barcode: ${product.barcode}`,
       footer: /* @__PURE__ */ jsxs("div", { className: "flex gap-2 w-full", children: [
         /* @__PURE__ */ jsx(
           "button",
@@ -246,7 +246,7 @@ export default function ProductDrawer({ product, open, onClose }) {
             },
             p.tier
           )) }),
-          detailTab === "history" && /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-2 animate-cross-fade", children: productMovements.length === 0 ? /* @__PURE__ */ jsx("div", { className: "text-center text-[11px] text-[#94A3B8] py-6 font-medium", children: "No stock movements recorded for this SKU yet." }) : productMovements.map((m) => /* @__PURE__ */ jsxs(
+          detailTab === "history" && /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-2 animate-cross-fade", children: productMovements.length === 0 ? /* @__PURE__ */ jsx("div", { className: "text-center text-[11px] text-[#94A3B8] py-6 font-medium", children: "No stock movements recorded for this product yet." }) : productMovements.map((m) => /* @__PURE__ */ jsxs(
             "div",
             {
               className: "border border-[#E2E8F0] rounded-lg p-3 flex items-start gap-3 bg-white hover:bg-[#F8FAFC] transition-colors",
