@@ -653,12 +653,21 @@ export function StoreProvider({ children }) {
           const quotesRes = await fetch("/api/quotations");
           if (quotesRes.ok) setQuotations(await quotesRes.json());
 
-          addNotification({
-            title: "New B2B Order Received",
-            message: `Order ${orderData.order_number} has been submitted by buyer ${orderData.customer_email}.`,
-            severity: "INFO",
-            trigger_type: "ORDER_PLACED"
-          });
+          if (orderData.status === "PROCEED") {
+            addNotification({
+              title: "Shipment Required",
+              message: `New buyer order ${orderData.order_number} has been submitted. Please proceed to ship.`,
+              severity: "WARNING",
+              trigger_type: "SHIPMENT_REQUIRED"
+            });
+          } else {
+            addNotification({
+              title: "New B2B Order Received",
+              message: `Order ${orderData.order_number} has been submitted by distributor ${orderData.customer_email}.`,
+              severity: "INFO",
+              trigger_type: "ORDER_PLACED"
+            });
+          }
           return true;
         }
       } catch (err) {

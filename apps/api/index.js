@@ -473,9 +473,9 @@ app.delete('/api/products/:id', async (req, res) => {
     
     // Log audit entry
     await pool.query(
-      `INSERT INTO audit_logs (audit_id, table_name, record_id, action, performed_by, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [`aud-del-prod-${Date.now()}`, 'products', id, 'DELETE', 'Admin User', `Deleted product ${result.rows[0].product_name} (SKU: ${result.rows[0].sku}) from inventory catalog.`]
+      `INSERT INTO audit_logs (audit_id, table_name, record_id, action, performed_by, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [`aud-del-prod-${Date.now()}`, 'products', id, 'DELETE', 'Admin User', `Deleted product ${result.rows[0].product_name} (SKU: ${result.rows[0].sku}) from inventory catalog.`, new Date().toISOString()]
     );
 
     return res.json({ success: true, message: 'Product deleted successfully.' });

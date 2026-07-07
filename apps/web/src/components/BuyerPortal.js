@@ -74,7 +74,7 @@ export default function BuyerPortal({ onLogout }) {
       order_id: `o-${Date.now()}`,
       order_number: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
       order_type: "B2C",
-      status: "PENDING",
+      status: "PROCEED",
       subtotal: cartTotal,
       discount_total: 0,
       tax_total: tax,

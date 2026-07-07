@@ -45,7 +45,8 @@ export function OrderStatusBadge({ status }) {
     SHIPPED: { text: "SHIPPED", variant: "info" },
     DELIVERED: { text: "DELIVERED", variant: "success" },
     CANCELLED: { text: "CANCELLED", variant: "danger" },
-    RETURNED: { text: "RETURNED", variant: "gray" }
+    RETURNED: { text: "RETURNED", variant: "gray" },
+    PROCEED: { text: "PROCEED", variant: "warning" }
   };
   return /* @__PURE__ */ jsx(
     Badge,
