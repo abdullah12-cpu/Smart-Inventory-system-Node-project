@@ -236,6 +236,57 @@ export function StoreProvider({ children }) {
     },
     [products, currentUser]
   );
+  const updateProductDetails = useCallback(
+    async (productId, updatedFields) => {
+      let targetProduct = null;
+      const updatedProducts = products.map((p) => {
+        if (p.product_id !== productId) return p;
+        targetProduct = {
+          ...p,
+          ...updatedFields
+        };
+        return targetProduct;
+      });
+
+      if (!targetProduct) return false;
+
+      try {
+        const response = await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(targetProduct)
+        });
+        if (!response.ok) {
+          const errMsg = await response.text();
+          console.error("Failed to persist updated product:", errMsg);
+          alert("Failed to update product in database: " + errMsg);
+          return false;
+        }
+        setProducts(updatedProducts);
+
+        const newAudit = {
+          audit_id: `aud-${Date.now()}`,
+          table_name: "products",
+          record_id: productId,
+          action: "UPDATE",
+          performed_by: `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role_name})`,
+          notes: `Updated product details for ${targetProduct.product_name} (${targetProduct.sku}).`,
+          created_at: new Date().toISOString()
+        };
+        await fetch("/api/audit-logs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newAudit)
+        });
+        setAuditLogs((prev) => [newAudit, ...prev]);
+        return true;
+      } catch (err) {
+        console.error("Error updating product details:", err);
+        return false;
+      }
+    },
+    [products, currentUser]
+  );
   const recordPaymentAllocation = useCallback(
     async (invoiceId, amount, method, reference, customCustomerName = undefined) => {
       let customerName = customCustomerName || "B2B Client";
@@ -821,6 +872,7 @@ export function StoreProvider({ children }) {
         auditLogs,
         adjustWarehouseStock,
         updateProductAlertRules,
+        updateProductDetails,
         recordPaymentAllocation,
         dispatchOrder,
         markNotificationRead,
