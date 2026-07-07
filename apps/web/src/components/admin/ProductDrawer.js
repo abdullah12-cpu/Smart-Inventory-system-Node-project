@@ -207,18 +207,6 @@ export default function ProductDrawer({ product, open, onClose }) {
               price: product.prices.DISTRIBUTOR,
               color: "#4F46E5",
               bg: "#EEF2FF"
-            },
-            {
-              tier: "VIP Tier Rate",
-              price: product.prices.VIP,
-              color: "#059669",
-              bg: "#ECFDF5"
-            },
-            {
-              tier: "Custom Rate",
-              price: product.prices.CUSTOM,
-              color: "#7C3AED",
-              bg: "#F5F3FF"
             }
           ].map((p) => /* @__PURE__ */ jsxs(
             "div",

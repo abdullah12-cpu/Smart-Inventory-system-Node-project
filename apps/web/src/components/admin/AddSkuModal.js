@@ -31,8 +31,6 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
   const [totalProductLimit, setTotalProductLimit] = useState("100");
   const [priceRetail, setPriceRetail] = useState("12000");
   const [priceDistributor, setPriceDistributor] = useState("10500");
-  const [priceVip, setPriceVip] = useState("9800");
-  const [priceCustom, setPriceCustom] = useState("9500");
   const [stockKarachi, setStockKarachi] = useState("20");
   const [stockLahore, setStockLahore] = useState("15");
   const [imageUrl, setImageUrl] = useState("");
@@ -127,10 +125,8 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     // Prices validation
     const pRetail = parseFloat(priceRetail);
     const pDist = parseFloat(priceDistributor);
-    const pVip = parseFloat(priceVip);
-    const pCust = parseFloat(priceCustom);
 
-    if (isNaN(pRetail) || pRetail < 0 || isNaN(pDist) || pDist < 0 || isNaN(pVip) || pVip < 0 || isNaN(pCust) || pCust < 0) {
+    if (isNaN(pRetail) || pRetail < 0 || isNaN(pDist) || pDist < 0) {
       alert("Validation Error: Price values cannot be negative or empty.");
       return;
     }
@@ -168,8 +164,8 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
       prices: {
         RETAIL: pRetail,
         DISTRIBUTOR: pDist,
-        VIP: pVip,
-        CUSTOM: pCust
+        VIP: pDist,
+        CUSTOM: pDist
       },
       image_url: imageUrl.trim() || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
       inventory: [
@@ -379,7 +375,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "border-t border-[#F1F5F9] pt-3", children: [
           /* @__PURE__ */ jsx("p", { className: "text-[10px] font-bold text-[#4F46E5] uppercase tracking-wider mb-2", children: "Wholesale Price Tiers (Rs)" }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 gap-2", children: [
+          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-2", children: [
             /* @__PURE__ */ jsxs("div", { children: [
               /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Retail Rate" }),
               /* @__PURE__ */ jsx(
@@ -401,30 +397,6 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
                   className: "input-field py-1.5 text-xs",
                   value: priceDistributor,
                   onChange: (e) => setPriceDistributor(e.target.value)
-                }
-              )
-            ] }),
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "VIP Rate" }),
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "number",
-                  className: "input-field py-1.5 text-xs",
-                  value: priceVip,
-                  onChange: (e) => setPriceVip(e.target.value)
-                }
-              )
-            ] }),
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Custom" }),
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "number",
-                  className: "input-field py-1.5 text-xs",
-                  value: priceCustom,
-                  onChange: (e) => setPriceCustom(e.target.value)
                 }
               )
             ] })
