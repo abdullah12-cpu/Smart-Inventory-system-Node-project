@@ -14,12 +14,11 @@ import { KpiCard, StockAlertBadge, ProductStatusBadge } from "@/components/ui";
 import ProductDrawer from "./ProductDrawer";
 import AddSkuModal from "./AddSkuModal";
 const ALIGN_TABS = [
-  { id: "all", label: "All SKUs" },
+  { id: "all", label: "My Products" },
   { id: "LOW_STOCK", label: "Low Stock" },
-  { id: "OVERSTOCK", label: "Overstock" },
   { id: "NORMAL", label: "Normal" }
 ];
-export default function AdminDashboard({ search }) {
+export default function AdminDashboard({ search, mode }) {
   const { products } = useStore();
   const [tab, setTab] = useState("all");
   const [warehouseFilter, setWarehouseFilter] = useState("all");
@@ -112,6 +111,77 @@ export default function AdminDashboard({ search }) {
     return matchSearch && matchTab && matchWarehouse && matchCategory;
   });
   const selectedProduct = selectedId != null ? products.find((p) => p.product_id === selectedId) : null;
+  if (mode === "dashboard") {
+    return /* @__PURE__ */ jsx("div", { className: "px-8 pt-8", children: 
+      /* @__PURE__ */ jsx("div", { className: "grid grid-cols-1 md:grid-cols-4 gap-4", children: loading ? Array.from({ length: 4 }).map((_, idx) => /* @__PURE__ */ jsxs(
+        "div",
+        {
+          className: "bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-sm flex flex-col gap-4 animate-fade-up",
+          children: [
+            /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
+              /* @__PURE__ */ jsx("div", { className: "w-24 h-4 rounded shimmer-skeleton" }),
+              /* @__PURE__ */ jsx("div", { className: "w-10 h-10 rounded-lg shimmer-skeleton" })
+            ] }),
+            /* @__PURE__ */ jsx("div", { className: "w-32 h-8 rounded shimmer-skeleton" }),
+            /* @__PURE__ */ jsx("div", { className: "w-28 h-3 rounded shimmer-skeleton" })
+          ]
+        },
+        idx
+      )) : /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx(
+          KpiCard,
+          {
+            label: "GMV (Global Valuation)",
+            value: formatCurrency(totalValuation),
+            trend: "\u2191 +14.2% versus last snapshot",
+            trendUp: true,
+            icon: /* @__PURE__ */ jsx(DollarSign, { size: 18 }),
+            index: 0
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          KpiCard,
+          {
+            label: "DSO (Days Sales Outstanding)",
+            value: "18.4 Days",
+            trend: "\u2193 -2.1 days improvement",
+            trendUp: true,
+            icon: /* @__PURE__ */ jsx(Clock, { size: 18 }),
+            iconBg: "#EFF6FF",
+            iconColor: "#3B82F6",
+            index: 1
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          KpiCard,
+          {
+            label: "GROSS_MARGIN (Global)",
+            value: "34.8%",
+            trend: "Stable within tax band",
+            trendUp: true,
+            icon: /* @__PURE__ */ jsx(BarChart3, { size: 18 }),
+            iconBg: "#ECFDF5",
+            iconColor: "#10B981",
+            index: 2
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          KpiCard,
+          {
+            label: "STOCKOUT_RATE",
+            value: `${stockoutRate}%`,
+            trend: lowStockCount > 0 ? `${lowStockCount} SKUs currently flagged` : "Healthy capacity limits",
+            trendUp: stockoutRate < 10,
+            icon: /* @__PURE__ */ jsx(ShieldAlert, { size: 18 }),
+            iconBg: "#FEF2F2",
+            iconColor: "#EF4444",
+            index: 3
+          }
+        )
+      ] }) })
+    });
+  }
+
   return /* @__PURE__ */ jsxs("div", { className: "page-container relative", children: [
     toast && /* @__PURE__ */ jsxs("div", { className: "fixed bottom-6 right-6 bg-[#ECFDF5] border border-[#10B981]/30 px-4 py-3 rounded-lg shadow-xl flex items-center gap-2.5 z-[9999] text-xs font-bold text-[#059669] animate-fade-up", children: [
       /* @__PURE__ */ jsx(CheckCircle, { size: 16 }),
@@ -124,7 +194,7 @@ export default function AdminDashboard({ search }) {
           {
             className: "text-2xl font-bold text-[#0F172A]",
             style: { fontFamily: "Outfit, sans-serif" },
-            children: "Inventory Operations Center"
+            children: "My Products Catalog"
           }
         ),
         /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Real-time tracking of multi-warehouse availability, supply chain alert signals, and price tiers." })
@@ -141,72 +211,6 @@ export default function AdminDashboard({ search }) {
         }
       )
     ] }),
-    /* @__PURE__ */ jsx("div", { className: "grid grid-cols-1 md:grid-cols-4 gap-4", children: loading ? Array.from({ length: 4 }).map((_, idx) => /* @__PURE__ */ jsxs(
-      "div",
-      {
-        className: "bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-sm flex flex-col gap-4 animate-fade-up",
-        children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
-            /* @__PURE__ */ jsx("div", { className: "w-24 h-4 rounded shimmer-skeleton" }),
-            /* @__PURE__ */ jsx("div", { className: "w-10 h-10 rounded-lg shimmer-skeleton" })
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "w-32 h-8 rounded shimmer-skeleton" }),
-          /* @__PURE__ */ jsx("div", { className: "w-28 h-3 rounded shimmer-skeleton" })
-        ]
-      },
-      idx
-    )) : /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx(
-        KpiCard,
-        {
-          label: "GMV (Global Valuation)",
-          value: formatCurrency(totalValuation),
-          trend: "\u2191 +14.2% versus last snapshot",
-          trendUp: true,
-          icon: /* @__PURE__ */ jsx(DollarSign, { size: 18 }),
-          index: 0
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        KpiCard,
-        {
-          label: "DSO (Days Sales Outstanding)",
-          value: "18.4 Days",
-          trend: "\u2193 -2.1 days improvement",
-          trendUp: true,
-          icon: /* @__PURE__ */ jsx(Clock, { size: 18 }),
-          iconBg: "#EFF6FF",
-          iconColor: "#3B82F6",
-          index: 1
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        KpiCard,
-        {
-          label: "GROSS_MARGIN (Global)",
-          value: "34.8%",
-          trend: "Stable within tax band",
-          trendUp: true,
-          icon: /* @__PURE__ */ jsx(BarChart3, { size: 18 }),
-          iconBg: "#ECFDF5",
-          iconColor: "#10B981",
-          index: 2
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        KpiCard,
-        {
-          label: "STOCKOUT_RATE",
-          value: `${stockoutRate}%`,
-          trend: lowStockCount > 0 ? `${lowStockCount} SKUs currently flagged` : "Healthy capacity limits",
-          trendUp: stockoutRate < 10,
-          icon: /* @__PURE__ */ jsx(ShieldAlert, { size: 18 }),
-          iconBg: "#FEF2F2",
-          iconColor: "#EF4444",
-          index: 3
-        }
-      )
-    ] }) }),
     /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
       /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between gap-4 flex-wrap", children: [
         /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-4", children: [

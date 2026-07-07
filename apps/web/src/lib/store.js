@@ -81,6 +81,16 @@ export function StoreProvider({ children }) {
   }, []);
   const adjustWarehouseStock = useCallback(
     async (productId, warehouseId, deltaQty, notes = "Manual inventory audit adjustment.") => {
+      const targetProd = products.find(p => p.product_id === productId);
+      if (targetProd) {
+        const currentSum = targetProd.inventory.reduce((sum, inv) => sum + (inv.warehouse_id === warehouseId ? Math.max(0, inv.quantity + deltaQty) : inv.quantity), 0);
+        const limit = targetProd.total_product_limit || 100;
+        if (currentSum > limit) {
+          alert(`Validation Error: The adjustment of ${deltaQty > 0 ? "+" : ""}${deltaQty} would make the total stock (${currentSum}) exceed the Total Product Limit of ${limit}.`);
+          return;
+        }
+      }
+
       let affectedProdName = "";
       let affectedWhName = "";
       let newQtyResult = 0;
@@ -171,7 +181,16 @@ export function StoreProvider({ children }) {
     [products, currentUser, addNotification]
   );
   const updateProductAlertRules = useCallback(
-    async (productId, low, over) => {
+    async (productId, low, over, totalProductLimit) => {
+      const targetProd = products.find(p => p.product_id === productId);
+      if (targetProd) {
+        const currentStock = targetProd.inventory.reduce((sum, inv) => sum + inv.quantity, 0);
+        if (currentStock > totalProductLimit) {
+          alert(`Validation Error: The new Total Product Limit of ${totalProductLimit} is less than your current total warehouse stock of ${currentStock}. Please adjust warehouse stock first.`);
+          return;
+        }
+      }
+
       let affectedProdName = "";
       let targetProduct = null;
       const updatedProducts = products.map((p) => {
@@ -180,7 +199,8 @@ export function StoreProvider({ children }) {
         targetProduct = {
           ...p,
           low_stock_threshold: low,
-          overstock_threshold: over
+          overstock_threshold: over,
+          total_product_limit: totalProductLimit
         };
         return targetProduct;
       });

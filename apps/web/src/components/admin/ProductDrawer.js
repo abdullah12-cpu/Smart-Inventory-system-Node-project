@@ -27,8 +27,8 @@ export default function ProductDrawer({ product, open, onClose }) {
   const [toast, setToast] = useState("");
   const [editingThresholds, setEditingThresholds] = useState(false);
   const [lowThreshold, setLowThreshold] = useState(product.low_stock_threshold);
-  const [overThreshold, setOverThreshold] = useState(
-    product.overstock_threshold
+  const [totalProductLimit, setTotalProductLimit] = useState(
+    product.total_product_limit || 100
   );
   const [detailTab, setDetailTab] = useState("stock");
   const handleAdjust = (e) => {
@@ -47,9 +47,9 @@ export default function ProductDrawer({ product, open, onClose }) {
     setTimeout(() => setToast(""), 2500);
   };
   const handleSaveThresholds = () => {
-    updateProductAlertRules(product.product_id, lowThreshold, overThreshold);
+    updateProductAlertRules(product.product_id, lowThreshold, totalProductLimit, totalProductLimit);
     setEditingThresholds(false);
-    setToast("Alert thresholds updated!");
+    setToast("Alert thresholds and limit rules updated!");
     setTimeout(() => setToast(""), 2500);
   };
   const totalQuantity = product.inventory.reduce(
@@ -67,7 +67,7 @@ export default function ProductDrawer({ product, open, onClose }) {
   const derivedAlertStatus = computeStockAlertStatus(
     totalAvailable,
     product.low_stock_threshold,
-    product.overstock_threshold
+    product.total_product_limit || 100
   );
   const productMovements = stockMovements.filter(
     (m) => m.product_id === product.product_id
@@ -149,7 +149,7 @@ export default function ProductDrawer({ product, open, onClose }) {
                         status: computeStockAlertStatus(
                           inv.available_quantity,
                           product.low_stock_threshold,
-                          product.overstock_threshold
+                          product.total_product_limit || 100
                         )
                       }
                     )
@@ -283,14 +283,14 @@ export default function ProductDrawer({ product, open, onClose }) {
               )
             ] }),
             /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-medium block mb-1", children: "Overstock Trigger" }),
+              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-medium block mb-1", children: "Total Product Limit" }),
               /* @__PURE__ */ jsx(
                 "input",
                 {
                   type: "number",
                   className: "input-field py-2 text-xs",
-                  value: overThreshold,
-                  onChange: (e) => setOverThreshold(parseInt(e.target.value) || 0)
+                  value: totalProductLimit,
+                  onChange: (e) => setTotalProductLimit(parseInt(e.target.value) || 0)
                 }
               )
             ] })
@@ -313,7 +313,7 @@ export default function ProductDrawer({ product, open, onClose }) {
                 onClick: () => {
                   setEditingThresholds(false);
                   setLowThreshold(product.low_stock_threshold);
-                  setOverThreshold(product.overstock_threshold);
+                  setTotalProductLimit(product.total_product_limit || 100);
                 },
                 className: "px-3 py-1.5 text-[11px] font-bold text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] cursor-pointer bg-white",
                 children: "Cancel"
@@ -330,8 +330,8 @@ export default function ProductDrawer({ product, open, onClose }) {
                   val: `${product.low_stock_threshold} units`
                 },
                 {
-                  label: "Overstock Trigger",
-                  val: `${product.overstock_threshold} units`
+                  label: "Total Product Limit",
+                  val: `${product.total_product_limit || 100} units`
                 },
                 {
                   label: "Dead Stock Limit",

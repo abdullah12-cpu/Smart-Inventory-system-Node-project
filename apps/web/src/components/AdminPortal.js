@@ -221,6 +221,17 @@ export default function AdminPortal({ onLogout }) {
             ]
           }
         ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setActiveTab("products"),
+            className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "products" ? "active" : ""}`,
+            children: [
+              /* @__PURE__ */ jsx(Box, { size: 18 }),
+              /* @__PURE__ */ jsx("span", { children: "My Products" })
+            ]
+          }
+        ),
         canAccessSuppliers && /* @__PURE__ */ jsxs(
           "button",
           {
@@ -238,7 +249,7 @@ export default function AdminPortal({ onLogout }) {
             onClick: () => setActiveTab("orders"),
             className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "orders" ? "active" : ""}`,
             children: [
-              /* @__PURE__ */ jsx(Box, { size: 18 }),
+              /* @__PURE__ */ jsx(Database, { size: 18 }),
               /* @__PURE__ */ jsx("span", { children: "Orders & Ledgers" })
             ]
           }
@@ -473,7 +484,7 @@ export default function AdminPortal({ onLogout }) {
       ] }),
       /* @__PURE__ */ jsxs("main", { className: "flex-1 overflow-y-auto", children: [
         activeTab === "dashboard" && /* @__PURE__ */ jsxs("div", { className: "animate-cross-fade flex flex-col gap-6", children: [
-          /* @__PURE__ */ jsx(AdminDashboard, { search }),
+          /* @__PURE__ */ jsx(AdminDashboard, { search, mode: "dashboard" }),
           /* @__PURE__ */ jsx("div", { className: "px-8 pb-8", children: /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden", children: [
             /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between", children: [
               /* @__PURE__ */ jsxs("div", { children: [
@@ -521,6 +532,7 @@ export default function AdminPortal({ onLogout }) {
             ] }) })
           ] }) })
         ] }),
+        activeTab === "products" && /* @__PURE__ */ jsx(AdminDashboard, { search, mode: "products" }),
         activeTab === "suppliers" && /* @__PURE__ */ jsxs("div", { className: "page-container animate-cross-fade", children: [
           /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
             /* @__PURE__ */ jsxs("div", { children: [

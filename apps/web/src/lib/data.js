@@ -27,7 +27,6 @@ export function formatDate(dateStr) {
 
 export function computeStockAlertStatus(availableQty, low, over) {
   if (availableQty <= low) return "LOW_STOCK";
-  if (availableQty >= over) return "OVERSTOCK";
   return "NORMAL";
 }
 

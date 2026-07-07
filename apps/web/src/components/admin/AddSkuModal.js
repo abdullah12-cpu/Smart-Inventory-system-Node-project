@@ -13,7 +13,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
   const [unit, setUnit] = useState("PCS");
   const [weight, setWeight] = useState("1.5");
   const [lowStock, setLowStock] = useState("10");
-  const [overStock, setOverStock] = useState("100");
+  const [totalProductLimit, setTotalProductLimit] = useState("100");
   const [priceRetail, setPriceRetail] = useState("12000");
   const [priceDistributor, setPriceDistributor] = useState("10500");
   const [priceVip, setPriceVip] = useState("9800");
@@ -25,13 +25,19 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     if (!sku || !barcode || !name) return;
     const parsedWeight = parseFloat(weight) || 0;
     const parsedLow = parseInt(lowStock) || 0;
-    const parsedOver = parseInt(overStock) || 0;
+    const parsedLimit = parseInt(totalProductLimit) || 100;
     const pRetail = parseFloat(priceRetail) || 0;
     const pDist = parseFloat(priceDistributor) || 0;
     const pVip = parseFloat(priceVip) || 0;
     const pCust = parseFloat(priceCustom) || 0;
     const qtyK = parseInt(stockKarachi) || 0;
     const qtyL = parseInt(stockLahore) || 0;
+
+    if (qtyK + qtyL > parsedLimit) {
+      alert(`Validation Error: The sum of Karachi Depot (${qtyK}) and Lahore Terminal (${qtyL}) stocks is ${qtyK + qtyL}, which exceeds the Total Product Limit of ${parsedLimit}.`);
+      return;
+    }
+
     const newProdId = `p-${Date.now()}`;
     const newProduct = {
       product_id: newProdId,
@@ -45,7 +51,8 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
       weight: parsedWeight,
       status: "ACTIVE",
       low_stock_threshold: parsedLow,
-      overstock_threshold: parsedOver,
+      overstock_threshold: parsedLimit, // Keep synchronized for compatibility
+      total_product_limit: parsedLimit,
       dead_stock_days: 90,
       prices: {
         RETAIL: pRetail,
@@ -295,14 +302,14 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
               )
             ] }),
             /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Overstock" }),
+              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Total Limit" }),
               /* @__PURE__ */ jsx(
                 "input",
                 {
                   type: "number",
                   className: "input-field py-1.5 text-xs",
-                  value: overStock,
-                  onChange: (e) => setOverStock(e.target.value)
+                  value: totalProductLimit,
+                  onChange: (e) => setTotalProductLimit(e.target.value)
                 }
               )
             ] })

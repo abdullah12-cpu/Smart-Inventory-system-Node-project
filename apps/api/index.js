@@ -56,10 +56,16 @@ async function initDb() {
         low_stock_threshold INTEGER,
         overstock_threshold INTEGER,
         dead_stock_days INTEGER,
+        total_product_limit INTEGER DEFAULT 100,
         prices JSONB NOT NULL,
         inventory JSONB NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    // Migrate existing DB if needed
+    await client.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS total_product_limit INTEGER DEFAULT 100;
     `);
 
     // Create orders table
@@ -378,6 +384,7 @@ app.get('/api/products', async (req, res) => {
       low_stock_threshold: row.low_stock_threshold || 0,
       overstock_threshold: row.overstock_threshold || 0,
       dead_stock_days: row.dead_stock_days || 0,
+      total_product_limit: row.total_product_limit || 100,
       prices: typeof row.prices === 'string' ? JSON.parse(row.prices) : row.prices,
       inventory: typeof row.inventory === 'string' ? JSON.parse(row.inventory) : row.inventory
     }));
@@ -395,13 +402,24 @@ app.post('/api/products', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Missing product ID, SKU, or name.' });
   }
 
+  // Formula validation: Sum of warehouse quantities cannot exceed total_product_limit
+  const inventory = typeof prod.inventory === 'string' ? JSON.parse(prod.inventory) : (prod.inventory || []);
+  const totalQty = inventory.reduce((sum, item) => sum + parseInt(item.quantity || 0), 0);
+  const limit = parseInt(prod.total_product_limit || 100);
+  if (totalQty > limit) {
+    return res.status(400).json({ 
+      success: false, 
+      message: `Validation failed: The sum of warehouse stock quantities (${totalQty}) cannot exceed the total product limit of ${limit}.` 
+    });
+  }
+
   try {
     await pool.query(
       `INSERT INTO products (
         product_id, sku, barcode, product_name, short_description, brand, 
         category, unit, weight, status, low_stock_threshold, overstock_threshold, 
-        dead_stock_days, prices, inventory
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        dead_stock_days, total_product_limit, prices, inventory
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       ON CONFLICT (sku) DO UPDATE SET 
         barcode = EXCLUDED.barcode,
         product_name = EXCLUDED.product_name,
@@ -414,6 +432,7 @@ app.post('/api/products', async (req, res) => {
         low_stock_threshold = EXCLUDED.low_stock_threshold,
         overstock_threshold = EXCLUDED.overstock_threshold,
         dead_stock_days = EXCLUDED.dead_stock_days,
+        total_product_limit = EXCLUDED.total_product_limit,
         prices = EXCLUDED.prices,
         inventory = EXCLUDED.inventory`,
       [
@@ -430,6 +449,7 @@ app.post('/api/products', async (req, res) => {
         prod.low_stock_threshold || 0,
         prod.overstock_threshold || 0,
         prod.dead_stock_days || 0,
+        limit,
         JSON.stringify(prod.prices || {}),
         JSON.stringify(prod.inventory || [])
       ]
