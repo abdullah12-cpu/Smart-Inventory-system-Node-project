@@ -12,7 +12,8 @@ import {
   ChevronDown,
   Plus,
   MapPin,
-  Database
+  Database,
+  Receipt
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/data";
@@ -128,7 +129,7 @@ export default function AdminPortal({ onLogout }) {
     if (activeTab === "suppliers" && !canAccessSuppliers) {
       setActiveTab("dashboard");
     }
-    if (activeTab === "orders" && !canAccessBilling) {
+    if ((activeTab === "orders" || activeTab === "billing") && !canAccessBilling) {
       setActiveTab("dashboard");
     }
   }, [currentUser.role_name, activeTab, canAccessSuppliers, canAccessBilling]);
@@ -250,7 +251,18 @@ export default function AdminPortal({ onLogout }) {
             className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "orders" ? "active" : ""}`,
             children: [
               /* @__PURE__ */ jsx(Database, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "Orders & Ledgers" })
+              /* @__PURE__ */ jsx("span", { children: "Orders Ledger" })
+            ]
+          }
+        ),
+        canAccessBilling && /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setActiveTab("billing"),
+            className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "billing" ? "active" : ""}`,
+            children: [
+              /* @__PURE__ */ jsx(Receipt, { size: 18 }),
+              /* @__PURE__ */ jsx("span", { children: "Billing & Reconcile" })
             ]
           }
         ),
@@ -1325,109 +1337,200 @@ export default function AdminPortal({ onLogout }) {
                 ] }) })
               ] })
             ] });
-          })(),
+          })()
+        ] }),
+        activeTab === "billing" && /* @__PURE__ */ jsxs("div", { className: "page-container animate-cross-fade flex flex-col gap-6", children: [
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx(
+              "h1",
+              {
+                className: "text-2xl font-bold text-[#0F172A]",
+                style: { fontFamily: "Outfit, sans-serif" },
+                children: "Billing & Reconciliations"
+              }
+            ),
+            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Reconcile cash allocations, check status of pending invoices, and review reconciled payment logs." })
+          ] }),
           /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-6", children: [
-            /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm lg:col-span-1 flex flex-col gap-4", children: [
-              /* @__PURE__ */ jsxs("div", { children: [
-                /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Simulate Payment Allocation" }),
-                /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: "Allocate cash transfers, checks or mobile wallet transactions to outstanding B2B invoices" })
+            /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden lg:col-span-2 flex flex-col", children: [
+              /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
+                /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Receivable Invoices" }),
+                /* @__PURE__ */ jsx(
+                  Badge,
+                  {
+                    text: `${invoices.length} Invoices`,
+                    variant: "neutral"
+                  }
+                )
               ] }),
-              /* @__PURE__ */ jsxs(
-                "form",
-                {
-                  onSubmit: handleRecordAllocationSubmit,
-                  className: "flex flex-col gap-3",
-                  children: [
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Select Open Invoice" }),
-                      /* @__PURE__ */ jsx(
-                        "select",
-                        {
-                          className: "input-field py-2 text-xs",
-                          value: allocInvoiceId,
-                          onChange: (e) => setAllocInvoiceId(e.target.value),
-                          required: true,
-                          children: invoices.filter((inv) => inv.status !== "PAID").map((inv) => /* @__PURE__ */ jsxs("option", { value: inv.invoice_id, children: [
-                            inv.invoice_number,
-                            " (Unpaid:",
-                            " ",
-                            formatCurrency(
-                              inv.total_amount - inv.amount_paid
-                            ),
-                            ")"
-                          ] }, inv.invoice_id))
-                        }
-                      )
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-2", children: [
+              /* @__PURE__ */ jsx("div", { className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
+                /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
+                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Invoice No" }),
+                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Status" }),
+                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Total" }),
+                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Payment Allocation" }),
+                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Late Probability" })
+                ] }) }),
+                /* @__PURE__ */ jsx("tbody", { children: invoices.length === 0 ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx(
+                  "td",
+                  {
+                    colSpan: 5,
+                    className: "text-center py-8 text-xs text-[#94A3B8] font-medium",
+                    children: "No invoices match filter."
+                  }
+                ) }) : invoices.map((inv) => {
+                  const allocationPct = inv.total_amount > 0 ? inv.amount_paid / inv.total_amount * 100 : 0;
+                  return /* @__PURE__ */ jsxs(
+                    "tr",
+                    {
+                      className: "data-row border-b border-[#E2E8F0]",
+                      children: [
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", { children: [
+                          /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: inv.invoice_number }),
+                          /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#94A3B8] mt-0.5", children: [
+                            "Due: ",
+                            formatDate(inv.due_date)
+                          ] })
+                        ] }) }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(
+                          InvoiceStatusBadge,
+                          {
+                            status: inv.status
+                          }
+                        ) }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(inv.total_amount) }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", { className: "w-[100px]", children: [
+                          /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-[9px] text-[#64748B] font-bold mb-0.5", children: [
+                            /* @__PURE__ */ jsx("span", { children: "Paid:" }),
+                            /* @__PURE__ */ jsxs("span", { children: [
+                              Math.round(allocationPct),
+                              "%"
+                            ] })
+                          ] }),
+                          /* @__PURE__ */ jsx("div", { className: "h-1 bg-slate-100 rounded-full overflow-hidden", children: /* @__PURE__ */ jsx(
+                            "div",
+                            {
+                              className: "h-full bg-emerald-500 rounded-full transition-all duration-500",
+                              style: {
+                                width: `${allocationPct}%`
+                              }
+                            }
+                          ) })
+                        ] }) }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(
+                          LatePaymentRiskBadge,
+                          {
+                            probability: inv.late_payment_probability
+                          }
+                        ) })
+                      ]
+                    },
+                    inv.invoice_id
+                  );
+                }) })
+              ] }) }),
+              /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm lg:col-span-1 flex flex-col gap-4", children: [
+                /* @__PURE__ */ jsxs("div", { children: [
+                  /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Simulate Payment Allocation" }),
+                  /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: "Allocate cash transfers, checks or mobile wallet transactions to outstanding B2B invoices" })
+                ] }),
+                /* @__PURE__ */ jsxs(
+                  "form",
+                  {
+                    onSubmit: handleRecordAllocationSubmit,
+                    className: "flex flex-col gap-3",
+                    children: [
                       /* @__PURE__ */ jsxs("div", { children: [
-                        /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Method" }),
-                        /* @__PURE__ */ jsxs(
+                        /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Select Open Invoice" }),
+                        /* @__PURE__ */ jsx(
                           "select",
                           {
                             className: "input-field py-2 text-xs",
-                            value: allocMethod,
-                            onChange: (e) => setAllocMethod(e.target.value),
+                            value: allocInvoiceId,
+                            onChange: (e) => setAllocInvoiceId(e.target.value),
                             required: true,
-                            children: [
-                              /* @__PURE__ */ jsx("option", { value: "JAZZCASH", children: "JazzCash" }),
-                              /* @__PURE__ */ jsx("option", { value: "EASYPAISA", children: "EasyPaisa" }),
-                              /* @__PURE__ */ jsx("option", { value: "BANK_TRANSFER", children: "Bank Transfer" }),
-                              /* @__PURE__ */ jsx("option", { value: "CARD", children: "Credit Card" })
-                            ]
+                            children: invoices.filter((inv) => inv.status !== "PAID").map((inv) => /* @__PURE__ */ jsxs("option", { value: inv.invoice_id, children: [
+                              inv.invoice_number,
+                              " (Unpaid:",
+                              " ",
+                              formatCurrency(
+                                inv.total_amount - inv.amount_paid
+                              ),
+                              ")"
+                            ] }, inv.invoice_id))
                           }
                         )
                       ] }),
+                      /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-2", children: [
+                        /* @__PURE__ */ jsxs("div", { children: [
+                          /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Method" }),
+                          /* @__PURE__ */ jsxs(
+                            "select",
+                            {
+                              className: "input-field py-2 text-xs",
+                              value: allocMethod,
+                              onChange: (e) => setAllocMethod(e.target.value),
+                              required: true,
+                              children: [
+                                /* @__PURE__ */ jsx("option", { value: "JAZZCASH", children: "JazzCash" }),
+                                /* @__PURE__ */ jsx("option", { value: "EASYPAISA", children: "EasyPaisa" }),
+                                /* @__PURE__ */ jsx("option", { value: "BANK_TRANSFER", children: "Bank Transfer" }),
+                                /* @__PURE__ */ jsx("option", { value: "CARD", children: "Credit Card" })
+                              ]
+                            }
+                          )
+                        ] }),
+                        /* @__PURE__ */ jsxs("div", { children: [
+                          /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Allocation (Rs)" }),
+                          /* @__PURE__ */ jsx(
+                            "input",
+                            {
+                              type: "number",
+                              className: "input-field py-2 text-xs",
+                              value: allocAmount,
+                              onChange: (e) => setAllocAmount(e.target.value),
+                              required: true
+                            }
+                          )
+                        ] })
+                      ] }),
                       /* @__PURE__ */ jsxs("div", { children: [
-                        /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Allocation (Rs)" }),
+                        /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Transaction Ref Code" }),
                         /* @__PURE__ */ jsx(
                           "input",
                           {
-                            type: "number",
+                            type: "text",
                             className: "input-field py-2 text-xs",
-                            value: allocAmount,
-                            onChange: (e) => setAllocAmount(e.target.value),
+                            value: allocRef,
+                            onChange: (e) => setAllocRef(e.target.value),
                             required: true
                           }
                         )
-                      ] })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Transaction Ref Code" }),
+                      ] }),
                       /* @__PURE__ */ jsx(
-                        "input",
+                        "button",
                         {
-                          type: "text",
-                          className: "input-field py-2 text-xs",
-                          value: allocRef,
-                          onChange: (e) => setAllocRef(e.target.value),
-                          required: true
+                          type: "submit",
+                          className: "w-full py-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold rounded-lg transition-colors cursor-pointer border-0",
+                          children: "Submit Allocation & Reconcile"
                         }
                       )
-                    ] }),
-                    /* @__PURE__ */ jsx(
-                      "button",
-                      {
-                        type: "submit",
-                        className: "w-full py-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold rounded-lg transition-colors cursor-pointer border-0",
-                        children: "Submit Allocation & Reconcile"
-                      }
-                    )
-                  ]
-                }
-              ),
-              allocSuccess && /* @__PURE__ */ jsxs("div", { className: "bg-emerald-50 border border-emerald-300/40 p-3 rounded-lg flex items-start gap-2 animate-fade-up text-emerald-800 text-[11px] font-medium leading-normal", children: [
-                /* @__PURE__ */ jsx(
-                  Check,
-                  {
-                    size: 14,
-                    className: "text-[#10B981] flex-shrink-0 mt-0.5"
+                    ]
                   }
                 ),
-                /* @__PURE__ */ jsx("span", { children: allocSuccess })
+                allocSuccess && /* @__PURE__ */ jsxs("div", { className: "bg-emerald-50 border border-emerald-300/40 p-3 rounded-lg flex items-start gap-2 animate-fade-up text-emerald-800 text-[11px] font-medium leading-normal", children: [
+                  /* @__PURE__ */ jsx(
+                    Check,
+                    {
+                      size: 14,
+                      className: "text-[#10B981] flex-shrink-0 mt-0.5"
+                    }
+                  ),
+                  /* @__PURE__ */ jsx("span", { children: allocSuccess })
+                ] })
               ] })
             ] }),
-            /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden lg:col-span-2 flex flex-col", children: [
+            /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
               /* @__PURE__ */ jsx("div", { className: "px-6 py-4 border-b border-[#E2E8F0]", children: /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A]", children: "Settlement & Reconciled Payments Logs" }) }),
               /* @__PURE__ */ jsx("div", { className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
                 /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
