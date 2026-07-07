@@ -543,13 +543,7 @@ export default function DistributorPortal({ onLogout }) {
                     }
                   ) }),
                   /* @__PURE__ */ jsx("div", { className: "flex justify-between items-start", children: /* @__PURE__ */ jsxs("div", { children: [
-                    /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap gap-1.5 items-center", children: [
-                      /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: p.category }),
-                      /* @__PURE__ */ jsxs("span", { className: "text-[10px] font-bold text-[#4F46E5] bg-[#EEF2FF] px-2 py-0.5 rounded uppercase tracking-wider", children: [
-                        "Min. Wholesale: ",
-                        p.min_wholesale_qty || 1
-                      ] })
-                    ] }),
+                    /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: p.category }),
                     /* @__PURE__ */ jsx("h4", { className: "font-bold text-[#0F172A] mt-2 text-sm", children: p.product_name }),
                     /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-mono mt-1", children: [
                       "Product Code: ",
@@ -570,12 +564,12 @@ export default function DistributorPortal({ onLogout }) {
                       ] })
                     ] }),
                     /* @__PURE__ */ jsxs("div", { className: "text-right flex flex-col items-end gap-1", children: [
-                      /* @__PURE__ */ jsxs("div", { children: [
-                        /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#64748B] uppercase font-bold tracking-wider mr-1.5", children: "Stock:" }),
+                      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1", children: [
+                        /* @__PURE__ */ jsx("span", { className: "text-[10px] text-[#64748B] font-bold uppercase tracking-wider", children: "STOCK:" }),
                         /* @__PURE__ */ jsxs(
                           "span",
                           {
-                            className: `text-xs font-bold ${availableQty > 100 ? "text-emerald-600" : "text-amber-600"}`,
+                            className: "text-xs font-extrabold text-[#EA580C]",
                             children: [
                               availableQty.toLocaleString(),
                               " ",
@@ -584,9 +578,19 @@ export default function DistributorPortal({ onLogout }) {
                           }
                         )
                       ] }),
-                      /* @__PURE__ */ jsxs("div", { className: "bg-orange-50 text-orange-600 border border-orange-100 rounded px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide inline-flex items-center mt-0.5", children: [
-                        "Min MOQ: ",
-                        p.min_wholesale_qty || 1
+                      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1", children: [
+                        /* @__PURE__ */ jsx("span", { className: "text-[10px] text-[#64748B] font-bold uppercase tracking-wider", children: "MIN MOQ:" }),
+                        /* @__PURE__ */ jsxs(
+                          "span",
+                          {
+                            className: "text-xs font-extrabold text-[#EA580C]",
+                            children: [
+                              p.min_wholesale_qty || 1,
+                              " ",
+                              p.unit
+                            ]
+                          }
+                        )
                       ] })
                     ] })
                   ] }),
