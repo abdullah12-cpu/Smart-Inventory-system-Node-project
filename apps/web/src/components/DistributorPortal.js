@@ -1,5 +1,5 @@
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Package,
   FileText,
@@ -99,7 +99,7 @@ function QuoteStatusBadge({ status }) {
   );
 }
 export default function DistributorPortal({ onLogout }) {
-  const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices } = useStore();
+  const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices, recordPaymentAllocation, currentUser } = useStore();
   const [activeTab, setActiveTab] = useState("catalog");
   const [quoteSearch, setQuoteSearch] = useState("");
   const [quoteStatusFilter, setQuoteStatusFilter] = useState("all");
@@ -107,6 +107,55 @@ export default function DistributorPortal({ onLogout }) {
   const [orderStatusFilter, setOrderStatusFilter] = useState("all");
   const [catalogSearch, setCatalogSearch] = useState("");
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentInvoiceId, setPaymentInvoiceId] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("BANK_TRANSFER");
+  const [paymentRef, setPaymentRef] = useState("");
+  const [paymentSuccess, setPaymentSuccess] = useState("");
+
+  useEffect(() => {
+    const openInvoices = invoices.filter((i) => i.status !== "PAID");
+    if (openInvoices.length > 0 && !paymentInvoiceId) {
+      setPaymentInvoiceId(openInvoices[0].invoice_id);
+    }
+  }, [invoices, paymentInvoiceId]);
+
+  useEffect(() => {
+    if (paymentInvoiceId) {
+      const selectedInv = invoices.find((i) => i.invoice_id === paymentInvoiceId);
+      if (selectedInv) {
+        const remaining = selectedInv.total_amount - selectedInv.amount_paid;
+        setPaymentAmount(remaining.toString());
+        setPaymentRef(`TXN-${Math.floor(1e5 + Math.random() * 9e5)}`);
+      }
+    }
+  }, [paymentInvoiceId, invoices]);
+
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault();
+    const amt = parseFloat(paymentAmount);
+    if (isNaN(amt) || amt <= 0 || !paymentInvoiceId) return;
+
+    const name = currentUser
+      ? `${currentUser.first_name} ${currentUser.last_name}`.trim() || "Distributor Partner"
+      : "Distributor Partner";
+
+    try {
+      await recordPaymentAllocation(paymentInvoiceId, amt, paymentMethod, paymentRef, name);
+      setPaymentSuccess(`Payment of Rs ${amt.toLocaleString()} recorded and reconciled successfully.`);
+      setTimeout(() => {
+        setPaymentSuccess("");
+        setPaymentModalOpen(false);
+      }, 3000);
+    } catch (err) {
+      alert("Failed to submit payment proof.");
+    }
+  };
+
+  const outstandingBalance = invoices ? invoices.reduce((sum, inv) => sum + (inv.status !== "PAID" ? inv.total_amount - inv.amount_paid : 0), 0) : 0;
+  const creditLimit = 2500000;
+  const remainingCredit = creditLimit - outstandingBalance;
+
   const [quoteDetailsOpen, setQuoteDetailsOpen] = useState(false);
   const [activeQuote, setActiveQuote] = useState(null);
   const [downloading, setDownloading] = useState(false);
@@ -1064,28 +1113,86 @@ export default function DistributorPortal({ onLogout }) {
         open: paymentModalOpen,
         onClose: () => setPaymentModalOpen(false),
         title: "Submit Payment Proof",
-        children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-5", children: [
-          /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] leading-relaxed", children: "Upload your bank transfer receipt or cheque image to notify Accounts for reconciliation." }),
-          /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
+        children: /* @__PURE__ */ jsxs("form", { onSubmit: handlePaymentSubmit, className: "flex flex-col gap-5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] leading-relaxed", children: "Submit transaction reference and amount to reconcile your outstanding invoice with Accounts." }),
+          paymentSuccess && /* @__PURE__ */ jsx("div", { className: "bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs p-3 rounded-lg font-medium", children: paymentSuccess }),
+          !paymentSuccess && /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
             /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2", children: "Invoice Reference" }),
-              /* @__PURE__ */ jsxs("select", { className: "w-full px-3 py-2.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-blue-500 shadow-sm", children: [
-                /* @__PURE__ */ jsxs("option", { value: "INV-2026-00003", children: [
-                  "INV-2026-00003 - ",
-                  formatCurrency(1368800)
-                ] }),
-                /* @__PURE__ */ jsxs("option", { value: "INV-2026-00004", children: [
-                  "INV-2026-00004 - ",
-                  formatCurrency(98e4)
-                ] })
-              ] })
+              /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2", children: "Select Open Invoice" }),
+              invoices.filter((i) => i.status !== "PAID").length === 0 ? (
+                /* @__PURE__ */ jsx("p", { className: "text-xs text-slate-500 font-semibold italic", children: "No outstanding invoices to pay." })
+              ) : (
+                /* @__PURE__ */ jsx(
+                  "select",
+                  {
+                    className: "w-full px-3 py-2.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-blue-500 shadow-sm",
+                    value: paymentInvoiceId,
+                    onChange: (e) => setPaymentInvoiceId(e.target.value),
+                    required: true,
+                    children: invoices.filter((i) => i.status !== "PAID").map((inv) => /* @__PURE__ */ jsxs("option", { value: inv.invoice_id, children: [
+                      inv.invoice_number,
+                      " (Unpaid: ",
+                      formatCurrency(inv.total_amount - inv.amount_paid),
+                      ")"
+                    ] }, inv.invoice_id))
+                  }
+                )
+              )
             ] }),
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2", children: "Upload Receipt" }),
-              /* @__PURE__ */ jsxs("div", { className: "border-2 border-dashed border-[#CBD5E1] rounded-xl p-8 flex flex-col items-center justify-center bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer", children: [
-                /* @__PURE__ */ jsx(UploadCloud, { size: 28, className: "text-blue-500 mb-3" }),
-                /* @__PURE__ */ jsx("span", { className: "text-xs font-bold text-blue-600", children: "Click to browse" }),
-                /* @__PURE__ */ jsx("span", { className: "text-[10px] text-[#94A3B8] mt-1", children: "PDF, JPG, PNG up to 5MB" })
+            invoices.filter((i) => i.status !== "PAID").length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
+                /* @__PURE__ */ jsxs("div", { children: [
+                  /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2", children: "Payment Method" }),
+                  /* @__PURE__ */ jsxs(
+                    "select",
+                    {
+                      className: "w-full px-3 py-2.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-blue-500 shadow-sm",
+                      value: paymentMethod,
+                      onChange: (e) => setPaymentMethod(e.target.value),
+                      required: true,
+                      children: [
+                        /* @__PURE__ */ jsx("option", { value: "BANK_TRANSFER", children: "Bank Transfer" }),
+                        /* @__PURE__ */ jsx("option", { value: "CARD", children: "Credit Card" }),
+                        /* @__PURE__ */ jsx("option", { value: "JAZZCASH", children: "JazzCash" }),
+                        /* @__PURE__ */ jsx("option", { value: "EASYPAISA", children: "EasyPaisa" })
+                      ]
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ jsxs("div", { children: [
+                  /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2", children: "Amount to Pay (Rs)" }),
+                  /* @__PURE__ */ jsx(
+                    "input",
+                    {
+                      type: "number",
+                      className: "w-full px-3 py-2.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-blue-500 shadow-sm",
+                      value: paymentAmount,
+                      onChange: (e) => setPaymentAmount(e.target.value),
+                      required: true
+                    }
+                  )
+                ] })
+              ] }),
+              /* @__PURE__ */ jsxs("div", { children: [
+                /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2", children: "Transaction Reference ID" }),
+                /* @__PURE__ */ jsx(
+                  "input",
+                  {
+                    type: "text",
+                    className: "w-full px-3 py-2.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-blue-500 shadow-sm",
+                    value: paymentRef,
+                    onChange: (e) => setPaymentRef(e.target.value),
+                    required: true
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ jsxs("div", { children: [
+                /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2", children: "Upload Receipt Proof" }),
+                /* @__PURE__ */ jsxs("div", { className: "border-2 border-dashed border-[#CBD5E1] rounded-xl p-8 flex flex-col items-center justify-center bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer", children: [
+                  /* @__PURE__ */ jsx(UploadCloud, { size: 28, className: "text-blue-500 mb-3" }),
+                  /* @__PURE__ */ jsx("span", { className: "text-xs font-bold text-blue-600", children: "Click to browse" }),
+                  /* @__PURE__ */ jsx("span", { className: "text-[10px] text-[#94A3B8] mt-1", children: "PDF, JPG, PNG up to 5MB" })
+                ] })
               ] })
             ] })
           ] }),
@@ -1093,18 +1200,16 @@ export default function DistributorPortal({ onLogout }) {
             /* @__PURE__ */ jsx(
               "button",
               {
+                type: "button",
                 onClick: () => setPaymentModalOpen(false),
                 className: "px-4 py-2 bg-white border border-[#E2E8F0] text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer",
                 children: "Cancel"
               }
             ),
-            /* @__PURE__ */ jsx(
+            invoices.filter((i) => i.status !== "PAID").length > 0 && !paymentSuccess && /* @__PURE__ */ jsx(
               "button",
               {
-                onClick: () => {
-                  setPaymentModalOpen(false);
-                  alert("Payment proof submitted successfully for verification.");
-                },
+                type: "submit",
                 className: "px-4 py-2 bg-blue-600 border-0 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors cursor-pointer shadow-sm active:scale-95",
                 children: "Submit Proof"
               }
@@ -1113,6 +1218,7 @@ export default function DistributorPortal({ onLogout }) {
         ] })
       }
     ),
+    
     /* @__PURE__ */ jsx(
       Modal,
       {
@@ -1233,6 +1339,20 @@ export default function DistributorPortal({ onLogout }) {
               draftItems.length === 0 && /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 3, className: "text-center py-6 text-[#94A3B8]", children: "Your draft is empty." }) })
             ] })
           ] }) }),
+          (() => {
+            const total = draftItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+            if (total > remainingCredit) {
+              return /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 text-red-800 text-[11px] p-3.5 rounded-lg flex items-start gap-2.5 animate-fade-up", children: [
+                /* @__PURE__ */ jsx(AlertCircle, { size: 14, className: "text-red-600 flex-shrink-0 mt-0.5" }),
+                /* @__PURE__ */ jsxs("span", { children: [
+                  "This order exceeds your remaining credit limit of ",
+                  formatCurrency(remainingCredit),
+                  ". Please request a limit increase or settle outstanding invoices."
+                ] })
+              ] });
+            }
+            return null;
+          })(),
           /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center pt-2", children: [
             /* @__PURE__ */ jsxs("div", { className: "text-left", children: [
               /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#64748B] font-bold uppercase tracking-wider mb-1", children: "Estimated Total" }),
@@ -1255,7 +1375,7 @@ export default function DistributorPortal({ onLogout }) {
               /* @__PURE__ */ jsx(
                 "button",
                 {
-                  disabled: draftItems.length === 0,
+                  disabled: draftItems.length === 0 || draftItems.reduce((sum, item) => sum + item.price * item.qty, 0) > remainingCredit,
                   onClick: async () => {
                     const total = draftItems.reduce(
                       (sum, item) => sum + item.price * item.qty,

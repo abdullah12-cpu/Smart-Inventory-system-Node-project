@@ -217,8 +217,8 @@ export function StoreProvider({ children }) {
     [products, currentUser]
   );
   const recordPaymentAllocation = useCallback(
-    async (invoiceId, amount, method, reference) => {
-      let customerName = "B2B Client";
+    async (invoiceId, amount, method, reference, customCustomerName = undefined) => {
+      let customerName = customCustomerName || "B2B Client";
       let invoiceNo = "";
       let targetInvoice = null;
 
