@@ -35,7 +35,22 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
   const [priceCustom, setPriceCustom] = useState("9500");
   const [stockKarachi, setStockKarachi] = useState("20");
   const [stockLahore, setStockLahore] = useState("15");
-  const [imageUrl, setImageUrl] = useState("https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop");
+  const [imageUrl, setImageUrl] = useState("");
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert("File size too large. Please select an image under 2MB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageUrl(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -187,7 +202,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     setIsCreatingCategory(false);
     setStockKarachi("20");
     setStockLahore("15");
-    setImageUrl("https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop");
+    setImageUrl("");
   };
   return /* @__PURE__ */ jsx(Modal, { open, onClose, title: "Register New Product", children: /* @__PURE__ */ jsxs(
     "form",
@@ -310,17 +325,44 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
           ] })
         ] }),
         /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Product Image URL" }),
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              type: "url",
-              className: "input-field py-2 text-xs",
-              placeholder: "e.g. https://images.unsplash.com/photo-...",
-              value: imageUrl,
-              onChange: (e) => setImageUrl(e.target.value)
-            }
-          )
+          /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Product Image Upload" }),
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 border border-[#E2E8F0] p-3 rounded-lg bg-slate-50/50", children: [
+            imageUrl ? /* @__PURE__ */ jsxs("div", { className: "relative w-16 h-16 rounded border border-[#E2E8F0] overflow-hidden bg-white flex-shrink-0", children: [
+              /* @__PURE__ */ jsx("img", { src: imageUrl, alt: "Preview", className: "w-full h-full object-cover" }),
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => setImageUrl(""),
+                  className: "absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center border-0 text-[8px] font-bold cursor-pointer hover:bg-red-600 shadow-sm",
+                  children: "×"
+                }
+              )
+            ] }) : /* @__PURE__ */ jsxs("div", { className: "w-16 h-16 rounded border border-dashed border-[#CBD5E1] bg-white flex flex-col items-center justify-center text-[#94A3B8] flex-shrink-0", children: [
+              /* @__PURE__ */ jsx("span", { className: "text-[10px]", children: "No Image" })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex-1", children: [
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "file",
+                  accept: "image/*",
+                  onChange: handleFileChange,
+                  className: "hidden",
+                  id: "product-image-file-input"
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                "label",
+                {
+                  htmlFor: "product-image-file-input",
+                  className: "inline-flex items-center px-3 py-1.5 bg-[#4F46E5] hover:bg-[#4338CA] text-white text-[10px] font-bold rounded cursor-pointer transition-colors shadow-sm",
+                  children: imageUrl ? "Change Image" : "Upload File"
+                }
+              ),
+              /* @__PURE__ */ jsx("p", { className: "text-[9px] text-[#94A3B8] mt-1", children: "PNG, JPG, or WEBP up to 2MB" })
+            ] })
+          ] })
         ] }),
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Short Description" }),

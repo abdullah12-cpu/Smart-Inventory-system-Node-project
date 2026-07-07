@@ -66,7 +66,8 @@ async function initDb() {
     // Migrate existing DB if needed
     await client.query(`
       ALTER TABLE products ADD COLUMN IF NOT EXISTS total_product_limit INTEGER DEFAULT 100;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
+      ALTER TABLE products ALTER COLUMN image_url TYPE TEXT;
     `);
 
     // Create orders table
