@@ -541,7 +541,9 @@ export function StoreProvider({ children }) {
           body: JSON.stringify(newProd),
         });
         if (!response.ok) {
-          console.error("Failed to persist product to database");
+          const errMsg = await response.text();
+          console.error("Failed to persist product to database:", errMsg);
+          alert("Failed to save product in database: " + errMsg);
         }
       } catch (err) {
         console.error("Error creating product:", err);

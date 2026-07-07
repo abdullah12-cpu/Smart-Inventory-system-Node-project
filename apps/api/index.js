@@ -7,7 +7,8 @@ const app = express();
 const port = process.env.PORT || 5001;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
 // Initialize Database Table and Seed Predefined Accounts
 async function initDb() {
@@ -388,7 +389,8 @@ app.get('/api/products', async (req, res) => {
       dead_stock_days: row.dead_stock_days || 0,
       total_product_limit: row.total_product_limit || 100,
       prices: typeof row.prices === 'string' ? JSON.parse(row.prices) : row.prices,
-      inventory: typeof row.inventory === 'string' ? JSON.parse(row.inventory) : row.inventory
+      inventory: typeof row.inventory === 'string' ? JSON.parse(row.inventory) : row.inventory,
+      image_url: row.image_url || ''
     }));
     return res.json(products);
   } catch (err) {
