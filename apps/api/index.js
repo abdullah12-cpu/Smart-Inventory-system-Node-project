@@ -58,6 +58,7 @@ async function initDb() {
         overstock_threshold INTEGER,
         dead_stock_days INTEGER,
         total_product_limit INTEGER DEFAULT 100,
+        min_wholesale_qty INTEGER DEFAULT 1,
         prices JSONB NOT NULL,
         inventory JSONB NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -69,6 +70,7 @@ async function initDb() {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS total_product_limit INTEGER DEFAULT 100;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
       ALTER TABLE products ALTER COLUMN image_url TYPE TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS min_wholesale_qty INTEGER DEFAULT 1;
     `);
 
     // Create orders table
@@ -388,6 +390,7 @@ app.get('/api/products', async (req, res) => {
       overstock_threshold: row.overstock_threshold || 0,
       dead_stock_days: row.dead_stock_days || 0,
       total_product_limit: row.total_product_limit || 100,
+      min_wholesale_qty: parseInt(row.min_wholesale_qty || 1),
       prices: typeof row.prices === 'string' ? JSON.parse(row.prices) : row.prices,
       inventory: typeof row.inventory === 'string' ? JSON.parse(row.inventory) : row.inventory,
       image_url: row.image_url || ''
@@ -422,8 +425,8 @@ app.post('/api/products', async (req, res) => {
       `INSERT INTO products (
         product_id, sku, barcode, product_name, short_description, brand, 
         category, unit, weight, status, low_stock_threshold, overstock_threshold, 
-        dead_stock_days, total_product_limit, prices, inventory, image_url
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        dead_stock_days, total_product_limit, prices, inventory, image_url, min_wholesale_qty
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       ON CONFLICT (sku) DO UPDATE SET 
         barcode = EXCLUDED.barcode,
         product_name = EXCLUDED.product_name,
@@ -439,7 +442,8 @@ app.post('/api/products', async (req, res) => {
         total_product_limit = EXCLUDED.total_product_limit,
         prices = EXCLUDED.prices,
         inventory = EXCLUDED.inventory,
-        image_url = EXCLUDED.image_url`,
+        image_url = EXCLUDED.image_url,
+        min_wholesale_qty = EXCLUDED.min_wholesale_qty`,
       [
         prod.product_id,
         prod.sku,
@@ -457,7 +461,8 @@ app.post('/api/products', async (req, res) => {
         limit,
         JSON.stringify(prod.prices || {}),
         JSON.stringify(prod.inventory || []),
-        prod.image_url || ''
+        prod.image_url || '',
+        parseInt(prod.min_wholesale_qty || 1)
       ]
     );
 

@@ -48,6 +48,7 @@ export default function ProductDrawer({ product, open, onClose }) {
   const [editRetailPrice, setEditRetailPrice] = useState(product.prices?.RETAIL || 0);
   const [editDistPrice, setEditDistPrice] = useState(product.prices?.DISTRIBUTOR || 0);
   const [editImageUrl, setEditImageUrl] = useState(product.image_url || "");
+  const [editMinWholesaleQty, setEditMinWholesaleQty] = useState(product.min_wholesale_qty || 1);
 
   const defaultCategories = ["Networking", "Compute Cards", "Fiber Optics", "UPS & Power"];
   const allCategories = Array.from(new Set([...defaultCategories, ...(products || []).map(p => p.category).filter(Boolean)]));
@@ -64,6 +65,7 @@ export default function ProductDrawer({ product, open, onClose }) {
       setEditRetailPrice(product.prices?.RETAIL || 0);
       setEditDistPrice(product.prices?.DISTRIBUTOR || 0);
       setEditImageUrl(product.image_url || "");
+      setEditMinWholesaleQty(product.min_wholesale_qty || 1);
       setIsCreatingCategory(false);
       setNewCategory("");
     }
@@ -130,6 +132,12 @@ export default function ProductDrawer({ product, open, onClose }) {
       return;
     }
 
+    const parsedMinWholesale = parseInt(editMinWholesaleQty);
+    if (isNaN(parsedMinWholesale) || parsedMinWholesale < 1) {
+      alert("Minimum Wholesale Quantity must be a positive number greater than or equal to 1.");
+      return;
+    }
+
     const finalCategory = isCreatingCategory ? newCategory.trim() : editCategory.trim();
     if (!finalCategory) {
       alert("Category cannot be empty.");
@@ -151,7 +159,8 @@ export default function ProductDrawer({ product, open, onClose }) {
         VIP: pDist,
         CUSTOM: pDist
       },
-      image_url: editImageUrl
+      image_url: editImageUrl,
+      min_wholesale_qty: parsedMinWholesale
     });
 
     if (updated) {
@@ -237,6 +246,7 @@ export default function ProductDrawer({ product, open, onClose }) {
               setEditRetailPrice(product.prices?.RETAIL || 0);
               setEditDistPrice(product.prices?.DISTRIBUTOR || 0);
               setEditImageUrl(product.image_url || "");
+              setEditMinWholesaleQty(product.min_wholesale_qty || 1);
               setIsCreatingCategory(false);
               setNewCategory("");
             },
@@ -349,7 +359,7 @@ export default function ProductDrawer({ product, open, onClose }) {
               })
             ] })
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
+          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-3", children: [
             /* @__PURE__ */ jsxs("div", { children: [
               /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Retail Price" }),
               /* @__PURE__ */ jsx("input", {
@@ -366,6 +376,16 @@ export default function ProductDrawer({ product, open, onClose }) {
                 className: "input-field py-2 text-xs",
                 value: editDistPrice,
                 onChange: (e) => setEditDistPrice(e.target.value)
+              })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Min. Wholesale Qty" }),
+              /* @__PURE__ */ jsx("input", {
+                type: "number",
+                min: "1",
+                className: "input-field py-2 text-xs",
+                value: editMinWholesaleQty,
+                onChange: (e) => setEditMinWholesaleQty(e.target.value)
               })
             ] })
           ] }),
@@ -429,7 +449,8 @@ export default function ProductDrawer({ product, open, onClose }) {
                   { label: "Brand", val: product.brand },
                   { label: "Category Group", val: product.category },
                   { label: "Base Unit", val: product.unit },
-                  { label: "Weight (kg)", val: `${product.weight.toFixed(2)} kg` }
+                  { label: "Weight (kg)", val: `${product.weight.toFixed(2)} kg` },
+                  { label: "Min. Wholesale Qty", val: `${product.min_wholesale_qty || 1} ${product.unit}` }
                 ]
               }
             ),

@@ -168,17 +168,42 @@ export default function DistributorPortal({ onLogout }) {
   const [counterValue, setCounterValue] = useState("");
   const [draftItems, setDraftItems] = useState([]);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
-  const handleAddToQuote = (productName, price) => {
+  const handleAddToQuote = (product) => {
+    const minQty = product.min_wholesale_qty || 1;
+    const availableQty = (product.inventory || []).reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+    
+    if (availableQty <= 0) {
+      alert("This product is currently out of stock.");
+      return;
+    }
+    
+    if (minQty > availableQty) {
+      alert(`Warning: The minimum wholesale quantity (${minQty}) is greater than the total available warehouse stock (${availableQty}).`);
+      return;
+    }
+
     setDraftItems((prev) => {
-      const existing = prev.find((item) => item.name === productName);
+      const existing = prev.find((item) => item.product_id === product.product_id);
       if (existing) {
+        const newQty = existing.qty + 1;
+        if (newQty > availableQty) {
+          alert(`Cannot add more. Only ${availableQty} units available in stock.`);
+          return prev;
+        }
         return prev.map(
-          (item) => item.name === productName ? { ...item, qty: item.qty + 1 } : item
+          (item) => item.product_id === product.product_id ? { ...item, qty: newQty } : item
         );
       }
-      return [...prev, { name: productName, price, qty: 1 }];
+      return [...prev, { 
+        product_id: product.product_id, 
+        name: product.product_name, 
+        price: product.prices.DISTRIBUTOR, 
+        qty: minQty, 
+        min_wholesale_qty: minQty,
+        available_qty: availableQty 
+      }];
     });
-    setAddToQuoteToast(`Added ${productName} to Quote Draft`);
+    setAddToQuoteToast(`Added ${product.product_name} (Qty: ${minQty}) to Quote Draft`);
     setTimeout(() => setAddToQuoteToast(""), 3e3);
   };
   const handleDownloadInvoices = () => {
@@ -498,7 +523,13 @@ export default function DistributorPortal({ onLogout }) {
                     }
                   ) }),
                   /* @__PURE__ */ jsx("div", { className: "flex justify-between items-start", children: /* @__PURE__ */ jsxs("div", { children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: p.category }),
+                    /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap gap-1.5 items-center", children: [
+                      /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: p.category }),
+                      /* @__PURE__ */ jsxs("span", { className: "text-[10px] font-bold text-[#4F46E5] bg-[#EEF2FF] px-2 py-0.5 rounded uppercase tracking-wider", children: [
+                        "Min. Wholesale: ",
+                        p.min_wholesale_qty || 1
+                      ] })
+                    ] }),
                     /* @__PURE__ */ jsx("h4", { className: "font-bold text-[#0F172A] mt-2 text-sm", children: p.product_name }),
                     /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-mono mt-1", children: [
                       "Product Code: ",
@@ -536,7 +567,7 @@ export default function DistributorPortal({ onLogout }) {
                   /* @__PURE__ */ jsx(
                     "button",
                     {
-                      onClick: () => handleAddToQuote(p.product_name, p.prices.DISTRIBUTOR),
+                      onClick: () => handleAddToQuote(p),
                       className: "mt-2 w-full py-2 bg-slate-50 border border-[#E2E8F0] text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-50 hover:border-blue-200 transition-colors cursor-pointer active:scale-[0.98]",
                       children: "Add to Quote Request"
                     }
@@ -1339,7 +1370,42 @@ export default function DistributorPortal({ onLogout }) {
                   className: "border-b border-[#E2E8F0] last:border-0 bg-white",
                   children: [
                     /* @__PURE__ */ jsx("td", { className: "px-4 py-3 font-medium text-[#0F172A]", children: item.name }),
-                    /* @__PURE__ */ jsx("td", { className: "px-4 py-3 text-center", children: item.qty }),
+                    /* @__PURE__ */ jsx("td", { className: "px-4 py-3 text-center", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-center gap-2", children: [
+                      /* @__PURE__ */ jsx("button", {
+                        onClick: () => {
+                          const newQty = Math.max(item.min_wholesale_qty || 1, item.qty - 1);
+                          if (newQty === item.qty) {
+                            alert(`Minimum wholesale requirement is ${item.min_wholesale_qty || 1} units.`);
+                          } else {
+                            setDraftItems(prev => prev.map(it => it.product_id === item.product_id ? { ...it, qty: newQty } : it));
+                          }
+                        },
+                        disabled: item.qty <= (item.min_wholesale_qty || 1),
+                        className: "w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold border-0 cursor-pointer disabled:opacity-30",
+                        children: "-"
+                      }),
+                      /* @__PURE__ */ jsx("span", { className: "font-mono font-bold text-[#0F172A] w-6 inline-block text-center", children: item.qty }),
+                      /* @__PURE__ */ jsx("button", {
+                        onClick: () => {
+                          const newQty = Math.min(item.available_qty || 9999, item.qty + 1);
+                          if (newQty === item.qty) {
+                            alert(`Only ${item.available_qty || 9999} units are available in stock.`);
+                          } else {
+                            setDraftItems(prev => prev.map(it => it.product_id === item.product_id ? { ...it, qty: newQty } : it));
+                          }
+                        },
+                        disabled: item.qty >= (item.available_qty || 9999),
+                        className: "w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold border-0 cursor-pointer disabled:opacity-30",
+                        children: "+"
+                      }),
+                      /* @__PURE__ */ jsx("button", {
+                        onClick: () => {
+                          setDraftItems(prev => prev.filter(it => it.product_id !== item.product_id));
+                        },
+                        className: "text-red-500 hover:text-red-700 font-semibold border-0 bg-transparent cursor-pointer ml-2 text-[9px] uppercase tracking-wider",
+                        children: "Remove"
+                      })
+                    ] }) }),
                     /* @__PURE__ */ jsx("td", { className: "px-4 py-3 text-right font-bold text-[#0F172A]", children: formatCurrency(item.price * item.qty) })
                   ]
                 },
