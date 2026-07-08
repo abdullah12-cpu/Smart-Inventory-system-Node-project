@@ -281,16 +281,45 @@ export default function DistributorPortal({ onLogout }) {
         const success = await updateQuotationStatus(activeQuote.quotation_id, "ACCEPTED");
         if (success) {
           const orderNumber = activeQuote.quotation_number.replace("QUO-", "ORD-");
-          const matchedOrder = orders.find(o => o.order_number === orderNumber);
+          let matchedOrder = orders.find(o => o.order_number === orderNumber);
           if (matchedOrder) {
             await fetch(`/api/orders/${matchedOrder.order_id}/status`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ status: "PROCESSING" })
             });
-            const ordRes = await fetch("/api/orders");
-            if (ordRes.ok) setOrders(await ordRes.json());
+          } else {
+            // Create a new B2B Order record since this quote was initiated as a custom B2B application
+            const orderPayload = {
+              order_id: `ord-${Date.now()}`,
+              order_number: orderNumber,
+              order_type: "B2B",
+              status: "PROCESSING",
+              subtotal: activeQuote.total_amount,
+              discount_total: 0,
+              tax_total: 0,
+              total_amount: activeQuote.total_amount,
+              currency: "PKR",
+              order_date: new Date().toISOString(),
+              items_summary: `B2B Order Conversion from ${activeQuote.quotation_number}`,
+              items: [
+                {
+                  product_id: "b2b-stock",
+                  product_name: "B2B Stock Replenishment Bulk Purchase",
+                  price: activeQuote.total_amount,
+                  qty: 1
+                }
+              ],
+              customer_email: currentUser.email
+            };
+            await fetch("/api/orders", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(orderPayload)
+            });
           }
+          const ordRes = await fetch("/api/orders");
+          if (ordRes.ok) setOrders(await ordRes.json());
         }
       } catch (err) {
         console.error(err);
