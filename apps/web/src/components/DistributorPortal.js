@@ -170,6 +170,7 @@ export default function DistributorPortal({ onLogout }) {
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [activeProductForQuote, setActiveProductForQuote] = useState(null);
   const [quoteQuantity, setQuoteQuantity] = useState(1);
+  const [customProposedPrice, setCustomProposedPrice] = useState("");
 
   const handleAddToQuote = (product) => {
     const minQty = product.min_wholesale_qty || 1;
@@ -187,6 +188,7 @@ export default function DistributorPortal({ onLogout }) {
 
     setActiveProductForQuote(product);
     setQuoteQuantity(minQty);
+    setCustomProposedPrice(product.prices.DISTRIBUTOR.toString());
   };
 
   const handleConfirmAddToQuote = () => {
@@ -205,17 +207,35 @@ export default function DistributorPortal({ onLogout }) {
       return;
     }
 
+    const currentPrice = activeProductForQuote.prices.DISTRIBUTOR;
+    const proposed = parseFloat(customProposedPrice);
+    if (isNaN(proposed) || proposed <= 0) {
+      alert("Please enter a valid proposed unit price.");
+      return;
+    }
+
+    if (proposed > currentPrice) {
+      alert(`Proposed price cannot be higher than the current Distributor Rate (Rs ${currentPrice.toLocaleString()}).`);
+      return;
+    }
+
+    const minAllowedPrice = currentPrice * 0.90;
+    if (proposed < minAllowedPrice) {
+      alert(`Proposed price cannot be less than Rs ${Math.round(minAllowedPrice).toLocaleString()} (Maximum 10% discount from the current price).`);
+      return;
+    }
+
     setDraftItems((prev) => {
       const existing = prev.find((item) => item.product_id === activeProductForQuote.product_id);
       if (existing) {
         return prev.map(
-          (item) => item.product_id === activeProductForQuote.product_id ? { ...item, qty } : item
+          (item) => item.product_id === activeProductForQuote.product_id ? { ...item, qty, price: proposed } : item
         );
       }
       return [...prev, { 
         product_id: activeProductForQuote.product_id, 
         name: activeProductForQuote.product_name, 
-        price: activeProductForQuote.prices.DISTRIBUTOR, 
+        price: proposed, 
         qty, 
         min_wholesale_qty: minQty,
         available_qty: availableQty 
@@ -1399,7 +1419,14 @@ export default function DistributorPortal({ onLogout }) {
                 {
                   className: "border-b border-[#E2E8F0] last:border-0 bg-white",
                   children: [
-                    /* @__PURE__ */ jsx("td", { className: "px-4 py-3 font-medium text-[#0F172A]", children: item.name }),
+                    /* @__PURE__ */ jsxs("td", { className: "px-4 py-3 font-medium text-[#0F172A]", children: [
+                      /* @__PURE__ */ jsx("div", { className: "font-semibold", children: item.name }),
+                      /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-amber-600 font-bold mt-0.5", children: [
+                        "Proposed Price: ",
+                        formatCurrency(item.price),
+                        " / unit"
+                      ] })
+                    ] }),
                     /* @__PURE__ */ jsx("td", { className: "px-4 py-3 text-center", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-center gap-2", children: [
                       /* @__PURE__ */ jsx("button", {
                         onClick: () => {
@@ -1609,7 +1636,29 @@ export default function DistributorPortal({ onLogout }) {
               ] }),
               /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center border-t border-blue-100/50 pt-2.5 mt-1 text-[10px] text-[#64748B]", children: [
                 /* @__PURE__ */ jsx("span", { children: "Subtotal Value" }),
-                /* @__PURE__ */ jsx("span", { className: "font-mono font-extrabold text-[#0F172A] text-sm", children: formatCurrency(activeProductForQuote.prices.DISTRIBUTOR * (quoteQuantity || 0)) })
+                /* @__PURE__ */ jsx("span", { className: "font-mono font-extrabold text-[#0F172A] text-sm", children: formatCurrency((parseFloat(customProposedPrice) || activeProductForQuote.prices.DISTRIBUTOR) * (quoteQuantity || 0)) })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "p-4 bg-amber-50/50 border border-amber-100 rounded-xl flex flex-col gap-3", children: [
+              /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
+                /* @__PURE__ */ jsxs("div", { className: "text-left", children: [
+                  /* @__PURE__ */ jsx("p", { className: "font-bold text-[#0F172A] text-xs", children: "Propose Custom Unit Price" }),
+                  /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: [
+                    "Allowed Range: Rs ",
+                    Math.round(activeProductForQuote.prices.DISTRIBUTOR * 0.90).toLocaleString(),
+                    " - Rs ",
+                    activeProductForQuote.prices.DISTRIBUTOR.toLocaleString()
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5", children: [
+                  /* @__PURE__ */ jsx("span", { className: "text-[10px] font-mono font-bold text-[#64748B]", children: "Rs" }),
+                  /* @__PURE__ */ jsx("input", {
+                    type: "number",
+                    className: "w-28 h-8 px-2 text-right font-mono font-bold text-xs border border-[#CBD5E1] rounded-lg bg-white focus:outline-none focus:border-blue-500",
+                    value: customProposedPrice,
+                    onChange: (e) => setCustomProposedPrice(e.target.value)
+                  })
+                ] })
               ] })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "flex gap-3 justify-end pt-2 border-t border-[#F1F5F9]", children: [
