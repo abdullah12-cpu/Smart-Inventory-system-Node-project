@@ -307,7 +307,7 @@ export default function DistributorPortal({ onLogout }) {
       const matchSearch = !quoteSearch || q.quotation_number.toLowerCase().includes(quoteSearch.toLowerCase());
       let matchStatus = false;
       if (quoteStatusFilter === "PENDING_ACCEPTANCE") {
-        matchStatus = q.status === "SENT" || q.status === "NEGOTIATING";
+        matchStatus = q.status === "SENT" || q.status === "NEGOTIATING" || q.status === "APPROVED";
       } else {
         matchStatus = quoteStatusFilter === "all" || q.status === quoteStatusFilter;
       }
@@ -662,7 +662,7 @@ export default function DistributorPortal({ onLogout }) {
               {
                 label: "Pending Acceptance",
                 value: (quotations || []).filter(
-                  (q) => q.status === "SENT" || q.status === "NEGOTIATING"
+                  (q) => q.status === "SENT" || q.status === "NEGOTIATING" || q.status === "APPROVED"
                 ).length,
                 trend: "Action required",
                 trendUp: false,
@@ -1176,7 +1176,7 @@ export default function DistributorPortal({ onLogout }) {
                 children: "Close"
               }
             ),
-            (activeQuote.status === "SENT" || activeQuote.status === "NEGOTIATING") && /* @__PURE__ */ jsxs(Fragment, { children: [
+            (activeQuote.status === "SENT" || activeQuote.status === "NEGOTIATING" || activeQuote.status === "APPROVED") && /* @__PURE__ */ jsxs(Fragment, { children: [
               /* @__PURE__ */ jsx(
                 "button",
                 {
