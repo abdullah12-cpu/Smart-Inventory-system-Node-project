@@ -329,8 +329,8 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Register Distributor endpoint
 app.post('/api/auth/register-distributor', async (req, res) => {
-  const { businessName, contactName, ntnCode, regEmail, warehouseRegion, creditRequest } = req.body;
-  if (!businessName || !contactName || !regEmail) {
+  const { businessName, contactName, regEmail, password } = req.body;
+  if (!businessName || !contactName || !regEmail || !password) {
     return res.status(400).json({ success: false, message: 'Required fields missing.' });
   }
 
@@ -341,11 +341,11 @@ app.post('/api/auth/register-distributor', async (req, res) => {
       return res.status(400).json({ success: false, message: 'An account with this email is already registered.' });
     }
 
-    // Insert distributor with default password 'demopassword'
+    // Insert distributor with user-provided password
     await pool.query(
       `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request, status) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [regEmail, 'demopassword', 'distributor', contactName, businessName, warehouseRegion, creditRequest, 'PENDING_APPROVAL']
+      [regEmail, password, 'distributor', contactName, businessName, 'wh-1', '2500000', 'PENDING_APPROVAL']
     );
 
     return res.status(201).json({ success: true, message: 'Distributor application registered successfully.' });
@@ -357,8 +357,8 @@ app.post('/api/auth/register-distributor', async (req, res) => {
 
 // Register Buyer endpoint
 app.post('/api/auth/register-buyer', async (req, res) => {
-  const { buyerStoreName, buyerContactName, buyerPhone, buyerEmail, buyerAddress, buyerRegion } = req.body;
-  if (!buyerStoreName || !buyerContactName || !buyerEmail) {
+  const { buyerStoreName, buyerContactName, buyerEmail, password } = req.body;
+  if (!buyerStoreName || !buyerContactName || !buyerEmail || !password) {
     return res.status(400).json({ success: false, message: 'Required fields missing.' });
   }
 
@@ -369,11 +369,11 @@ app.post('/api/auth/register-buyer', async (req, res) => {
       return res.status(400).json({ success: false, message: 'An account with this email is already registered.' });
     }
 
-    // Insert buyer with default password 'demopassword'
+    // Insert buyer with user-provided password and status ACTIVE
     await pool.query(
-      `INSERT INTO users (email, password, role, buyer_contact_name, buyer_store_name, buyer_region, buyer_address, buyer_phone) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [buyerEmail, 'demopassword', 'buyer', buyerContactName, buyerStoreName, buyerRegion, buyerAddress, buyerPhone]
+      `INSERT INTO users (email, password, role, buyer_contact_name, buyer_store_name, buyer_region, buyer_address, buyer_phone, status) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [buyerEmail, password, 'buyer', buyerContactName, buyerStoreName, 'wh-1', '', '', 'ACTIVE']
     );
 
     return res.status(201).json({ success: true, message: 'Buyer registered successfully.' });

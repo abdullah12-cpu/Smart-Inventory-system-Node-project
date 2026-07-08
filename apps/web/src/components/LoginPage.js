@@ -40,6 +40,7 @@ export default function LoginPage({
   const [buyerRegion, setBuyerRegion] = useState("wh-1");
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [regPassword, setRegPassword] = useState("");
 
   const handleSubmitLogin = async (e) => {
     e.preventDefault();
@@ -83,7 +84,7 @@ export default function LoginPage({
 
   const handleSubmitRegister = async (e) => {
     e.preventDefault();
-    if (!businessName || !contactName || !regEmail) return;
+    if (!businessName || !contactName || !regEmail || !regPassword) return;
     try {
       const response = await fetch("/api/auth/register-distributor", {
         method: "POST",
@@ -93,17 +94,15 @@ export default function LoginPage({
         body: JSON.stringify({
           businessName,
           contactName,
-          ntnCode,
           regEmail,
-          warehouseRegion,
-          creditRequest,
+          password: regPassword,
         }),
       });
       const data = await response.json();
       if (response.ok && data.success) {
         addNotification({
           title: "B2B Partnership Registration Applied",
-          message: `B2B partnership requested by ${businessName} (Contact: ${contactName}). Region: ${warehouseRegion === "wh-1" ? "Karachi" : "Lahore"}. Credit limit request: Rs ${parseInt(creditRequest).toLocaleString()}.`,
+          message: `B2B partnership requested by ${businessName} (Contact: ${contactName}).`,
           severity: "INFO",
           trigger_type: "CREDIT_LIMIT_BREACH"
         });
@@ -119,7 +118,7 @@ export default function LoginPage({
 
   const handleSubmitBuyerRegister = async (e) => {
     e.preventDefault();
-    if (!buyerStoreName || !buyerContactName || !buyerEmail) return;
+    if (!buyerStoreName || !buyerContactName || !buyerEmail || !regPassword) return;
     try {
       const response = await fetch("/api/auth/register-buyer", {
         method: "POST",
@@ -129,17 +128,15 @@ export default function LoginPage({
         body: JSON.stringify({
           buyerStoreName,
           buyerContactName,
-          buyerPhone,
           buyerEmail,
-          buyerAddress,
-          buyerRegion,
+          password: regPassword,
         }),
       });
       const data = await response.json();
       if (response.ok && data.success) {
         addNotification({
           title: "New Buyer Account Registered",
-          message: `Buyer profile registered for ${buyerStoreName} (Contact: ${buyerContactName}). Location: ${buyerAddress || "Not specified"}. Preferred Depot: ${buyerRegion === "wh-1" ? "Karachi" : "Lahore"}.`,
+          message: `Buyer profile registered for ${buyerStoreName} (Contact: ${buyerContactName}).`,
           severity: "INFO",
           trigger_type: "BUYER_REGISTRATION"
         });
@@ -391,10 +388,7 @@ export default function LoginPage({
                 ] : [
                   "We have received your application for **",
                   businessName,
-                  "**. An Admin representative will review your credit request of **Rs",
-                  " ",
-                  parseInt(creditRequest || "0").toLocaleString(),
-                  "** shortly."
+                  "**. An Admin representative will review your partnership request shortly."
                 ]
               })
               ]
@@ -473,80 +467,40 @@ export default function LoginPage({
                   ]
                 }),
               /* @__PURE__ */ jsxs("div", {
-                  className: "grid grid-cols-2 gap-3", children: [
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Email Address *" }),
                 /* @__PURE__ */ jsxs("div", {
-                    className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Phone / Mobile *" }),
-                  /* @__PURE__ */ jsxs("div", {
-                      className: "relative", children: [
-                    /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Phone, { size: 14 }) }),
-                    /* @__PURE__ */ jsx(
-                        "input",
-                        {
-                          className: "w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
-                          placeholder: "e.g. +92 300 1234567",
-                          value: buyerPhone,
-                          onChange: (e) => setBuyerPhone(e.target.value),
-                          required: true
-                        }
-                      )
-                      ]
-                    })
-                    ]
-                  }),
-                /* @__PURE__ */ jsxs("div", {
-                    className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Email Address *" }),
-                  /* @__PURE__ */ jsxs("div", {
-                      className: "relative", children: [
-                    /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Mail, { size: 14 }) }),
-                    /* @__PURE__ */ jsx(
-                        "input",
-                        {
-                          className: "w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
-                          type: "email",
-                          placeholder: "buyer@store.com",
-                          value: buyerEmail,
-                          onChange: (e) => setBuyerEmail(e.target.value),
-                          required: true
-                        }
-                      )
-                      ]
-                    })
+                    className: "relative", children: [
+                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Mail, { size: 14 }) }),
+                  /* @__PURE__ */ jsx(
+                      "input",
+                      {
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
+                        type: "email",
+                        placeholder: "buyer@store.com",
+                        value: buyerEmail,
+                        onChange: (e) => setBuyerEmail(e.target.value),
+                        required: true
+                      }
+                    )
                     ]
                   })
                   ]
                 }),
               /* @__PURE__ */ jsxs("div", {
                   className: "flex flex-col gap-1", children: [
-                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Preferred Warehouse Depot" }),
-                /* @__PURE__ */ jsxs(
-                    "select",
-                    {
-                      className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
-                      value: buyerRegion,
-                      onChange: (e) => setBuyerRegion(e.target.value),
-                      children: [
-                      /* @__PURE__ */ jsx("option", { value: "wh-1", children: "Karachi Depot" }),
-                      /* @__PURE__ */ jsx("option", { value: "wh-2", children: "Lahore Depot" })
-                      ]
-                    }
-                  )
-                  ]
-                }),
-              /* @__PURE__ */ jsxs("div", {
-                  className: "flex flex-col gap-1", children: [
-                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Delivery / Shipping Address *" }),
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Create Password *" }),
                 /* @__PURE__ */ jsxs("div", {
                     className: "relative", children: [
-                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(MapPin, { size: 14 }) }),
+                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Lock, { size: 14 }) }),
                   /* @__PURE__ */ jsx(
                       "input",
                       {
                         className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#10B981] transition-colors",
-                        placeholder: "e.g. Shop 12, Main Commercial Area, DHA",
-                        value: buyerAddress,
-                        onChange: (e) => setBuyerAddress(e.target.value),
+                        type: "password",
+                        placeholder: "••••••••",
+                        value: regPassword,
+                        onChange: (e) => setRegPassword(e.target.value),
                         required: true
                       }
                     )
@@ -642,29 +596,15 @@ export default function LoginPage({
                   ]
                 }),
               /* @__PURE__ */ jsxs("div", {
-                  className: "grid grid-cols-2 gap-3", children: [
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Email address *" }),
                 /* @__PURE__ */ jsxs("div", {
-                    className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "NTN Code *" }),
+                    className: "relative", children: [
+                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Mail, { size: 14 }) }),
                   /* @__PURE__ */ jsx(
                       "input",
                       {
-                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                        placeholder: "e.g. 772819-A",
-                        value: ntnCode,
-                        onChange: (e) => setNtnCode(e.target.value),
-                        required: true
-                      }
-                    )
-                    ]
-                  }),
-                /* @__PURE__ */ jsxs("div", {
-                    className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Email address *" }),
-                  /* @__PURE__ */ jsx(
-                      "input",
-                      {
-                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
                         type: "email",
                         placeholder: "b2b@company.com",
                         value: regEmail,
@@ -677,34 +617,20 @@ export default function LoginPage({
                   ]
                 }),
               /* @__PURE__ */ jsxs("div", {
-                  className: "grid grid-cols-2 gap-3", children: [
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Create Password *" }),
                 /* @__PURE__ */ jsxs("div", {
-                    className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Primary Depot Link" }),
-                  /* @__PURE__ */ jsxs(
-                      "select",
-                      {
-                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                        value: warehouseRegion,
-                        onChange: (e) => setWarehouseRegion(e.target.value),
-                        children: [
-                        /* @__PURE__ */ jsx("option", { value: "wh-1", children: "Karachi Depot" }),
-                        /* @__PURE__ */ jsx("option", { value: "wh-2", children: "Lahore Depot" })
-                        ]
-                      }
-                    )
-                    ]
-                  }),
-                /* @__PURE__ */ jsxs("div", {
-                    className: "flex flex-col gap-1", children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Credit Request (Rs)" }),
+                    className: "relative", children: [
+                  /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Lock, { size: 14 }) }),
                   /* @__PURE__ */ jsx(
                       "input",
                       {
-                        className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                        type: "number",
-                        value: creditRequest,
-                        onChange: (e) => setCreditRequest(e.target.value)
+                        className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                        type: "password",
+                        placeholder: "••••••••",
+                        value: regPassword,
+                        onChange: (e) => setRegPassword(e.target.value),
+                        required: true
                       }
                     )
                     ]
