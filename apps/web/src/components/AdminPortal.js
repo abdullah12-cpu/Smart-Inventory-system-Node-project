@@ -13,9 +13,7 @@ import {
   Plus,
   MapPin,
   Database,
-  Receipt,
-  Menu,
-  X
+  Receipt
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/data";
@@ -74,11 +72,6 @@ export default function AdminPortal({ onLogout }) {
     removeDistributor
   } = useStore();
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
-    setMobileMenuOpen(false);
-  };
   
   useEffect(() => {
     if (activeTab === "distributors") {
@@ -207,45 +200,31 @@ export default function AdminPortal({ onLogout }) {
   });
   return /* @__PURE__ */ jsxs("div", {
     className: "flex h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
-    mobileMenuOpen && /* @__PURE__ */ jsx("div", {
-      onClick: () => setMobileMenuOpen(false),
-      className: "fixed inset-0 bg-black/50 z-20 md:hidden"
-    }),
     /* @__PURE__ */ jsxs("aside", {
-      className: `fixed inset-y-0 left-0 w-[260px] bg-[#0F172A] flex flex-col border-r border-[#1E293B] flex-shrink-0 z-30 transition-transform duration-300 transform md:relative md:translate-x-0 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`, children: [
+      className: "w-[260px] bg-[#0F172A] flex flex-col border-r border-[#1E293B] flex-shrink-0 relative z-20", children: [
       /* @__PURE__ */ jsxs("div", {
-        className: "p-6 flex items-center justify-between border-b border-[#1E293B]", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+        className: "p-6 flex items-center gap-3 border-b border-[#1E293B]", children: [
+        /* @__PURE__ */ jsx(
+          "div",
+          {
+            className: "w-8 h-8 bg-[#4F46E5] rounded-md flex items-center justify-center text-white font-extrabold text-sm logo-box",
+            style: { fontFamily: "Outfit, sans-serif" },
+            children: "IQ"
+          }
+        ),
+        /* @__PURE__ */ jsxs("div", {
+          children: [
           /* @__PURE__ */ jsx(
-            "div",
+            "span",
             {
-              className: "w-8 h-8 bg-[#4F46E5] rounded-md flex items-center justify-center text-white font-extrabold text-sm logo-box",
+              className: "text-white font-bold text-[16px] tracking-tight block",
               style: { fontFamily: "Outfit, sans-serif" },
-              children: "IQ"
+              children: "CommerceIQ"
             }
           ),
-          /* @__PURE__ */ jsxs("div", {
-            children: [
-            /* @__PURE__ */ jsx(
-              "span",
-              {
-                className: "text-white font-bold text-[16px] tracking-tight block",
-                style: { fontFamily: "Outfit, sans-serif" },
-                children: "CommerceIQ"
-              }
-            ),
-            /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#94A3B8] font-bold block tracking-wider uppercase mt-0.5", children: "Admin Command" })
-            ]
-          })
-        ] }),
-        /* @__PURE__ */ jsx(
-          "button",
-          {
-            onClick: () => setMobileMenuOpen(false),
-            className: "md:hidden p-1 text-slate-400 hover:text-white rounded bg-transparent border-0 cursor-pointer",
-            children: /* @__PURE__ */ jsx(X, { size: 18 })
-          }
-        )
+          /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#94A3B8] font-bold block tracking-wider uppercase mt-0.5", children: "Admin Command" })
+          ]
+        })
         ]
       }),
       /* @__PURE__ */ jsxs("nav", {
@@ -253,7 +232,7 @@ export default function AdminPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("dashboard"),
+            onClick: () => setActiveTab("dashboard"),
             className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "dashboard" ? "active" : ""}`,
             children: [
               /* @__PURE__ */ jsx(LayoutDashboard, { size: 18 }),
@@ -264,7 +243,7 @@ export default function AdminPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("products"),
+            onClick: () => setActiveTab("products"),
             className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "products" ? "active" : ""}`,
             children: [
               /* @__PURE__ */ jsx(Box, { size: 18 }),
@@ -275,7 +254,7 @@ export default function AdminPortal({ onLogout }) {
           canAccessSuppliers && /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: () => handleTabChange("suppliers"),
+              onClick: () => setActiveTab("suppliers"),
               className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "suppliers" ? "active" : ""}`,
               children: [
               /* @__PURE__ */ jsx(Users, { size: 18 }),
@@ -286,7 +265,7 @@ export default function AdminPortal({ onLogout }) {
           canAccessBilling && /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: () => handleTabChange("orders"),
+              onClick: () => setActiveTab("orders"),
               className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "orders" ? "active" : ""}`,
               children: [
               /* @__PURE__ */ jsx(Database, { size: 18 }),
@@ -297,7 +276,7 @@ export default function AdminPortal({ onLogout }) {
           canAccessBilling && /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: () => handleTabChange("billing"),
+              onClick: () => setActiveTab("billing"),
               className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "billing" ? "active" : ""}`,
               children: [
               /* @__PURE__ */ jsx(Receipt, { size: 18 }),
@@ -308,7 +287,7 @@ export default function AdminPortal({ onLogout }) {
           canAccessBilling && /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: () => handleTabChange("negotiations"),
+              onClick: () => setActiveTab("negotiations"),
               className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "negotiations" ? "active" : ""}`,
               children: [
               /* @__PURE__ */ jsx(Database, { size: 18 }),
@@ -319,7 +298,7 @@ export default function AdminPortal({ onLogout }) {
           /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: () => handleTabChange("distributors"),
+              onClick: () => setActiveTab("distributors"),
               className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "distributors" ? "active" : ""}`,
               children: [
               /* @__PURE__ */ jsx(Users, { size: 18 }),
@@ -330,7 +309,7 @@ export default function AdminPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: () => handleTabChange("settings"),
+              onClick: () => setActiveTab("settings"),
               className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "settings" ? "active" : ""}`,
               children: [
               /* @__PURE__ */ jsx(Settings, { size: 18 }),
@@ -434,37 +413,27 @@ export default function AdminPortal({ onLogout }) {
     /* @__PURE__ */ jsxs("div", {
       className: "flex-1 flex flex-col overflow-hidden", children: [
       /* @__PURE__ */ jsxs("header", {
-        className: "h-[70px] bg-white border-b border-[#E2E8F0] flex items-center justify-between px-4 sm:px-8 flex-shrink-0 relative z-10", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+        className: "h-[70px] bg-white border-b border-[#E2E8F0] flex items-center justify-between px-8 flex-shrink-0 relative z-10", children: [
+        /* @__PURE__ */ jsxs("div", {
+          className: "relative w-[320px]", children: [
           /* @__PURE__ */ jsx(
-            "button",
+            Search,
             {
-              onClick: () => setMobileMenuOpen(!mobileMenuOpen),
-              className: "md:hidden p-2 text-slate-600 hover:text-[#0F172A] hover:bg-slate-100 rounded-lg cursor-pointer border-0 bg-transparent flex items-center justify-center",
-              children: /* @__PURE__ */ jsx(Menu, { size: 20 })
+              size: 16,
+              className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]"
             }
           ),
-          /* @__PURE__ */ jsxs("div", {
-            className: "relative w-[180px] sm:w-[320px] hidden sm:block", children: [
-            /* @__PURE__ */ jsx(
-              Search,
-              {
-                size: 16,
-                className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]"
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                className: "w-full pl-9 pr-4 py-2 border border-[#E2E8F0] rounded-lg text-xs bg-[#F8FAFC] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                placeholder: "Search...",
-                value: search,
-                onChange: (e) => setSearch(e.target.value)
-              }
-            )
-            ]
-          })
-        ] }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              className: "w-full pl-9 pr-4 py-2 border border-[#E2E8F0] rounded-lg text-xs bg-[#F8FAFC] focus:outline-none focus:border-[#4F46E5] transition-colors",
+              placeholder: "Search catalog, suppliers, or reference...",
+              value: search,
+              onChange: (e) => setSearch(e.target.value)
+            }
+          )
+          ]
+        }),
         /* @__PURE__ */ jsxs("div", {
           className: "flex items-center gap-4", children: [
           /* @__PURE__ */ jsxs("div", {

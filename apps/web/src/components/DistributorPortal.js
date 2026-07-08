@@ -15,9 +15,7 @@ import {
   Download,
   UploadCloud,
   CreditCard,
-  AlertCircle,
-  Menu,
-  X
+  AlertCircle
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { KpiCard, OrderStatusBadge, InvoiceStatusBadge, LatePaymentRiskBadge, Badge } from "@/components/ui";
@@ -103,11 +101,6 @@ function QuoteStatusBadge({ status }) {
 export default function DistributorPortal({ onLogout }) {
   const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices, recordPaymentAllocation, currentUser } = useStore();
   const [activeTab, setActiveTab] = useState("catalog");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
-    setMobileMenuOpen(false);
-  };
   const [quoteSearch, setQuoteSearch] = useState("");
   const [quoteStatusFilter, setQuoteStatusFilter] = useState("all");
   const [orderSearch, setOrderSearch] = useState("");
@@ -364,39 +357,25 @@ export default function DistributorPortal({ onLogout }) {
     );
   }, [products, catalogSearch]);
   return /* @__PURE__ */ jsxs("div", { className: "flex h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
-    mobileMenuOpen && /* @__PURE__ */ jsx("div", {
-      onClick: () => setMobileMenuOpen(false),
-      className: "fixed inset-0 bg-black/50 z-20 md:hidden"
-    }),
-    /* @__PURE__ */ jsxs("aside", { className: `fixed inset-y-0 left-0 w-[260px] bg-white border-r border-[#E2E8F0] flex flex-col flex-shrink-0 z-30 transition-transform duration-300 transform md:relative md:translate-x-0 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} shadow-sm`, children: [
-      /* @__PURE__ */ jsxs("div", { className: "h-[70px] flex items-center justify-between px-6 border-b border-[#E2E8F0]", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
-          /* @__PURE__ */ jsx(
-            "div",
-            {
-              className: "w-8 h-8 bg-blue-600 rounded-md flex items-center justify-center text-white font-extrabold text-sm",
-              style: { fontFamily: "Outfit, sans-serif" },
-              children: "IQ"
-            }
-          ),
-          /* @__PURE__ */ jsxs(
-            "span",
-            {
-              className: "font-extrabold text-lg text-[#0F172A] tracking-tight",
-              style: { fontFamily: "Outfit, sans-serif" },
-              children: [
-                "Distributor",
-                /* @__PURE__ */ jsx("span", { className: "text-blue-600", children: "Portal" })
-              ]
-            }
-          )
-        ] }),
+    /* @__PURE__ */ jsxs("aside", { className: "w-[260px] bg-white border-r border-[#E2E8F0] flex flex-col flex-shrink-0 z-10 shadow-sm", children: [
+      /* @__PURE__ */ jsxs("div", { className: "h-[70px] flex items-center gap-3 px-6 border-b border-[#E2E8F0]", children: [
         /* @__PURE__ */ jsx(
-          "button",
+          "div",
           {
-            onClick: () => setMobileMenuOpen(false),
-            className: "md:hidden p-1 text-slate-400 hover:text-slate-600 rounded bg-transparent border-0 cursor-pointer",
-            children: /* @__PURE__ */ jsx(X, { size: 18 })
+            className: "w-8 h-8 bg-blue-600 rounded-md flex items-center justify-center text-white font-extrabold text-sm",
+            style: { fontFamily: "Outfit, sans-serif" },
+            children: "IQ"
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "span",
+          {
+            className: "font-extrabold text-lg text-[#0F172A] tracking-tight",
+            style: { fontFamily: "Outfit, sans-serif" },
+            children: [
+              "Distributor",
+              /* @__PURE__ */ jsx("span", { className: "text-blue-600", children: "Portal" })
+            ]
           }
         )
       ] }),
@@ -405,7 +384,7 @@ export default function DistributorPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("catalog"),
+            onClick: () => setActiveTab("catalog"),
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "catalog" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             children: [
               /* @__PURE__ */ jsx(
@@ -422,7 +401,7 @@ export default function DistributorPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("quotations"),
+            onClick: () => setActiveTab("quotations"),
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "quotations" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             children: [
               /* @__PURE__ */ jsx(
@@ -439,7 +418,7 @@ export default function DistributorPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("orders"),
+            onClick: () => setActiveTab("orders"),
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "orders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             children: [
               /* @__PURE__ */ jsx(
@@ -457,7 +436,7 @@ export default function DistributorPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("ledger"),
+            onClick: () => setActiveTab("ledger"),
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "ledger" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             children: [
               /* @__PURE__ */ jsx(
@@ -474,7 +453,7 @@ export default function DistributorPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("reminders"),
+            onClick: () => setActiveTab("reminders"),
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "reminders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             children: [
               /* @__PURE__ */ jsx(
@@ -491,7 +470,7 @@ export default function DistributorPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "button",
           {
-            onClick: () => handleTabChange("profile"),
+            onClick: () => setActiveTab("profile"),
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "profile" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             children: [
               /* @__PURE__ */ jsx(
@@ -529,32 +508,22 @@ export default function DistributorPortal({ onLogout }) {
       ] })
     ] }),
     /* @__PURE__ */ jsxs("main", { className: "flex-1 flex flex-col min-w-0 overflow-hidden relative", children: [
-      /* @__PURE__ */ jsxs("header", { className: "h-[70px] bg-white border-b border-[#E2E8F0] flex items-center justify-between px-4 sm:px-8 flex-shrink-0 z-10 sticky top-0 shadow-sm", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              onClick: () => setMobileMenuOpen(!mobileMenuOpen),
-              className: "md:hidden p-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer border-0 bg-transparent flex items-center justify-center",
-              children: /* @__PURE__ */ jsx(Menu, { size: 20 })
-            }
-          ),
-          /* @__PURE__ */ jsxs(
-            "h2",
-            {
-              className: "text-base sm:text-lg font-bold text-[#0F172A]",
-              style: { fontFamily: "Outfit, sans-serif" },
-              children: [
-                activeTab === "catalog" && "Bulk Catalog & Ordering",
-                activeTab === "quotations" && "Quotations & Bids",
-                activeTab === "orders" && "Sales Orders & Logistics",
-                activeTab === "ledger" && "Customer Statement Ledger",
-                activeTab === "reminders" && "Smart Reminders History",
-                activeTab === "profile" && "Billing Profile & Terms"
-              ]
-            }
-          )
-        ] }),
+      /* @__PURE__ */ jsxs("header", { className: "h-[70px] bg-white border-b border-[#E2E8F0] flex items-center justify-between px-8 flex-shrink-0 z-10 sticky top-0 shadow-sm", children: [
+        /* @__PURE__ */ jsx("div", { className: "flex items-center gap-4", children: /* @__PURE__ */ jsxs(
+          "h2",
+          {
+            className: "text-lg font-bold text-[#0F172A]",
+            style: { fontFamily: "Outfit, sans-serif" },
+            children: [
+              activeTab === "catalog" && "Bulk Catalog & Ordering",
+              activeTab === "quotations" && "Quotations & Bids",
+              activeTab === "orders" && "Sales Orders & Logistics",
+              activeTab === "ledger" && "Customer Statement Ledger",
+              activeTab === "reminders" && "Smart Reminders History",
+              activeTab === "profile" && "Billing Profile & Terms"
+            ]
+          }
+        ) }),
         /* @__PURE__ */ jsx("div", { className: "flex items-center gap-3", children: /* @__PURE__ */ jsx("span", { className: "text-xs font-medium text-[#64748B]", children: "Last updated: Today" }) })
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "flex-1 overflow-y-auto p-8 relative", children: [
