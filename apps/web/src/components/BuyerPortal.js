@@ -98,7 +98,7 @@ export default function BuyerPortal({ onLogout }) {
     }
   };
   return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
-    /* @__PURE__ */ jsxs("header", { className: "h-[75px] bg-[#4F46E5] flex items-center justify-between px-8 flex-shrink-0 relative z-20 text-white shadow-lg", children: [
+    /* @__PURE__ */ jsxs("header", { className: "h-[75px] bg-[#4F46E5] flex items-center justify-between px-4 sm:px-8 flex-shrink-0 relative z-20 text-white shadow-lg", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
         /* @__PURE__ */ jsx(
           "div",
@@ -108,7 +108,7 @@ export default function BuyerPortal({ onLogout }) {
             children: "IQ"
           }
         ),
-        /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsxs("div", { className: "hidden xs:block", children: [
           /* @__PURE__ */ jsx(
             "span",
             {
@@ -120,7 +120,7 @@ export default function BuyerPortal({ onLogout }) {
           /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#C7D2FE] font-bold block tracking-wider uppercase mt-0.5", children: "Retail Buyer Portal" })
         ] })
       ] }),
-      /* @__PURE__ */ jsxs("nav", { className: "flex items-center gap-1.5", children: [
+      /* @__PURE__ */ jsxs("nav", { className: "hidden md:flex items-center gap-1.5", children: [
         /* @__PURE__ */ jsxs(
           "button",
           {
@@ -157,7 +157,7 @@ export default function BuyerPortal({ onLogout }) {
         )
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-4", children: [
-        /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+        /* @__PURE__ */ jsxs("div", { className: "relative hidden sm:block", children: [
           /* @__PURE__ */ jsx(
             Search,
             {
@@ -231,7 +231,7 @@ export default function BuyerPortal({ onLogout }) {
                 className: "w-7 h-7 rounded-full object-cover border border-white"
               }
             ),
-            /* @__PURE__ */ jsx("span", { className: "font-bold text-xs", children: "Saif Shahzad" })
+            /* @__PURE__ */ jsx("span", { className: "font-bold text-xs hidden sm:block", children: "Saif Shahzad" })
           ] }),
           /* @__PURE__ */ jsx(
             "button",
@@ -244,7 +244,7 @@ export default function BuyerPortal({ onLogout }) {
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ jsxs("main", { className: "flex-1 overflow-y-auto p-8", children: [
+    /* @__PURE__ */ jsxs("main", { className: "flex-1 overflow-y-auto p-4 sm:p-8", children: [
       activeTab === "catalog" && /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-6", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx(
@@ -371,14 +371,14 @@ export default function BuyerPortal({ onLogout }) {
             cart.map((item) => /* @__PURE__ */ jsxs(
               "div",
               {
-                className: "bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm flex items-center justify-between gap-4",
+                className: "bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-4",
                 children: [
                   /* @__PURE__ */ jsxs("div", { className: "flex-1", children: [
                     /* @__PURE__ */ jsx("span", { className: "text-[9px] bg-[#EEF2FF] text-[#4F46E5] font-bold px-2 py-0.5 rounded-[4px]", children: item.product.category }),
                     /* @__PURE__ */ jsx("h3", { className: "font-bold text-sm text-[#0F172A] mt-1.5", children: item.product.product_name }),
                     /* @__PURE__ */ jsx("span", { className: "text-[10px] text-[#64748B] font-mono mt-0.5 block", children: item.product.sku })
                   ] }),
-                  /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-6", children: [
+                  /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between sm:justify-end gap-4 sm:gap-6 w-full sm:w-auto border-t border-slate-100 sm:border-t-0 pt-3 sm:pt-0", children: [
                     /* @__PURE__ */ jsxs("div", { className: "flex items-center border border-[#E2E8F0] rounded-lg overflow-hidden bg-slate-50", children: [
                       /* @__PURE__ */ jsx(
                         "button",
@@ -446,6 +446,42 @@ export default function BuyerPortal({ onLogout }) {
             )
           ] })
         ] })
+      ] }),
+      /* @__PURE__ */ jsxs("nav", { className: "md:hidden h-[60px] bg-white border-t border-[#E2E8F0] flex items-center justify-around px-4 flex-shrink-0 relative z-20 text-[#64748B] shadow-[0_-4px_12px_rgba(0,0,0,0.03)]", children: [
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setActiveTab("catalog"),
+            className: `flex flex-col items-center justify-center gap-1 border-0 bg-transparent cursor-pointer py-1 ${activeTab === "catalog" ? "text-[#4F46E5]" : "text-[#64748B]"}`,
+            children: [
+              /* @__PURE__ */ jsx(ShoppingBag, { size: 18 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold", children: "Catalog" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setActiveTab("orders"),
+            className: `flex flex-col items-center justify-center gap-1 border-0 bg-transparent cursor-pointer py-1 ${activeTab === "orders" ? "text-[#4F46E5]" : "text-[#64748B]"}`,
+            children: [
+              /* @__PURE__ */ jsx(Package, { size: 18 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold", children: "Orders" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setActiveTab("cart"),
+            className: `flex flex-col items-center justify-center gap-1 border-0 bg-transparent cursor-pointer py-1 relative ${activeTab === "cart" ? "text-[#4F46E5]" : "text-[#64748B]"}`,
+            children: [
+              /* @__PURE__ */ jsx(ShoppingCart, { size: 18 }),
+              /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold", children: "Cart" }),
+              cartCount > 0 && /* @__PURE__ */ jsx("span", { className: "absolute top-0 right-1 w-4 h-4 bg-rose-500 text-white text-[8px] font-extrabold rounded-full flex items-center justify-center", children: cartCount })
+            ]
+          }
+        )
       ] })
     ] })
   ] });
