@@ -208,6 +208,7 @@ export default function DistributorPortal({ onLogout }) {
     }
 
     const currentPrice = activeProductForQuote.prices.DISTRIBUTOR;
+    const maxDiscPercent = activeProductForQuote.max_discount !== undefined ? activeProductForQuote.max_discount : 10;
     const proposed = parseFloat(customProposedPrice);
     if (isNaN(proposed) || proposed <= 0) {
       alert("Please enter a valid proposed unit price.");
@@ -219,9 +220,9 @@ export default function DistributorPortal({ onLogout }) {
       return;
     }
 
-    const minAllowedPrice = currentPrice * 0.90;
+    const minAllowedPrice = currentPrice * (1 - maxDiscPercent / 100);
     if (proposed < minAllowedPrice) {
-      alert(`Proposed price cannot be less than Rs ${Math.round(minAllowedPrice).toLocaleString()} (Maximum 10% discount from the current price).`);
+      alert(`Proposed price cannot be less than Rs ${Math.round(minAllowedPrice).toLocaleString()} (Maximum ${maxDiscPercent}% discount set by admin for this product).`);
       return;
     }
 
@@ -1645,7 +1646,7 @@ export default function DistributorPortal({ onLogout }) {
                   /* @__PURE__ */ jsx("p", { className: "font-bold text-[#0F172A] text-xs", children: "Propose Custom Unit Price" }),
                   /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: [
                     "Allowed Range: Rs ",
-                    Math.round(activeProductForQuote.prices.DISTRIBUTOR * 0.90).toLocaleString(),
+                    Math.round(activeProductForQuote.prices.DISTRIBUTOR * (1 - (activeProductForQuote.max_discount !== undefined ? activeProductForQuote.max_discount : 10) / 100)).toLocaleString(),
                     " - Rs ",
                     activeProductForQuote.prices.DISTRIBUTOR.toLocaleString()
                   ] })

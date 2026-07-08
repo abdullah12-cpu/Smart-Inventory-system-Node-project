@@ -49,6 +49,7 @@ export default function ProductDrawer({ product, open, onClose }) {
   const [editDistPrice, setEditDistPrice] = useState(product.prices?.DISTRIBUTOR || 0);
   const [editImageUrl, setEditImageUrl] = useState(product.image_url || "");
   const [editMinWholesaleQty, setEditMinWholesaleQty] = useState(product.min_wholesale_qty || 1);
+  const [editMaxDiscount, setEditMaxDiscount] = useState(product.max_discount || 10);
 
   const defaultCategories = ["Networking", "Compute Cards", "Fiber Optics", "UPS & Power"];
   const allCategories = Array.from(new Set([...defaultCategories, ...(products || []).map(p => p.category).filter(Boolean)]));
@@ -66,6 +67,7 @@ export default function ProductDrawer({ product, open, onClose }) {
       setEditDistPrice(product.prices?.DISTRIBUTOR || 0);
       setEditImageUrl(product.image_url || "");
       setEditMinWholesaleQty(product.min_wholesale_qty || 1);
+      setEditMaxDiscount(product.max_discount || 10);
       setIsCreatingCategory(false);
       setNewCategory("");
     }
@@ -144,6 +146,12 @@ export default function ProductDrawer({ product, open, onClose }) {
       return;
     }
 
+    const parsedMaxDiscount = parseInt(editMaxDiscount);
+    if (isNaN(parsedMaxDiscount) || parsedMaxDiscount < 0 || parsedMaxDiscount > 100) {
+      alert("Max discount must be a number between 0% and 100%.");
+      return;
+    }
+
     const updated = await updateProductDetails(product.product_id, {
       product_name: editName.trim(),
       category: finalCategory,
@@ -160,7 +168,8 @@ export default function ProductDrawer({ product, open, onClose }) {
         CUSTOM: pDist
       },
       image_url: editImageUrl,
-      min_wholesale_qty: parsedMinWholesale
+      min_wholesale_qty: parsedMinWholesale,
+      max_discount: parsedMaxDiscount
     });
 
     if (updated) {
@@ -247,6 +256,7 @@ export default function ProductDrawer({ product, open, onClose }) {
               setEditDistPrice(product.prices?.DISTRIBUTOR || 0);
               setEditImageUrl(product.image_url || "");
               setEditMinWholesaleQty(product.min_wholesale_qty || 1);
+              setEditMaxDiscount(product.max_discount || 10);
               setIsCreatingCategory(false);
               setNewCategory("");
             },
@@ -359,7 +369,7 @@ export default function ProductDrawer({ product, open, onClose }) {
               })
             ] })
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-3", children: [
+          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 gap-3", children: [
             /* @__PURE__ */ jsxs("div", { children: [
               /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Retail Price" }),
               /* @__PURE__ */ jsx("input", {
@@ -386,6 +396,17 @@ export default function ProductDrawer({ product, open, onClose }) {
                 className: "input-field py-2 text-xs",
                 value: editMinWholesaleQty,
                 onChange: (e) => setEditMinWholesaleQty(e.target.value)
+              })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Max Discount (%)" }),
+              /* @__PURE__ */ jsx("input", {
+                type: "number",
+                min: "0",
+                max: "100",
+                className: "input-field py-2 text-xs",
+                value: editMaxDiscount,
+                onChange: (e) => setEditMaxDiscount(e.target.value)
               })
             ] })
           ] }),
@@ -450,7 +471,8 @@ export default function ProductDrawer({ product, open, onClose }) {
                   { label: "Category Group", val: product.category },
                   { label: "Base Unit", val: product.unit },
                   { label: "Weight (kg)", val: `${product.weight.toFixed(2)} kg` },
-                  { label: "Min. Wholesale Qty", val: `${product.min_wholesale_qty || 1} ${product.unit}` }
+                  { label: "Min. Wholesale Qty", val: `${product.min_wholesale_qty || 1} ${product.unit}` },
+                  { label: "Max Custom Discount", val: `${product.max_discount || 10}%` }
                 ]
               }
             ),

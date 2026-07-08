@@ -30,6 +30,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
   const [lowStock, setLowStock] = useState("10");
   const [totalProductLimit, setTotalProductLimit] = useState("100");
   const [minWholesaleQty, setMinWholesaleQty] = useState("1");
+  const [maxDiscount, setMaxDiscount] = useState("10");
   const [priceRetail, setPriceRetail] = useState("12000");
   const [priceDistributor, setPriceDistributor] = useState("10500");
   const [stockKarachi, setStockKarachi] = useState("20");
@@ -129,6 +130,12 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
       return;
     }
 
+    const parsedMaxDiscount = parseInt(maxDiscount);
+    if (isNaN(parsedMaxDiscount) || parsedMaxDiscount < 0 || parsedMaxDiscount > 100) {
+      alert("Validation Error: Max Custom Discount must be a number between 0% and 100%.");
+      return;
+    }
+
     // Prices validation
     const pRetail = parseFloat(priceRetail);
     const pDist = parseFloat(priceDistributor);
@@ -176,6 +183,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
       },
       image_url: imageUrl.trim() || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
       min_wholesale_qty: parsedMinWholesale,
+      max_discount: parsedMaxDiscount,
       inventory: [
         {
           warehouse_id: "wh-1",
@@ -208,6 +216,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     setStockLahore("15");
     setImageUrl("");
     setMinWholesaleQty("1");
+    setMaxDiscount("10");
   };
   return /* @__PURE__ */ jsx(Modal, { open, onClose, title: "Register New Product", children: /* @__PURE__ */ jsxs(
     "form",
@@ -384,7 +393,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "border-t border-[#F1F5F9] pt-3", children: [
           /* @__PURE__ */ jsx("p", { className: "text-[10px] font-bold text-[#4F46E5] uppercase tracking-wider mb-2", children: "Wholesale Price Tiers (Rs) & Restrictions" }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-2", children: [
+          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 gap-2", children: [
             /* @__PURE__ */ jsxs("div", { children: [
               /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Retail Rate" }),
               /* @__PURE__ */ jsx(
@@ -419,6 +428,20 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
                   className: "input-field py-1.5 text-xs",
                   value: minWholesaleQty,
                   onChange: (e) => setMinWholesaleQty(e.target.value)
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Max Discount (%)" }),
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "number",
+                  min: "0",
+                  max: "100",
+                  className: "input-field py-1.5 text-xs",
+                  value: maxDiscount,
+                  onChange: (e) => setMaxDiscount(e.target.value)
                 }
               )
             ] })
