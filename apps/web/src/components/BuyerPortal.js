@@ -10,7 +10,9 @@ import {
   Trash2,
   Plus,
   Minus,
-  CheckCircle
+  CheckCircle,
+  Menu,
+  X
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/data";
@@ -29,6 +31,11 @@ export default function BuyerPortal({ onLogout }) {
     currentUser
   } = useStore();
   const [activeTab, setActiveTab] = useState("catalog");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+  };
   const [search, setSearch] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifBounce, setNotifBounce] = useState(false);
@@ -97,154 +104,199 @@ export default function BuyerPortal({ onLogout }) {
       alert("Failed to place order. Connection error.");
     }
   };
-  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
-    /* @__PURE__ */ jsxs("header", { className: "h-[75px] bg-[#4F46E5] flex items-center justify-between px-4 sm:px-8 flex-shrink-0 relative z-20 text-white shadow-lg", children: [
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
-        /* @__PURE__ */ jsx(
-          "div",
-          {
-            className: "w-9 h-9 bg-white text-[#4F46E5] rounded-xl flex items-center justify-center font-extrabold text-base logo-box",
-            style: { fontFamily: "Outfit, sans-serif" },
-            children: "IQ"
-          }
-        ),
-        /* @__PURE__ */ jsxs("div", { className: "hidden xs:block", children: [
+  return /* @__PURE__ */ jsxs("div", { className: "flex h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
+    mobileMenuOpen && /* @__PURE__ */ jsx("div", {
+      onClick: () => setMobileMenuOpen(false),
+      className: "fixed inset-0 bg-black/50 z-20 md:hidden"
+    }),
+    /* @__PURE__ */ jsxs("aside", {
+      className: `fixed inset-y-0 left-0 w-[260px] bg-white border-r border-[#E2E8F0] flex flex-col flex-shrink-0 z-30 transition-transform duration-300 transform md:relative md:translate-x-0 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} shadow-sm`,
+      children: [
+        /* @__PURE__ */ jsxs("div", { className: "h-[70px] flex items-center justify-between px-6 border-b border-[#E2E8F0]", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+            /* @__PURE__ */ jsx(
+              "div",
+              {
+                className: "w-8 h-8 bg-[#4F46E5] rounded-md flex items-center justify-center text-white font-extrabold text-sm",
+                style: { fontFamily: "Outfit, sans-serif" },
+                children: "IQ"
+              }
+            ),
+            /* @__PURE__ */ jsxs(
+              "span",
+              {
+                className: "font-extrabold text-base text-[#0F172A] tracking-tight",
+                style: { fontFamily: "Outfit, sans-serif" },
+                children: [
+                  "Buyer",
+                  /* @__PURE__ */ jsx("span", { className: "text-[#4F46E5]", children: "Store" })
+                ]
+              }
+            )
+          ] }),
           /* @__PURE__ */ jsx(
-            "span",
+            "button",
             {
-              className: "text-white font-bold text-[17px] tracking-tight block",
-              style: { fontFamily: "Outfit, sans-serif" },
-              children: "CommerceIQ Store"
-            }
-          ),
-          /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#C7D2FE] font-bold block tracking-wider uppercase mt-0.5", children: "Retail Buyer Portal" })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("nav", { className: "hidden md:flex items-center gap-1.5", children: [
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("catalog"),
-            className: `px-4 py-2 rounded-lg font-semibold transition-all border-0 bg-transparent cursor-pointer flex items-center gap-2 ${activeTab === "catalog" ? "bg-white/15 text-white shadow" : "text-[#E0E7FF] hover:bg-white/10 hover:text-white"}`,
-            children: [
-              /* @__PURE__ */ jsx(ShoppingBag, { size: 15 }),
-              /* @__PURE__ */ jsx("span", { children: "Browse Catalog" })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("orders"),
-            className: `px-4 py-2 rounded-lg font-semibold transition-all border-0 bg-transparent cursor-pointer flex items-center gap-2 ${activeTab === "orders" ? "bg-white/15 text-white shadow" : "text-[#E0E7FF] hover:bg-white/10 hover:text-white"}`,
-            children: [
-              /* @__PURE__ */ jsx(Package, { size: 15 }),
-              /* @__PURE__ */ jsx("span", { children: "My Orders" })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("cart"),
-            className: `px-4 py-2 rounded-lg font-semibold transition-all border-0 bg-transparent cursor-pointer flex items-center gap-2 relative ${activeTab === "cart" ? "bg-white/15 text-white shadow" : "text-[#E0E7FF] hover:bg-white/10 hover:text-white"}`,
-            children: [
-              /* @__PURE__ */ jsx(ShoppingCart, { size: 15 }),
-              /* @__PURE__ */ jsx("span", { children: "Shopping Cart" }),
-              cartCount > 0 && /* @__PURE__ */ jsx("span", { className: "absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center", children: cartCount })
-            ]
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-4", children: [
-        /* @__PURE__ */ jsxs("div", { className: "relative hidden sm:block", children: [
-          /* @__PURE__ */ jsx(
-            Search,
-            {
-              size: 14,
-              className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#C7D2FE]"
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              className: "w-[200px] pl-8 pr-4 py-1.5 border border-white/20 rounded-lg text-xs bg-white/10 text-white focus:outline-none focus:bg-white focus:text-[#0F172A] focus:border-white transition-all placeholder-[#C7D2FE]",
-              placeholder: "Search store catalog...",
-              value: search,
-              onChange: (e) => setSearch(e.target.value)
+              onClick: () => setMobileMenuOpen(false),
+              className: "md:hidden p-1 text-slate-400 hover:text-slate-600 rounded bg-transparent border-0 cursor-pointer",
+              children: /* @__PURE__ */ jsx(X, { size: 18 })
             }
           )
         ] }),
-        /* @__PURE__ */ jsxs("div", { className: "relative", ref: notifRef, children: [
+        /* @__PURE__ */ jsxs("nav", { className: "flex-1 p-4 flex flex-col gap-1 overflow-y-auto", children: [
+          /* @__PURE__ */ jsx("div", { className: "px-3 mb-2 mt-2", children: /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider", children: "Shopping" }) }),
           /* @__PURE__ */ jsxs(
             "button",
             {
-              onClick: (e) => {
-                e.stopPropagation();
-                setNotifOpen(!notifOpen);
-              },
-              className: "relative w-8 h-8 flex items-center justify-center border border-white/20 rounded-lg hover:bg-white/10 text-white transition-all cursor-pointer",
+              onClick: () => handleTabChange("catalog"),
+              className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "catalog" ? "bg-indigo-50 text-[#4F46E5]" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
               children: [
                 /* @__PURE__ */ jsx(
-                  Bell,
+                  ShoppingBag,
                   {
-                    size: 16,
-                    className: notifBounce ? "animate-bell-bounce" : ""
+                    size: 18,
+                    className: activeTab === "catalog" ? "text-[#4F46E5]" : ""
                   }
                 ),
-                unreadNotifications.length > 0 && /* @__PURE__ */ jsx("span", { className: "absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center", children: unreadNotifications.length })
+                "Browse Catalog"
               ]
             }
           ),
-          notifOpen && /* @__PURE__ */ jsxs("div", { className: "absolute right-0 top-[calc(100%+8px)] w-[320px] bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden text-[#0F172A] animate-dropdown", children: [
-            /* @__PURE__ */ jsxs("div", { className: "p-3 border-b border-[#E2E8F0] flex items-center justify-between", children: [
-              /* @__PURE__ */ jsx("span", { className: "text-xs font-bold", children: "Notifications" }),
-              /* @__PURE__ */ jsx(
-                "button",
-                {
-                  onClick: handleMarkAllRead,
-                  className: "text-[10px] font-bold text-[#4F46E5] hover:text-[#4338CA] transition-colors border-0 bg-transparent cursor-pointer",
-                  children: "Mark all read"
-                }
-              )
-            ] }),
-            /* @__PURE__ */ jsx("div", { className: "max-h-[250px] overflow-y-auto divide-y divide-[#E2E8F0]", children: filteredNotifications.length === 0 ? /* @__PURE__ */ jsx("div", { className: "p-6 text-center text-[#64748B] font-medium", children: "No new updates." }) : filteredNotifications.map((n) => /* @__PURE__ */ jsxs(
-              "div",
-              {
-                className: "p-3.5 hover:bg-slate-50/50 transition-colors",
-                children: [
-                  /* @__PURE__ */ jsx("span", { className: "font-semibold text-slate-800 block", children: n.title }),
-                  /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-0.5 leading-relaxed text-[11px]", children: n.message })
-                ]
-              },
-              n.notification_id
-            )) })
-          ] })
+          /* @__PURE__ */ jsxs(
+            "button",
+            {
+              onClick: () => handleTabChange("orders"),
+              className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "orders" ? "bg-indigo-50 text-[#4F46E5]" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+              children: [
+                /* @__PURE__ */ jsx(
+                  Package,
+                  {
+                    size: 18,
+                    className: activeTab === "orders" ? "text-[#4F46E5]" : ""
+                  }
+                ),
+                "My Orders"
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxs(
+            "button",
+            {
+              onClick: () => handleTabChange("cart"),
+              className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer relative ${activeTab === "cart" ? "bg-indigo-50 text-[#4F46E5]" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+              children: [
+                /* @__PURE__ */ jsx(
+                  ShoppingCart,
+                  {
+                    size: 18,
+                    className: activeTab === "cart" ? "text-[#4F46E5]" : ""
+                  }
+                ),
+                "Shopping Cart",
+                cartCount > 0 && /* @__PURE__ */ jsx("span", { className: "absolute right-3 w-4 h-4 bg-rose-500 text-white text-[8px] font-extrabold rounded-full flex items-center justify-center", children: cartCount })
+              ]
+            }
+          )
         ] }),
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 pl-4 border-l border-white/20", children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxs("div", { className: "p-4 border-t border-[#E2E8F0] flex flex-col gap-2", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2.5 px-3 py-2", children: [
             /* @__PURE__ */ jsx(
               "img",
               {
                 src: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
                 alt: "Profile",
-                className: "w-7 h-7 rounded-full object-cover border border-white"
+                className: "w-7 h-7 rounded-full object-cover border border-slate-200"
               }
             ),
-            /* @__PURE__ */ jsx("span", { className: "font-bold text-xs hidden sm:block", children: "Saif Shahzad" })
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col min-w-0", children: [
+              /* @__PURE__ */ jsx("span", { className: "font-bold text-slate-800 text-[11px] truncate", children: currentUser?.email?.split('@')[0] || "Saif Shahzad" }),
+              /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#94A3B8] font-bold uppercase", children: "B2C Buyer" })
+            ] })
           ] }),
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsxs(
             "button",
             {
               onClick: onLogout,
-              className: "text-white hover:text-rose-200 border-0 bg-transparent transition-colors cursor-pointer",
-              children: /* @__PURE__ */ jsx(LogOut, { size: 16 })
+              className: "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-rose-600 hover:bg-rose-50 font-bold transition-all border-0 bg-transparent cursor-pointer",
+              children: [
+                /* @__PURE__ */ jsx(LogOut, { size: 16 }),
+                /* @__PURE__ */ jsx("span", { className: "text-[11px]", children: "Log Out" })
+              ]
             }
           )
         ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("main", { className: "flex-1 overflow-y-auto p-4 sm:p-8", children: [
+      ]
+    }),
+    /* @__PURE__ */ jsxs("main", { className: "flex-1 flex flex-col min-w-0 overflow-hidden relative", children: [
+      /* @__PURE__ */ jsxs("header", { className: "h-[70px] bg-white border-b border-[#E2E8F0] flex items-center justify-between px-4 sm:px-8 flex-shrink-0 z-10 sticky top-0 shadow-sm", children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => setMobileMenuOpen(!mobileMenuOpen),
+              className: "md:hidden p-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer border-0 bg-transparent flex items-center justify-center",
+              children: /* @__PURE__ */ jsx(Menu, { size: 20 })
+            }
+          ),
+          /* @__PURE__ */ jsxs(
+            "h2",
+            {
+              className: "text-base sm:text-lg font-bold text-[#0F172A]",
+              style: { fontFamily: "Outfit, sans-serif" },
+              children: [
+                activeTab === "catalog" && "Explore Store Catalog",
+                activeTab === "orders" && "My Orders History",
+                activeTab === "cart" && "Your Shopping Cart"
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+          /* @__PURE__ */ jsxs("div", { className: "relative hidden sm:block", children: [
+            /* @__PURE__ */ jsx(Search, { size: 14, className: "absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" }),
+            /* @__PURE__ */ jsx("input", {
+              className: "w-[200px] pl-8 pr-4 py-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-800 focus:outline-none focus:bg-white focus:border-[#4F46E5] transition-all placeholder-slate-400",
+              placeholder: "Search store...",
+              value: search,
+              onChange: (e) => setSearch(e.target.value)
+            })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "relative", ref: notifRef, children: [
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                onClick: (e) => {
+                  e.stopPropagation();
+                  setNotifOpen(!notifOpen);
+                },
+                className: "relative w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-all cursor-pointer bg-white",
+                children: [
+                  /* @__PURE__ */ jsx(Bell, { size: 16, className: notifBounce ? "animate-bell-bounce" : "" }),
+                  unreadNotifications.length > 0 && /* @__PURE__ */ jsx("span", { className: "absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center", children: unreadNotifications.length })
+                ]
+              }
+            ),
+            notifOpen && /* @__PURE__ */ jsxs("div", { className: "absolute right-0 top-[calc(100%+8px)] w-[320px] bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden text-[#0F172A] animate-dropdown", children: [
+              /* @__PURE__ */ jsxs("div", { className: "p-3 border-b border-[#E2E8F0] flex items-center justify-between", children: [
+                /* @__PURE__ */ jsx("span", { className: "text-xs font-bold", children: "Notifications" }),
+                /* @__PURE__ */ jsx("button", {
+                  onClick: handleMarkAllRead,
+                  className: "text-[10px] font-bold text-[#4F46E5] hover:text-[#4338CA] transition-colors border-0 bg-transparent cursor-pointer",
+                  children: "Mark all read"
+                })
+              ] }),
+              /* @__PURE__ */ jsx("div", { className: "max-h-[250px] overflow-y-auto divide-y divide-[#E2E8F0]", children: filteredNotifications.length === 0 ? /* @__PURE__ */ jsx("div", { className: "p-6 text-center text-[#64748B] font-medium", children: "No new updates." }) : filteredNotifications.map((n) => /* @__PURE__ */ jsxs("div", {
+                className: "p-3.5 hover:bg-slate-50/50 transition-colors",
+                children: [
+                  /* @__PURE__ */ jsx("span", { className: "font-semibold text-slate-800 block", children: n.title }),
+                  /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-0.5 leading-relaxed text-[11px]", children: n.message })
+                ]
+              }, n.notification_id)) })
+            ] })
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "flex-1 overflow-y-auto p-4 sm:p-8", children: [
       activeTab === "catalog" && /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-6", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx(
@@ -446,43 +498,8 @@ export default function BuyerPortal({ onLogout }) {
             )
           ] })
         ] })
-      ] }),
-      /* @__PURE__ */ jsxs("nav", { className: "md:hidden h-[60px] bg-white border-t border-[#E2E8F0] flex items-center justify-around px-4 flex-shrink-0 relative z-20 text-[#64748B] shadow-[0_-4px_12px_rgba(0,0,0,0.03)]", children: [
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("catalog"),
-            className: `flex flex-col items-center justify-center gap-1 border-0 bg-transparent cursor-pointer py-1 ${activeTab === "catalog" ? "text-[#4F46E5]" : "text-[#64748B]"}`,
-            children: [
-              /* @__PURE__ */ jsx(ShoppingBag, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold", children: "Catalog" })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("orders"),
-            className: `flex flex-col items-center justify-center gap-1 border-0 bg-transparent cursor-pointer py-1 ${activeTab === "orders" ? "text-[#4F46E5]" : "text-[#64748B]"}`,
-            children: [
-              /* @__PURE__ */ jsx(Package, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold", children: "Orders" })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("cart"),
-            className: `flex flex-col items-center justify-center gap-1 border-0 bg-transparent cursor-pointer py-1 relative ${activeTab === "cart" ? "text-[#4F46E5]" : "text-[#64748B]"}`,
-            children: [
-              /* @__PURE__ */ jsx(ShoppingCart, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold", children: "Cart" }),
-              cartCount > 0 && /* @__PURE__ */ jsx("span", { className: "absolute top-0 right-1 w-4 h-4 bg-rose-500 text-white text-[8px] font-extrabold rounded-full flex items-center justify-center", children: cartCount })
-            ]
-          }
-        )
       ] })
     ] })
-  ] });
+  ] })
+] });
 }
