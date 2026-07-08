@@ -254,10 +254,16 @@ h1, h2, h3, h4 {
 
 /* Grid padding rules: 24px padding on page, 16px gaps on cards */
 .page-container {
-  padding: 24px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
+}
+@media (min-width: 640px) {
+  .page-container {
+    padding: 24px;
+    gap: 24px;
+  }
 }
 
 .card-gap {
