@@ -33,6 +33,7 @@ export function StoreProvider({ children }) {
   const [stockMovements, setStockMovements] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [cart, setCart] = useState([]);
+  const [distributors, setDistributors] = useState([]);
   useEffect(() => {
     const fetchAllData = async () => {
       try {
@@ -59,6 +60,9 @@ export function StoreProvider({ children }) {
 
         const logsRes = await fetch("/api/audit-logs");
         if (logsRes.ok) setAuditLogs(await logsRes.json());
+
+        const distRes = await fetch("/api/admin/distributors");
+        if (distRes.ok) setDistributors(await distRes.json());
       } catch (err) {
         console.error("Error fetching data from database:", err);
       }
@@ -854,6 +858,69 @@ export function StoreProvider({ children }) {
     },
     [products, currentUser]
   );
+
+  const fetchDistributors = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/distributors");
+      if (res.ok) {
+        const data = await res.json();
+        setDistributors(data);
+      }
+    } catch (err) {
+      console.error("Error fetching distributors:", err);
+    }
+  }, []);
+
+  const approveDistributor = useCallback(async (id) => {
+    try {
+      const res = await fetch("/api/admin/distributors/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        await fetchDistributors();
+        addNotification({
+          id: `notif-${Date.now()}`,
+          title: "Distributor Approved",
+          desc: "The distributor account registration request has been successfully approved.",
+          type: "success",
+          time: "Just Now",
+          read: false
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error("Error approving distributor:", err);
+    }
+    return false;
+  }, [fetchDistributors, addNotification]);
+
+  const removeDistributor = useCallback(async (id) => {
+    try {
+      const res = await fetch("/api/admin/distributors/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        await fetchDistributors();
+        addNotification({
+          id: `notif-${Date.now()}`,
+          title: "Distributor Removed",
+          desc: "The distributor account has been successfully removed.",
+          type: "info",
+          time: "Just Now",
+          read: false
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error("Error removing distributor:", err);
+    }
+    return false;
+  }, [fetchDistributors, addNotification]);
+
   return /* @__PURE__ */ jsx(
     StoreContext.Provider,
     {
@@ -862,6 +929,10 @@ export function StoreProvider({ children }) {
         setPortal,
         currentUser,
         setCurrentUser,
+        distributors,
+        fetchDistributors,
+        approveDistributor,
+        removeDistributor,
         products,
         orders,
         invoices,

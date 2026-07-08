@@ -21,6 +21,7 @@ async function initDb() {
         email VARCHAR(255) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         role VARCHAR(50) NOT NULL, -- 'admin', 'distributor', 'buyer'
+        status VARCHAR(50) DEFAULT 'ACTIVE',
         
         -- Distributor fields
         business_name VARCHAR(255),
@@ -73,6 +74,7 @@ async function initDb() {
       ALTER TABLE products ALTER COLUMN image_url TYPE TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS min_wholesale_qty INTEGER DEFAULT 1;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS max_discount INTEGER DEFAULT 10;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
     `);
 
     // Create orders table
@@ -267,6 +269,14 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Incorrect password.' });
     }
 
+    // Status validation
+    if (user.status === 'PENDING_APPROVAL') {
+      return res.status(403).json({ success: false, message: 'Your distributor account registration is pending approval by the Admin.' });
+    }
+    if (user.status === 'DEACTIVATED' || user.status === 'REMOVED') {
+      return res.status(403).json({ success: false, message: 'Your account has been deactivated or removed.' });
+    }
+
     // Role vs Portal Context validation
     // Portal can be 'admin', 'distributor', 'buyer'.
     // DB user role can be 'admin', 'distributor', 'buyer'.
@@ -333,9 +343,9 @@ app.post('/api/auth/register-distributor', async (req, res) => {
 
     // Insert distributor with default password 'demopassword'
     await pool.query(
-      `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [regEmail, 'demopassword', 'distributor', contactName, businessName, warehouseRegion, creditRequest]
+      `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request, status) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [regEmail, 'demopassword', 'distributor', contactName, businessName, warehouseRegion, creditRequest, 'PENDING_APPROVAL']
     );
 
     return res.status(201).json({ success: true, message: 'Distributor application registered successfully.' });
@@ -899,6 +909,45 @@ app.post('/api/audit-logs', async (req, res) => {
   } catch (err) {
     console.error('Error creating audit log:', err);
     return res.status(500).json({ success: false, message: 'Database error creating audit log.' });
+  }
+});
+
+// GET all distributors for admin approval/management page
+app.get('/api/admin/distributors', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE role = 'distributor' ORDER BY id DESC");
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching distributors:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching distributors.' });
+  }
+});
+
+// POST approve distributor
+app.post('/api/admin/distributors/approve', async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
+
+  try {
+    await pool.query("UPDATE users SET status = 'ACTIVE' WHERE id = $1 AND role = 'distributor'", [id]);
+    return res.json({ success: true, message: 'Distributor approved successfully.' });
+  } catch (err) {
+    console.error('Error approving distributor:', err);
+    return res.status(500).json({ success: false, message: 'Database error approving distributor.' });
+  }
+});
+
+// POST remove distributor
+app.post('/api/admin/distributors/remove', async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
+
+  try {
+    await pool.query("DELETE FROM users WHERE id = $1 AND role = 'distributor'", [id]);
+    return res.json({ success: true, message: 'Distributor removed successfully.' });
+  } catch (err) {
+    console.error('Error removing distributor:', err);
+    return res.status(500).json({ success: false, message: 'Database error removing distributor.' });
   }
 });
 

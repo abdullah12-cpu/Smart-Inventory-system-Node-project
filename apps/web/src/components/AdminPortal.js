@@ -65,9 +65,20 @@ export default function AdminPortal({ onLogout }) {
     deleteSupplier,
     approveOrder,
     quotations,
-    updateQuotationStatus
+    updateQuotationStatus,
+    distributors,
+    fetchDistributors,
+    approveDistributor,
+    removeDistributor
   } = useStore();
   const [activeTab, setActiveTab] = useState("dashboard");
+  
+  useEffect(() => {
+    if (activeTab === "distributors") {
+      fetchDistributors();
+    }
+  }, [activeTab, fetchDistributors]);
+
   const [search, setSearch] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
   const [roleSwitcherOpen, setRoleSwitcherOpen] = useState(false);
@@ -281,6 +292,17 @@ export default function AdminPortal({ onLogout }) {
               children: [
               /* @__PURE__ */ jsx(Database, { size: 18 }),
               /* @__PURE__ */ jsx("span", { children: "Quote Negotiations" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxs(
+            "button",
+            {
+              onClick: () => setActiveTab("distributors"),
+              className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "distributors" ? "active" : ""}`,
+              children: [
+              /* @__PURE__ */ jsx(Users, { size: 18 }),
+              /* @__PURE__ */ jsx("span", { children: "Distributors Management" })
               ]
             }
           ),
@@ -2146,6 +2168,124 @@ export default function AdminPortal({ onLogout }) {
               })
               ]
             })
+            ]
+          }),
+          activeTab === "distributors" && /* @__PURE__ */ jsxs("div", {
+            className: "page-container animate-cross-fade flex flex-col gap-6", children: [
+              /* @__PURE__ */ jsxs("div", { children: [
+                /* @__PURE__ */ jsx(
+                  "h1",
+                  {
+                    className: "text-2xl font-bold text-[#0F172A]",
+                    style: { fontFamily: "Outfit, sans-serif" },
+                    children: "Distributor Registrations & Approval Page"
+                  }
+                ),
+                /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Approve pending distributor applications or manage currently registered partners." })
+              ] }),
+              
+              /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-sm flex flex-col gap-4", children: [
+                /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A] border-b border-[#F1F5F9] pb-3", children: "Pending Registration Requests" }),
+                (() => {
+                  const pending = (distributors || []).filter(d => d.status === "PENDING_APPROVAL");
+                  if (pending.length === 0) {
+                    return /* @__PURE__ */ jsx("div", { className: "text-center py-8 text-[#94A3B8] text-xs bg-slate-50 rounded-xl border border-dashed border-[#CBD5E1]", children: "No pending distributor registration requests." });
+                  }
+                  return /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-3", children: pending.map((dist) => /* @__PURE__ */ jsxs(
+                    "div",
+                    {
+                      className: "flex flex-wrap items-center justify-between gap-4 p-4 border border-[#E2E8F0] rounded-xl hover:border-blue-200 transition-colors bg-white",
+                      children: [
+                        /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1 min-w-[200px]", children: [
+                          /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-[#0F172A]", children: dist.business_name || "Unknown Business" }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-xs text-[#64748B]", children: [
+                            "Contact Person: ",
+                            /* @__PURE__ */ jsx("strong", { className: "text-[#334155]", children: dist.contact_name || "Unknown" })
+                          ] }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
+                            "Email: ",
+                            dist.email
+                          ] }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
+                            "Region: ",
+                            /* @__PURE__ */ jsx("strong", { className: "text-blue-600", children: dist.warehouse_region || "None" })
+                          ] }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
+                            "Requested Limit: ",
+                            /* @__PURE__ */ jsx("strong", { className: "text-emerald-600", children: formatCurrency(parseFloat(dist.credit_request || 0)) })
+                          ] })
+                        ] }),
+                        /* @__PURE__ */ jsxs("div", { className: "flex gap-2", children: [
+                          /* @__PURE__ */ jsx("button", {
+                            onClick: async () => {
+                              if (confirm(`Are you sure you want to approve distributor "${dist.business_name}"?`)) {
+                                await approveDistributor(dist.id);
+                              }
+                            },
+                            className: "px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm",
+                            children: "Approve"
+                          }),
+                          /* @__PURE__ */ jsx("button", {
+                            onClick: async () => {
+                              if (confirm(`Are you sure you want to reject distributor application from "${dist.business_name}"?`)) {
+                                await removeDistributor(dist.id);
+                              }
+                            },
+                            className: "px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm",
+                            children: "Reject"
+                          })
+                        ] })
+                      ]
+                    },
+                    dist.id
+                  )) });
+                })()
+              ] }),
+
+              /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-sm flex flex-col gap-4", children: [
+                /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A] border-b border-[#F1F5F9] pb-3", children: "Registered Distributors" }),
+                (() => {
+                  const activeDists = (distributors || []).filter(d => d.status === "ACTIVE" || d.status === null || d.status === undefined);
+                  if (activeDists.length === 0) {
+                    return /* @__PURE__ */ jsx("div", { className: "text-center py-8 text-[#94A3B8] text-xs bg-slate-50 rounded-xl border border-dashed border-[#CBD5E1]", children: "No registered distributors on the platform." });
+                  }
+                  return /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-3", children: activeDists.map((dist) => /* @__PURE__ */ jsxs(
+                    "div",
+                    {
+                      className: "flex flex-wrap items-center justify-between gap-4 p-4 border border-[#E2E8F0] rounded-xl hover:border-slate-300 transition-colors bg-white",
+                      children: [
+                        /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1 min-w-[200px]", children: [
+                          /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-[#0F172A]", children: dist.business_name || "Unknown Business" }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-xs text-[#64748B]", children: [
+                            "Contact Person: ",
+                            /* @__PURE__ */ jsx("strong", { className: "text-[#334155]", children: dist.contact_name || "Unknown" })
+                          ] }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
+                            "Email: ",
+                            dist.email
+                          ] }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
+                            "Region: ",
+                            /* @__PURE__ */ jsx("strong", { className: "text-blue-600", children: dist.warehouse_region || "None" })
+                          ] })
+                        ] }),
+                        /* @__PURE__ */ jsx("div", { children: [
+                          /* @__PURE__ */ jsx("button", {
+                            onClick: async () => {
+                              if (confirm(`WARNING: Are you sure you want to completely remove distributor "${dist.business_name}"?`)) {
+                                await removeDistributor(dist.id);
+                              }
+                            },
+                            className: "px-4 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-bold transition-colors cursor-pointer bg-white",
+                            children: "Remove Partner"
+                          })
+                        ] })
+                      ]
+                    },
+                    dist.id
+                  )) });
+                })()
+              ] })
             ]
           })
         ]
