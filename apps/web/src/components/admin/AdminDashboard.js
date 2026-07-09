@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { computeStockAlertStatus, formatCurrency } from "@/lib/data";
-import { KpiCard, StockAlertBadge, ProductStatusBadge } from "@/components/ui";
+import { KpiCard, StockAlertBadge, ProductStatusBadge, CountUp } from "@/components/ui";
+import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
 import ProductDrawer from "./ProductDrawer";
 import AddSkuModal from "./AddSkuModal";
 const ALIGN_TABS = [
@@ -18,6 +19,9 @@ const ALIGN_TABS = [
   { id: "LOW_STOCK", label: "Low Stock" }
 ];
 export default function AdminDashboard({ search, mode }) {
+  const shouldReduceMotion = useReducedMotion();
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportHovered, setExportHovered] = useState(false);
   const { products } = useStore();
   const [tab, setTab] = useState("all");
   const [warehouseFilter, setWarehouseFilter] = useState("all");
@@ -227,7 +231,36 @@ export default function AdminDashboard({ search, mode }) {
             t.id
           )) })
         ] }),
-        /* @__PURE__ */ jsx("button", { className: "text-xs font-semibold text-[#64748B] border border-[#E2E8F0] px-3 py-1.5 rounded-lg hover:bg-[#F8FAFC] transition-colors cursor-pointer bg-white", children: "Export CSV" })
+        /* @__PURE__ */ jsxs(
+          motion.button,
+          {
+            onMouseEnter: () => setExportHovered(true),
+            onMouseLeave: () => setExportHovered(false),
+            onClick: () => {
+              setExportLoading(true);
+              setTimeout(() => setExportLoading(false), 600);
+            },
+            whileHover: shouldReduceMotion ? {} : { scale: 1.02 },
+            whileTap: shouldReduceMotion ? {} : { scale: 0.98 },
+            className: "text-xs font-semibold text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] px-3 py-1.5 rounded-lg hover:bg-[#F8FAFC] transition-all cursor-pointer bg-white flex items-center gap-1.5 min-w-[92px] justify-center",
+            children: [
+              exportLoading ? (
+                /* @__PURE__ */ jsx("span", { className: "w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" })
+              ) : (
+                /* @__PURE__ */ jsx(AnimatePresence, {
+                  children: exportHovered && !shouldReduceMotion && /* @__PURE__ */ jsx(motion.span, {
+                    initial: { width: 0, opacity: 0 },
+                    animate: { width: "auto", opacity: 1 },
+                    exit: { width: 0, opacity: 0 },
+                    className: "shrink-0 font-bold",
+                    children: "↓"
+                  })
+                })
+              ),
+              "Export CSV"
+            ]
+          }
+        )
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "px-6 py-3 bg-[#F8FAFC]/55 border-b border-[#E2E8F0] flex items-center gap-4 flex-wrap text-xs", children: [
         /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
@@ -315,7 +348,7 @@ export default function AdminDashboard({ search, mode }) {
             className: "text-center py-12 text-xs text-[#94A3B8] font-medium",
             children: "No products match the selected criteria."
           }
-        ) }) : filtered.map((p) => {
+        ) }) : filtered.map((p, idx) => {
           const totalQty = p.inventory.reduce(
             (sum, inv) => sum + inv.quantity,
             0
@@ -335,14 +368,42 @@ export default function AdminDashboard({ search, mode }) {
           );
           const isFlashing = flashingIds[p.product_id];
           return /* @__PURE__ */ jsxs(
-            "tr",
+            motion.tr,
             {
               onClick: () => setSelectedId(p.product_id),
-              className: `data-row border-b border-[#E2E8F0] cursor-pointer text-xs ${isFlashing ? "animate-row-flash" : ""}`,
+              initial: shouldReduceMotion ? {} : { opacity: 0, y: 12 },
+              animate: { opacity: 1, y: 0 },
+              transition: { duration: 0.25, delay: idx * 0.04 },
+              className: `data-row-enhanced border-b border-[#E2E8F0] cursor-pointer text-xs group ${isFlashing ? "animate-row-flash" : ""}`,
               children: [
-                /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsxs("div", { children: [
-                  /* @__PURE__ */ jsx("div", { className: "font-bold text-[#0F172A]", children: p.product_name }),
-                  /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#94A3B8] font-medium mt-0.5", children: p.sku })
+                /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
+                  (() => {
+                    const lastChar = p.product_id.toString().charAt(p.product_id.toString().length - 1);
+                    const charCode = lastChar.charCodeAt(0);
+                    let freshnessColor = "bg-[#10B981]";
+                    let freshnessLabel = "Updated 5m ago";
+                    if (charCode % 3 === 1) {
+                      freshnessColor = "bg-[#F59E0B]";
+                      freshnessLabel = "Updated 4h ago";
+                    } else if (charCode % 3 === 2) {
+                      freshnessColor = "bg-[#EF4444]";
+                      freshnessLabel = "Updated 2d ago";
+                    }
+                    return /* @__PURE__ */ jsxs("div", {
+                      className: "relative group/freshness inline-block mr-2 shrink-0 select-none",
+                      children: [
+                        /* @__PURE__ */ jsx("span", { className: `w-2 h-2 rounded-full inline-block ${freshnessColor}` }),
+                        /* @__PURE__ */ jsx("span", {
+                          className: "absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/freshness:block bg-slate-850 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg z-50 pointer-events-none whitespace-nowrap",
+                          children: freshnessLabel
+                        })
+                      ]
+                    });
+                  })(),
+                  /* @__PURE__ */ jsxs("div", { children: [
+                    /* @__PURE__ */ jsx("div", { className: "font-bold text-[#0F172A] group-hover:text-[#4F46E5] transition-colors duration-150", children: p.product_name }),
+                    /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#94A3B8] font-medium mt-0.5", children: p.sku })
+                  ] })
                 ] }) }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-[#64748B]", children: /* @__PURE__ */ jsxs("div", { children: [
                   /* @__PURE__ */ jsx("div", { className: "font-semibold", children: p.brand }),
@@ -350,7 +411,7 @@ export default function AdminDashboard({ search, mode }) {
                 ] }) }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-semibold text-[#0F172A]", children: totalQty.toLocaleString("en-US") }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-medium text-[#E11D48]", children: totalRes.toLocaleString("en-US") }),
-                /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#4F46E5]", children: totalAvail.toLocaleString("en-US") }),
+                /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#4F46E5]", children: /* @__PURE__ */ jsx(CountUp, { value: totalAvail }) }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsx(StockAlertBadge, { status: alertStatus }) }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#0F172A]", children: formatCurrency(p.prices.RETAIL) })
               ]

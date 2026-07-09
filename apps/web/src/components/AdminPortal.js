@@ -18,6 +18,13 @@ import {
 import { useStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/data";
 import {
+  motion,
+  AnimatePresence,
+  useReducedMotion
+} from "framer-motion";
+import {
+  CountUp,
+  Typewriter,
   OrderStatusBadge,
   InvoiceStatusBadge,
   LatePaymentRiskBadge,
@@ -44,8 +51,51 @@ function PaymentMethodIcon({ method }) {
   if (method === "EASYPAISA") {
     return /* @__PURE__ */ jsx("span", { className: "inline-flex items-center justify-center font-extrabold text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded scale-90 border border-emerald-700", children: "EasyPaisa" });
   }
-  return /* @__PURE__ */ jsx("span", { className: "inline-flex items-center justify-center font-semibold text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded", children: method.replace("_", " ") });
 }
+
+function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldReduceMotion }) {
+  const isActive = activeTab === id;
+  return /* @__PURE__ */ jsxs(
+    "button",
+    {
+      onClick: () => setActiveTab(id),
+      className: `sidebar-link w-full text-left border-0 bg-transparent relative flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold transition-colors duration-200 cursor-pointer overflow-hidden ${
+        isActive ? "text-white" : "text-[#94A3B8] hover:text-white"
+      }`,
+      style: { background: "transparent" },
+      children: [
+        isActive && /* @__PURE__ */ jsx(motion.div, {
+          layoutId: "sidebar-active-pill",
+          className: "absolute inset-0 bg-[#4F46E5] rounded-lg -z-10",
+          initial: shouldReduceMotion ? { opacity: 1 } : { opacity: 0 },
+          animate: { opacity: 1 },
+          transition: { duration: 0.2 }
+        }),
+        isActive && /* @__PURE__ */ jsx(motion.div, {
+          layoutId: "sidebar-active-line",
+          className: "absolute left-0 top-0 bottom-0 w-[2.5px] bg-white rounded-r-md",
+          initial: shouldReduceMotion ? { y: 0 } : { y: -40 },
+          animate: { y: 0 },
+          transition: { type: "spring", stiffness: 300, damping: 25 }
+        }),
+        !isActive && /* @__PURE__ */ jsx(motion.div, {
+          whileHover: shouldReduceMotion ? {} : { opacity: 0.05 },
+          className: "absolute inset-0 bg-white opacity-0 rounded-lg -z-10"
+        }),
+        /* @__PURE__ */ jsxs(motion.div, {
+          whileHover: shouldReduceMotion || isActive ? {} : { x: 3 },
+          transition: { duration: 0.15 },
+          className: "flex items-center gap-3 w-full",
+          children: [
+            /* @__PURE__ */ jsx(Icon, { size: 18, className: isActive ? "text-white" : "text-[#94A3B8] group-hover:text-white" }),
+            /* @__PURE__ */ jsx("span", { children: label })
+          ]
+        })
+      ]
+    }
+  );
+}
+
 export default function AdminPortal({ onLogout }) {
   const {
     notifications,
@@ -72,6 +122,21 @@ export default function AdminPortal({ onLogout }) {
     removeDistributor
   } = useStore();
   const [activeTab, setActiveTab] = useState("dashboard");
+  const shouldReduceMotion = useReducedMotion();
+  const [pageLoading, setPageLoading] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [bellHovered, setBellHovered] = useState(false);
+  const [userCardHovered, setUserCardHovered] = useState(false);
+  const [isApproving, setIsApproving] = useState({});
+  const [isRejecting, setIsRejecting] = useState({});
+  const [removeHoveredId, setRemoveHoveredId] = useState(null);
+  const [clearShake, setClearShake] = useState(false);
+
+  useEffect(() => {
+    setPageLoading(true);
+    const timer = setTimeout(() => setPageLoading(false), 350);
+    return () => clearTimeout(timer);
+  }, [activeTab]);
   
   useEffect(() => {
     if (activeTab === "distributors") {
@@ -199,15 +264,27 @@ export default function AdminPortal({ onLogout }) {
     return true;
   });
   return /* @__PURE__ */ jsxs("div", {
-    className: "flex h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
+    className: "flex h-screen bg-[#F8FAFC] overflow-hidden text-xs relative", children: [
+    
+    // Top Route Change Progress Bar
+    /* @__PURE__ */ jsx(AnimatePresence, {
+      children: pageLoading && /* @__PURE__ */ jsx(motion.div, {
+        className: "fixed top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#4F46E5] via-[#818CF8] to-[#4F46E5] z-[9999] origin-left",
+        initial: { scaleX: 0 },
+        animate: { scaleX: 1 },
+        exit: { scaleX: 1, opacity: 0 },
+        transition: { duration: 0.35, ease: "easeInOut" }
+      })
+    }),
+
     /* @__PURE__ */ jsxs("aside", {
-      className: "w-[260px] bg-[#0F172A] flex flex-col border-r border-[#1E293B] flex-shrink-0 relative z-20", children: [
+      className: "w-[260px] bg-[#0F172A] flex flex-col border-r border-[#1E293B] flex-shrink-0 relative z-20 sidebar-texture", children: [
       /* @__PURE__ */ jsxs("div", {
         className: "p-6 flex items-center gap-3 border-b border-[#1E293B]", children: [
         /* @__PURE__ */ jsx(
           "div",
           {
-            className: "w-8 h-8 bg-[#4F46E5] rounded-md flex items-center justify-center text-white font-extrabold text-sm logo-box",
+            className: "w-8 h-8 bg-[#4F46E5] rounded-md flex items-center justify-center text-white font-extrabold text-sm logo-box logo-heartbeat",
             style: { fontFamily: "Outfit, sans-serif" },
             children: "IQ"
           }
@@ -229,94 +306,14 @@ export default function AdminPortal({ onLogout }) {
       }),
       /* @__PURE__ */ jsxs("nav", {
         className: "flex-1 p-4 flex flex-col gap-1.5 overflow-y-auto relative", children: [
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("dashboard"),
-            className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "dashboard" ? "active" : ""}`,
-            children: [
-              /* @__PURE__ */ jsx(LayoutDashboard, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "Dashboard Hub" })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setActiveTab("products"),
-            className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "products" ? "active" : ""}`,
-            children: [
-              /* @__PURE__ */ jsx(Box, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "My Products" })
-            ]
-          }
-        ),
-          canAccessSuppliers && /* @__PURE__ */ jsxs(
-            "button",
-            {
-              onClick: () => setActiveTab("suppliers"),
-              className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "suppliers" ? "active" : ""}`,
-              children: [
-              /* @__PURE__ */ jsx(Users, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "Suppliers Directory" })
-              ]
-            }
-          ),
-          canAccessBilling && /* @__PURE__ */ jsxs(
-            "button",
-            {
-              onClick: () => setActiveTab("orders"),
-              className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "orders" ? "active" : ""}`,
-              children: [
-              /* @__PURE__ */ jsx(Database, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "Orders " })
-              ]
-            }
-          ),
-          canAccessBilling && /* @__PURE__ */ jsxs(
-            "button",
-            {
-              onClick: () => setActiveTab("billing"),
-              className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "billing" ? "active" : ""}`,
-              children: [
-              /* @__PURE__ */ jsx(Receipt, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "Billing & Reconcile" })
-              ]
-            }
-          ),
-          canAccessBilling && /* @__PURE__ */ jsxs(
-            "button",
-            {
-              onClick: () => setActiveTab("negotiations"),
-              className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "negotiations" ? "active" : ""}`,
-              children: [
-              /* @__PURE__ */ jsx(Database, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "Quote Negotiations" })
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxs(
-            "button",
-            {
-              onClick: () => setActiveTab("distributors"),
-              className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "distributors" ? "active" : ""}`,
-              children: [
-              /* @__PURE__ */ jsx(Users, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "Distributors Management" })
-              ]
-            }
-          ),
-        /* @__PURE__ */ jsxs(
-            "button",
-            {
-              onClick: () => setActiveTab("settings"),
-              className: `sidebar-link w-full text-left border-0 bg-transparent ${activeTab === "settings" ? "active" : ""}`,
-              children: [
-              /* @__PURE__ */ jsx(Settings, { size: 18 }),
-              /* @__PURE__ */ jsx("span", { children: "System Settings" })
-              ]
-            }
-          )
+          /* @__PURE__ */ jsx(SidebarLink, { id: "dashboard", label: "Dashboard Hub", icon: LayoutDashboard, activeTab, setActiveTab, shouldReduceMotion }),
+          /* @__PURE__ */ jsx(SidebarLink, { id: "products", label: "My Products", icon: Box, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessSuppliers && /* @__PURE__ */ jsx(SidebarLink, { id: "suppliers", label: "Suppliers Directory", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "orders", label: "Orders ", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "billing", label: "Billing & Reconcile", icon: Receipt, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "negotiations", label: "Quote Negotiations", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
+          /* @__PURE__ */ jsx(SidebarLink, { id: "distributors", label: "Distributors Management", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
+          /* @__PURE__ */ jsx(SidebarLink, { id: "settings", label: "System Settings", icon: Settings, activeTab, setActiveTab, shouldReduceMotion })
         ]
       }),
       /* @__PURE__ */ jsxs("div", {
@@ -356,18 +353,40 @@ export default function AdminPortal({ onLogout }) {
             "div",
             {
               onClick: () => setRoleSwitcherOpen(!roleSwitcherOpen),
+              onMouseEnter: () => setUserCardHovered(true),
+              onMouseLeave: () => setUserCardHovered(false),
               className: "flex items-center justify-between px-2.5 py-2 mb-3 bg-[#1E293B]/40 hover:bg-[#1E293B]/80 rounded-lg cursor-pointer border border-transparent hover:border-[#4F46E5]/40 transition-all",
               children: [
               /* @__PURE__ */ jsxs("div", {
                 className: "flex items-center gap-2.5 overflow-hidden", children: [
-                /* @__PURE__ */ jsx(
-                  "img",
-                  {
-                    src: currentUser.profile_image,
-                    alt: "Profile",
-                    className: "w-9 h-9 rounded-full object-cover border border-[#4F46E5]"
-                  }
-                ),
+                /* @__PURE__ */ jsxs("div", {
+                  className: "relative w-9 h-9 flex items-center justify-center shrink-0",
+                  children: [
+                    /* @__PURE__ */ jsx(motion.svg, {
+                      className: "absolute inset-0 w-full h-full text-[#4F46E5] opacity-40 pointer-events-none",
+                      animate: shouldReduceMotion ? {} : { rotate: 360 },
+                      transition: { repeat: Infinity, duration: 8, ease: "linear" },
+                      viewBox: "0 0 36 36",
+                      children: /* @__PURE__ */ jsx("circle", {
+                        cx: "18",
+                        cy: "18",
+                        r: "16",
+                        fill: "none",
+                        stroke: "currentColor",
+                        strokeWidth: "1.5",
+                        strokeDasharray: "40 100"
+                      })
+                    }),
+                    /* @__PURE__ */ jsx(
+                      "img",
+                      {
+                        src: currentUser.profile_image,
+                        alt: "Profile",
+                        className: "w-7.5 h-7.5 rounded-full object-cover border border-[#4F46E5]"
+                      }
+                    )
+                  ]
+                }),
                 /* @__PURE__ */ jsxs("div", {
                   className: "overflow-hidden", children: [
                   /* @__PURE__ */ jsxs("div", {
@@ -391,7 +410,11 @@ export default function AdminPortal({ onLogout }) {
                 })
                 ]
               }),
-              /* @__PURE__ */ jsx(ChevronDown, { size: 14, className: "text-[#94A3B8]" })
+              /* @__PURE__ */ jsx(motion.div, {
+                animate: { rotate: roleSwitcherOpen || userCardHovered ? 180 : 0 },
+                transition: { duration: 0.2 },
+                children: /* @__PURE__ */ jsx(ChevronDown, { size: 14, className: "text-[#94A3B8]" })
+              })
               ]
             }
           ),
@@ -413,9 +436,11 @@ export default function AdminPortal({ onLogout }) {
     /* @__PURE__ */ jsxs("div", {
       className: "flex-1 flex flex-col overflow-hidden", children: [
       /* @__PURE__ */ jsxs("header", {
-        className: "h-[70px] bg-white border-b border-[#E2E8F0] flex items-center justify-between px-8 flex-shrink-0 relative z-10", children: [
-        /* @__PURE__ */ jsxs("div", {
-          className: "relative w-[320px]", children: [
+        className: "h-[70px] bg-white border-b border-[#E2E8F0] flex items-center justify-between px-8 flex-shrink-0 relative z-10 header-shimmer", children: [
+        /* @__PURE__ */ jsxs(motion.div, {
+          animate: { width: isSearchFocused ? 340 : 320 },
+          transition: { duration: 0.2 },
+          className: "relative", children: [
           /* @__PURE__ */ jsx(
             Search,
             {
@@ -426,8 +451,14 @@ export default function AdminPortal({ onLogout }) {
           /* @__PURE__ */ jsx(
             "input",
             {
-              className: "w-full pl-9 pr-4 py-2 border border-[#E2E8F0] rounded-lg text-xs bg-[#F8FAFC] focus:outline-none focus:border-[#4F46E5] transition-colors",
-              placeholder: "Search catalog, suppliers, or reference...",
+              onFocus: () => setIsSearchFocused(true),
+              onBlur: () => setIsSearchFocused(false),
+              className: "w-full pl-9 pr-4 py-2 border rounded-lg text-xs bg-[#F8FAFC] focus:outline-none transition-all duration-200",
+              style: {
+                borderColor: isSearchFocused ? "#4F46E5" : "#E2E8F0",
+                boxShadow: isSearchFocused ? "0 0 20px rgba(79, 70, 229, 0.15)" : "none"
+              },
+              placeholder: isSearchFocused ? "" : "Search catalog, suppliers, or reference...",
               value: search,
               onChange: (e) => setSearch(e.target.value)
             }
@@ -441,6 +472,8 @@ export default function AdminPortal({ onLogout }) {
             /* @__PURE__ */ jsxs(
               "button",
               {
+                onMouseEnter: () => setBellHovered(true),
+                onMouseLeave: () => setBellHovered(false),
                 onClick: (e) => {
                   e.stopPropagation();
                   setNotifOpen(!notifOpen);
@@ -448,13 +481,22 @@ export default function AdminPortal({ onLogout }) {
                 className: `relative w-9 h-9 flex items-center justify-center border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A] transition-colors cursor-pointer ${notifOpen ? "bg-[#F8FAFC] border-[#4F46E5]" : ""}`,
                 children: [
                   /* @__PURE__ */ jsx(
-                  Bell,
+                  motion.div,
                   {
-                    size: 18,
-                    className: notifBounce ? "animate-bell-bounce" : ""
+                    animate: bellHovered && !shouldReduceMotion ? { rotate: [-8, 8, -8, 8, 0] } : { rotate: 0 },
+                    transition: { duration: 0.35, ease: "easeInOut" },
+                    children: /* @__PURE__ */ jsx(Bell, { size: 18 })
                   }
                 ),
-                  unreadNotifications.length > 0 && /* @__PURE__ */ jsx("span", { className: "absolute -top-1 -right-1 w-4 h-4 bg-[#EF4444] text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none", children: unreadNotifications.length })
+                  unreadNotifications.length > 0 && /* @__PURE__ */ jsx(
+                    motion.span,
+                    {
+                      animate: shouldReduceMotion ? {} : { scale: [1, 1.2, 1] },
+                      transition: { repeat: Infinity, duration: 2, ease: "easeInOut" },
+                      className: "absolute -top-1 -right-1 w-4 h-4 bg-[#EF4444] text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none",
+                      children: unreadNotifications.length
+                    }
+                  )
                 ]
               }
             ),
@@ -566,23 +608,41 @@ export default function AdminPortal({ onLogout }) {
         })
         ]
       }),
-      /* @__PURE__ */ jsxs("main", {
-        className: "flex-1 overflow-y-auto", children: [
-          activeTab === "dashboard" && /* @__PURE__ */ jsxs("div", {
-            className: "animate-cross-fade flex flex-col gap-6", children: [
-          /* @__PURE__ */ jsx(AdminDashboard, { search, mode: "dashboard" }),
+      /* @__PURE__ */ jsx("main", {
+        className: "flex-1 overflow-y-auto relative", children: 
+        /* @__PURE__ */ jsx(AnimatePresence, { mode: "wait", children: 
+          /* @__PURE__ */ jsxs(motion.div, {
+            key: activeTab,
+            initial: shouldReduceMotion ? {} : { opacity: 0, x: 15 },
+            animate: { opacity: 1, x: 0 },
+            exit: shouldReduceMotion ? {} : { opacity: 0, x: -15 },
+            transition: { duration: 0.22, ease: "easeOut" },
+            className: "w-full min-h-full",
+            children: [
+              activeTab === "dashboard" && /* @__PURE__ */ jsxs("div", {
+                className: "animate-cross-fade flex flex-col gap-6", children: [
+              /* @__PURE__ */ jsx(AdminDashboard, { search, mode: "dashboard" }),
           /* @__PURE__ */ jsx("div", {
               className: "px-8 pb-8", children: /* @__PURE__ */ jsxs("div", {
                 className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden", children: [
             /* @__PURE__ */ jsxs("div", {
                   className: "px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between", children: [
               /* @__PURE__ */ jsxs("div", {
-                    children: [
-                /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Live Inventory Stock Movements Ledger" }),
-                /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: "Real-time ledger audit log tracking all warehouse adjustments, transfers, and additions" })
+                    className: "flex items-center gap-2", children: [
+                      /* @__PURE__ */ jsx("span", { className: "w-2.5 h-2.5 rounded-full bg-[#10B981] dot-pulse-green shrink-0" }),
+                      /* @__PURE__ */ jsxs("div", {
+                            children: [
+                        /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Live Inventory Stock Movements Ledger" }),
+                        /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: "Real-time ledger audit log tracking all warehouse adjustments, transfers, and additions" })
+                            ]
+                          })
                     ]
                   }),
-              /* @__PURE__ */ jsx(Badge, { text: "Append-Only Log", variant: "info" })
+              /* @__PURE__ */ jsx(motion.div, {
+                whileHover: shouldReduceMotion ? {} : { scale: 1.03 },
+                className: "cursor-pointer select-none",
+                children: /* @__PURE__ */ jsx(Badge, { text: "Append-Only Log", variant: "info" })
+              })
                   ]
                 }),
             /* @__PURE__ */ jsx("div", {
@@ -591,20 +651,26 @@ export default function AdminPortal({ onLogout }) {
               /* @__PURE__ */ jsx("thead", {
                       children: /* @__PURE__ */ jsxs("tr", {
                         className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
-                /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Date & Time" }),
-                /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Product Name" }),
-                /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Warehouse" }),
-                /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Action Type" }),
-                /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[10px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Adjustment" }),
-                /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Operator / Performed By" })
+                          ["Date & Time", "Product Name", "Warehouse", "Action Type", "Adjustment", "Operator / Performed By"].map((header, hIdx) => (
+                            /* @__PURE__ */ jsx(motion.th, {
+                              initial: shouldReduceMotion ? {} : { opacity: 0 },
+                              animate: { opacity: 1 },
+                              transition: { delay: hIdx * 0.06 },
+                              className: `px-6 py-3 text-[10px] font-bold text-[#64748B] uppercase tracking-wider ${hIdx === 4 ? "text-right" : ""}`,
+                              children: header
+                            }, hIdx)
+                          ))
                         ]
                       })
                     }),
               /* @__PURE__ */ jsx("tbody", {
-                      children: stockMovements.slice(0, 5).map((m) => /* @__PURE__ */ jsxs(
-                        "tr",
+                      children: stockMovements.slice(0, 5).map((m, idx) => /* @__PURE__ */ jsxs(
+                        motion.tr,
                         {
-                          className: "border-b border-[#E2E8F0] hover:bg-[#F8FAFC] transition-colors",
+                          initial: shouldReduceMotion ? {} : { opacity: 0, y: -10 },
+                          animate: { opacity: 1, y: 0 },
+                          transition: { duration: 0.25, ease: "easeOut", delay: idx * 0.05 },
+                          className: "border-b border-[#E2E8F0] hover:bg-[#F8FAFC] transition-colors data-row",
                           children: [
                     /* @__PURE__ */ jsx("td", { className: "px-6 py-3 text-[#64748B] font-medium", children: formatDate(m.created_at) }),
                     /* @__PURE__ */ jsx("td", { className: "px-6 py-3 font-bold text-[#0F172A]", children: m.product_name }),
@@ -1001,28 +1067,40 @@ export default function AdminPortal({ onLogout }) {
                               },
                               s.supplier_id
                             )),
-                            filteredSuppliers.length === 0 && /* @__PURE__ */ jsx("tr", {
-                              children: /* @__PURE__ */ jsxs(
-                                "td",
-                                {
-                                  colSpan: 7,
-                                  className: "text-center py-10 text-xs text-[#94A3B8] font-medium",
-                                  children: [
-                                    "No suppliers match your search.",
-                                    " ",
-                        /* @__PURE__ */ jsx(
-                                      "button",
-                                      {
-                                        onClick: () => setSupplierModalOpen(true),
-                                        className: "text-[#4F46E5] font-bold underline cursor-pointer border-0 bg-transparent",
-                                        children: "Add one now"
-                                      }
-                                    ),
-                                    "."
-                                  ]
-                                }
-                              )
-                            })
+                             filteredSuppliers.length === 0 && /* @__PURE__ */ jsx("tr", {
+                               children: /* @__PURE__ */ jsx(
+                                 "td",
+                                 {
+                                   colSpan: 7,
+                                   className: "text-center py-12 text-xs text-[#94A3B8] font-medium",
+                                   children: /* @__PURE__ */ jsxs("div", {
+                                     className: "flex flex-col items-center justify-center gap-3",
+                                     children: [
+                                       /* @__PURE__ */ jsx(motion.div, {
+                                         animate: shouldReduceMotion ? {} : { y: [0, -4, 0] },
+                                         transition: { repeat: Infinity, duration: 2, ease: "easeInOut" },
+                                         className: "text-[#EF4444] opacity-80",
+                                         children: /* @__PURE__ */ jsx(MapPin, { size: 32 })
+                                       }),
+                                       /* @__PURE__ */ jsxs("p", {
+                                         children: [
+                                           "No suppliers match your search. ",
+                                           /* @__PURE__ */ jsx(
+                                             "button",
+                                             {
+                                               onClick: () => setSupplierModalOpen(true),
+                                               className: "text-[#4F46E5] font-bold underline cursor-pointer border-0 bg-transparent",
+                                               children: "Add one now"
+                                             }
+                                           ),
+                                           "."
+                                         ]
+                                       })
+                                     ]
+                                   })
+                                 }
+                               )
+                             })
                           ]
                         })
                         ]
@@ -1273,7 +1351,13 @@ export default function AdminPortal({ onLogout }) {
                   children: "Buyer & Distributor Orders"
                 }
               ),
-            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Track incoming buyer and distributor orders, shipment status, and details." })
+              /* @__PURE__ */ jsx(motion.div, {
+                initial: shouldReduceMotion ? { width: "100%" } : { width: 0 },
+                animate: { width: "100%" },
+                transition: { duration: 0.4, ease: "easeOut" },
+                className: "h-[2px] bg-[#E2E8F0] mt-1"
+              }),
+            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1.5", children: "Track incoming buyer and distributor orders, shipment status, and details." })
               ]
             }),
               (() => {
@@ -1342,16 +1426,22 @@ export default function AdminPortal({ onLogout }) {
                       }),
                   /* @__PURE__ */ jsx("div", {
                         className: "flex gap-2", children: /* @__PURE__ */ jsx(
-                          "button",
+                          motion.button,
                           {
                             type: "button",
+                            animate: clearShake && !shouldReduceMotion ? { x: [-3, 3, -3, 3, 0] } : { x: 0 },
+                            transition: { duration: 0.2 },
                             onClick: () => {
-                              setOrdersSearch("");
-                              setOrdersTypeFilter("all");
-                              setInvoiceStatusFilter("all");
-                              setRiskFilter("all");
+                              setClearShake(true);
+                              setTimeout(() => {
+                                setClearShake(false);
+                                setOrdersSearch("");
+                                setOrdersTypeFilter("all");
+                                setInvoiceStatusFilter("all");
+                                setRiskFilter("all");
+                              }, 200);
                             },
-                            className: "px-3.5 py-2 border border-[#E2E8F0] hover:bg-slate-50 rounded-lg text-xs text-[#64748B] hover:text-[#0F172A] bg-white cursor-pointer transition-colors",
+                            className: "px-3.5 py-2 border border-[#E2E8F0] hover:border-rose-400 hover:text-rose-600 rounded-lg text-xs text-[#64748B] bg-white cursor-pointer transition-colors duration-150 font-semibold",
                             children: "Clear Filters"
                           }
                         )
@@ -1426,13 +1516,18 @@ export default function AdminPortal({ onLogout }) {
                 /* @__PURE__ */ jsxs("div", {
                       className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
                   /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Buyer Orders" }),
-                  /* @__PURE__ */ jsx(
-                        Badge,
-                        {
-                          text: `${buyerOrders.length} Orders`,
-                          variant: "neutral"
-                        }
-                      )
+                  /* @__PURE__ */ jsx(motion.div, {
+                    initial: shouldReduceMotion ? {} : { scale: 0.8 },
+                    animate: { scale: 1 },
+                    transition: { type: "spring", stiffness: 350, damping: 15 },
+                    children: /* @__PURE__ */ jsx(
+                      Badge,
+                      {
+                        text: `${buyerOrders.length} Orders`,
+                        variant: "neutral"
+                      }
+                    )
+                  })
                       ]
                     }),
                 /* @__PURE__ */ jsx("div", {
@@ -1450,16 +1545,17 @@ export default function AdminPortal({ onLogout }) {
                           })
                         }),
                   /* @__PURE__ */ jsx("tbody", {
-                          children: buyerOrders.length === 0 ? /* @__PURE__ */ jsx("tr", {
-                            children: /* @__PURE__ */ jsx(
-                              "td",
-                              {
-                                colSpan: 5,
-                                className: "text-center py-8 text-xs text-[#94A3B8] font-medium",
-                                children: "No buyer orders match filter."
-                              }
-                            )
-                          }) : buyerOrders.map((o) => /* @__PURE__ */ jsxs(
+                          children: buyerOrders.length === 0 ? [1, 2, 3].map((k) => /* @__PURE__ */ jsxs("tr", {
+                            key: k,
+                            className: "border-b border-[#E2E8F0] animate-pulse",
+                            children: [
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-28 h-3 bg-slate-100 rounded shimmer-skeleton" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-20 h-3 bg-slate-100 rounded shimmer-skeleton" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-12 h-3 bg-slate-100 rounded shimmer-skeleton mx-auto" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-16 h-3 bg-slate-100 rounded shimmer-skeleton ml-auto" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-14 h-3 bg-slate-100 rounded shimmer-skeleton mx-auto" }) })
+                            ]
+                          }, k)) : buyerOrders.map((o) => /* @__PURE__ */ jsxs(
                             "tr",
                             {
                               className: "data-row border-b border-[#E2E8F0]",
@@ -1508,13 +1604,18 @@ export default function AdminPortal({ onLogout }) {
                 /* @__PURE__ */ jsxs("div", {
                       className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
                   /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Distributor Orders" }),
-                  /* @__PURE__ */ jsx(
-                        Badge,
-                        {
-                          text: `${distributorOrders.length} Orders`,
-                          variant: "neutral"
-                        }
-                      )
+                  /* @__PURE__ */ jsx(motion.div, {
+                    initial: shouldReduceMotion ? {} : { scale: 0.8 },
+                    animate: { scale: 1 },
+                    transition: { type: "spring", stiffness: 350, damping: 15 },
+                    children: /* @__PURE__ */ jsx(
+                      Badge,
+                      {
+                        text: `${distributorOrders.length} Orders`,
+                        variant: "neutral"
+                      }
+                    )
+                  })
                       ]
                     }),
                 /* @__PURE__ */ jsx("div", {
@@ -1532,16 +1633,17 @@ export default function AdminPortal({ onLogout }) {
                           })
                         }),
                   /* @__PURE__ */ jsx("tbody", {
-                          children: distributorOrders.length === 0 ? /* @__PURE__ */ jsx("tr", {
-                            children: /* @__PURE__ */ jsx(
-                              "td",
-                              {
-                                colSpan: 5,
-                                className: "text-center py-8 text-xs text-[#94A3B8] font-medium",
-                                children: "No distributor orders match filter."
-                              }
-                            )
-                          }) : distributorOrders.map((o) => /* @__PURE__ */ jsxs(
+                          children: distributorOrders.length === 0 ? [1, 2, 3].map((k) => /* @__PURE__ */ jsxs("tr", {
+                            key: k,
+                            className: "border-b border-[#E2E8F0] animate-pulse",
+                            children: [
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-28 h-3 bg-slate-100 rounded shimmer-skeleton" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-20 h-3 bg-slate-100 rounded shimmer-skeleton" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-12 h-3 bg-slate-100 rounded shimmer-skeleton mx-auto" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-16 h-3 bg-slate-100 rounded shimmer-skeleton ml-auto" }) }),
+                              /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-14 h-3 bg-slate-100 rounded shimmer-skeleton mx-auto" }) })
+                            ]
+                          }, k)) : distributorOrders.map((o) => /* @__PURE__ */ jsxs(
                             "tr",
                             {
                               className: "data-row border-b border-[#E2E8F0]",
@@ -1608,7 +1710,13 @@ export default function AdminPortal({ onLogout }) {
                   children: "Billing & Reconciliations"
                 }
               ),
-            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Reconcile cash allocations, check status of pending invoices, and review reconciled payment logs." })
+              /* @__PURE__ */ jsx(motion.div, {
+                initial: shouldReduceMotion ? { width: "100%" } : { width: 0 },
+                animate: { width: "100%" },
+                transition: { duration: 0.4, ease: "easeOut" },
+                className: "h-[2px] bg-[#E2E8F0] mt-1"
+              }),
+            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1.5", children: "Reconcile cash allocations, check status of pending invoices, and review reconciled payment logs." })
               ]
             }),
           /* @__PURE__ */ jsxs("div", {
@@ -1618,13 +1726,18 @@ export default function AdminPortal({ onLogout }) {
               /* @__PURE__ */ jsxs("div", {
                   className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
                 /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Receivable Invoices" }),
-                /* @__PURE__ */ jsx(
+                /* @__PURE__ */ jsx(motion.div, {
+                  initial: shouldReduceMotion ? {} : { scale: 0.8 },
+                  animate: { scale: 1 },
+                  transition: { type: "spring", stiffness: 350, damping: 15 },
+                  children: /* @__PURE__ */ jsx(
                     Badge,
                     {
                       text: `${invoices.length} Invoices`,
                       variant: "neutral"
                     }
                   )
+                })
                   ]
                 }),
               /* @__PURE__ */ jsx("div", {
@@ -1651,11 +1764,14 @@ export default function AdminPortal({ onLogout }) {
                             children: "No invoices match filter."
                           }
                         )
-                      }) : invoices.map((inv) => {
+                      }) : invoices.map((inv, idx) => {
                         const allocationPct = inv.total_amount > 0 ? inv.amount_paid / inv.total_amount * 100 : 0;
                         return /* @__PURE__ */ jsxs(
-                          "tr",
+                          motion.tr,
                           {
+                            initial: shouldReduceMotion ? {} : { opacity: 0, y: 10 },
+                            animate: { opacity: 1, y: 0 },
+                            transition: { duration: 0.22, delay: idx * 0.04 },
                             className: "data-row border-b border-[#E2E8F0]",
                             children: [
                         /* @__PURE__ */ jsx("td", {
@@ -1671,42 +1787,34 @@ export default function AdminPortal({ onLogout }) {
                                 ]
                               })
                             }),
-                        /* @__PURE__ */ jsx("td", {
-                              className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(
-                                InvoiceStatusBadge,
-                                {
-                                  status: inv.status
-                                }
-                              )
-                            }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(InvoiceStatusBadge, { status: inv.status }) }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(inv.total_amount) }),
-                        /* @__PURE__ */ jsx("td", {
-                              className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", {
-                                className: "w-[100px]", children: [
+                        /* @__PURE__ */ jsxs("td", {
+                              className: "px-6 py-3.5", children: [
                           /* @__PURE__ */ jsxs("div", {
-                                  className: "flex justify-between text-[9px] text-[#64748B] font-bold mb-0.5", children: [
-                            /* @__PURE__ */ jsx("span", { children: "Paid:" }),
-                            /* @__PURE__ */ jsxs("span", {
-                                    children: [
-                                      Math.round(allocationPct),
-                                      "%"
-                                    ]
-                                  })
-                                  ]
-                                }),
-                          /* @__PURE__ */ jsx("div", {
-                                  className: "h-1 bg-slate-100 rounded-full overflow-hidden", children: /* @__PURE__ */ jsx(
-                                    "div",
-                                    {
-                                      className: "h-full bg-emerald-500 rounded-full transition-all duration-500",
-                                      style: {
-                                        width: `${allocationPct}%`
-                                      }
-                                    }
-                                  )
-                                })
+                                className: "flex justify-between items-center text-[10px] text-[#64748B] mb-1 font-semibold", children: [
+                            /* @__PURE__ */ jsxs("span", { children: [
+                              formatCurrency(inv.amount_paid),
+                              " paid"
+                            ] }),
+                            /* @__PURE__ */ jsxs("span", { children: [
+                              Math.round(allocationPct),
+                              "%"
+                            ] })
                                 ]
+                              }),
+                          /* @__PURE__ */ jsx("div", {
+                                className: "w-full h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden", children: /* @__PURE__ */ jsx(
+                                  "div",
+                                  {
+                                    className: "h-full bg-emerald-500 rounded-full transition-all duration-500",
+                                    style: {
+                                      width: `${allocationPct}%`
+                                    }
+                                  }
+                                )
                               })
+                              ]
                             }),
                         /* @__PURE__ */ jsx("td", {
                               className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(
@@ -1739,7 +1847,10 @@ export default function AdminPortal({ onLogout }) {
                       onSubmit: handleRecordAllocationSubmit,
                       className: "flex flex-col gap-3",
                       children: [
-                      /* @__PURE__ */ jsxs("div", {
+                      /* @__PURE__ */ jsxs(motion.div, {
+                        initial: shouldReduceMotion ? {} : { y: 8, opacity: 0 },
+                        animate: { y: 0, opacity: 1 },
+                        transition: { delay: 0.05, duration: 0.25 },
                         children: [
                         /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Select Open Invoice" }),
                         /* @__PURE__ */ jsx(
@@ -1764,26 +1875,39 @@ export default function AdminPortal({ onLogout }) {
                         )
                         ]
                       }),
-                      /* @__PURE__ */ jsxs("div", {
+                      /* @__PURE__ */ jsxs(motion.div, {
+                        initial: shouldReduceMotion ? {} : { y: 8, opacity: 0 },
+                        animate: { y: 0, opacity: 1 },
+                        transition: { delay: 0.1, duration: 0.25 },
                         className: "grid grid-cols-2 gap-2", children: [
                         /* @__PURE__ */ jsxs("div", {
                           children: [
                           /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Method" }),
-                          /* @__PURE__ */ jsxs(
-                            "select",
-                            {
-                              className: "input-field py-2 text-xs",
-                              value: allocMethod,
-                              onChange: (e) => setAllocMethod(e.target.value),
-                              required: true,
-                              children: [
-                                /* @__PURE__ */ jsx("option", { value: "JAZZCASH", children: "JazzCash" }),
-                                /* @__PURE__ */ jsx("option", { value: "EASYPAISA", children: "EasyPaisa" }),
-                                /* @__PURE__ */ jsx("option", { value: "BANK_TRANSFER", children: "Bank Transfer" }),
-                                /* @__PURE__ */ jsx("option", { value: "CARD", children: "Credit Card" })
-                              ]
-                            }
-                          )
+                          /* @__PURE__ */ jsxs("div", {
+                            className: "relative",
+                            children: [
+                              allocMethod === "JAZZCASH" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-extrabold text-[8px] bg-amber-500 text-black px-1.5 py-0.5 rounded border border-amber-600 pointer-events-none scale-90", children: "JazzCash" }),
+                              allocMethod === "EASYPAISA" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-extrabold text-[8px] bg-emerald-600 text-white px-1.5 py-0.5 rounded border border-emerald-700 pointer-events-none scale-90", children: "EasyPaisa" }),
+                              allocMethod === "BANK_TRANSFER" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded pointer-events-none scale-90", children: "Bank" }),
+                              allocMethod === "CARD" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-[8px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded pointer-events-none scale-90", children: "Card" }),
+                              /* @__PURE__ */ jsxs(
+                                "select",
+                                {
+                                  className: "input-field py-2 text-xs",
+                                  style: { paddingLeft: allocMethod ? "68px" : "10px" },
+                                  value: allocMethod,
+                                  onChange: (e) => setAllocMethod(e.target.value),
+                                  required: true,
+                                  children: [
+                                    /* @__PURE__ */ jsx("option", { value: "JAZZCASH", children: "JazzCash" }),
+                                    /* @__PURE__ */ jsx("option", { value: "EASYPAISA", children: "EasyPaisa" }),
+                                    /* @__PURE__ */ jsx("option", { value: "BANK_TRANSFER", children: "Bank Transfer" }),
+                                    /* @__PURE__ */ jsx("option", { value: "CARD", children: "Credit Card" })
+                                  ]
+                                }
+                              )
+                            ]
+                          })
                           ]
                         }),
                         /* @__PURE__ */ jsxs("div", {
@@ -1803,7 +1927,10 @@ export default function AdminPortal({ onLogout }) {
                         })
                         ]
                       }),
-                      /* @__PURE__ */ jsxs("div", {
+                      /* @__PURE__ */ jsxs(motion.div, {
+                        initial: shouldReduceMotion ? {} : { y: 8, opacity: 0 },
+                        animate: { y: 0, opacity: 1 },
+                        transition: { delay: 0.15, duration: 0.25 },
                         children: [
                         /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Transaction Ref Code" }),
                         /* @__PURE__ */ jsx(
@@ -1845,7 +1972,10 @@ export default function AdminPortal({ onLogout }) {
                 })
                 ]
               }),
-            /* @__PURE__ */ jsxs("div", {
+            /* @__PURE__ */ jsxs(motion.div, {
+                initial: shouldReduceMotion ? {} : { x: 30, opacity: 0 },
+                animate: { x: 0, opacity: 1 },
+                transition: { duration: 0.35, ease: "easeOut", delay: 0.2 },
                 className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
               /* @__PURE__ */ jsx("div", { className: "px-6 py-4 border-b border-[#E2E8F0]", children: /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A]", children: "Settlement & Reconciled Payments Logs" }) }),
               /* @__PURE__ */ jsx("div", {
@@ -1914,7 +2044,13 @@ export default function AdminPortal({ onLogout }) {
                   children: "Wholesale Quotations & Negotiations"
                 }
               ),
-            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Review incoming quotes from distributors, approve standard submissions, reject requests, or propose counter pricing." })
+              /* @__PURE__ */ jsx(motion.div, {
+                initial: shouldReduceMotion ? { width: "100%" } : { width: 0 },
+                animate: { width: "100%" },
+                transition: { duration: 0.4, ease: "easeOut" },
+                className: "h-[2px] bg-[#E2E8F0] mt-1"
+              }),
+            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1.5", children: "Review incoming quotes from distributors, approve standard submissions, reject requests, or propose counter pricing." })
               ]
             }),
           /* @__PURE__ */ jsxs("div", {
@@ -1922,13 +2058,18 @@ export default function AdminPortal({ onLogout }) {
             /* @__PURE__ */ jsxs("div", {
                 className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
               /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Quotations Registry" }),
-              /* @__PURE__ */ jsx(
+              /* @__PURE__ */ jsx(motion.div, {
+                initial: shouldReduceMotion ? {} : { scale: 0.8 },
+                animate: { scale: 1 },
+                transition: { type: "spring", stiffness: 350, damping: 15 },
+                children: /* @__PURE__ */ jsx(
                   Badge,
                   {
                     text: `${quotations.length} Active Records`,
                     variant: "neutral"
                   }
                 )
+              })
                 ]
               }),
             /* @__PURE__ */ jsx("div", {
@@ -1952,7 +2093,28 @@ export default function AdminPortal({ onLogout }) {
                         {
                           colSpan: 5,
                           className: "text-center py-10 text-[#94A3B8] font-medium",
-                          children: "No quotation requests logged in database."
+                          children: /* @__PURE__ */ jsxs("div", {
+                            className: "flex flex-col items-center justify-center py-6 max-w-sm mx-auto",
+                            children: [
+                              /* @__PURE__ */ jsxs("div", {
+                                className: "flex flex-col items-center relative py-4 w-full gap-6 opacity-30",
+                                children: [
+                                  /* @__PURE__ */ jsx("div", { className: "absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[1px] bg-slate-300 border-dashed border-l" }),
+                                  [1, 2, 3].map((node) => (
+                                    /* @__PURE__ */ jsxs("div", {
+                                      key: node,
+                                      className: "flex items-center justify-center gap-3 z-10 w-full",
+                                      children: [
+                                        /* @__PURE__ */ jsx("div", { className: "w-4 h-4 rounded-full border border-slate-400 bg-white" }),
+                                        /* @__PURE__ */ jsx("div", { className: "h-2 w-20 bg-slate-300 rounded" })
+                                      ]
+                                    }, node)
+                                  ))
+                                ]
+                              }),
+                              /* @__PURE__ */ jsx("p", { className: "text-xs text-[#94A3B8] font-semibold mt-2", children: "No quotation requests logged in database." })
+                            ]
+                          })
                         }
                       )
                     }) : quotations.map((q) => /* @__PURE__ */ jsxs(
@@ -1962,11 +2124,27 @@ export default function AdminPortal({ onLogout }) {
                         children: [
                     /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: q.quotation_number }),
                     /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-[#64748B]", children: formatDate(q.created_at) }),
-                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: formatCurrency(q.total_amount) }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: /* @__PURE__ */ jsx(CountUp, { value: q.total_amount }) }),
                     /* @__PURE__ */ jsx("td", {
-                          className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(Badge, {
-                            text: q.status,
-                            variant: q.status === "APPROVED" || q.status === "ACCEPTED" ? "success" : q.status === "NEGOTIATING" ? "warning" : q.status === "REJECTED" ? "danger" : "neutral"
+                          className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", {
+                            className: "flex items-center", children: [
+                              (() => {
+                                if (q.status === "APPROVED" || q.status === "ACCEPTED") {
+                                  return /* @__PURE__ */ jsx("span", { className: "w-1.5 h-1.5 rounded-full bg-[#10B981] dot-pulse-green shrink-0 mr-1.5 inline-block" });
+                                }
+                                if (q.status === "NEGOTIATING" || q.status === "DRAFT") {
+                                  return /* @__PURE__ */ jsx("span", { className: "w-1.5 h-1.5 rounded-full bg-[#F59E0B] dot-pulse-amber shrink-0 mr-1.5 inline-block" });
+                                }
+                                if (q.status === "REJECTED") {
+                                  return /* @__PURE__ */ jsx("span", { className: "w-1.5 h-1.5 rounded-full bg-[#EF4444] dot-pulse-red shrink-0 mr-1.5 inline-block" });
+                                }
+                                return null;
+                              })(),
+                              /* @__PURE__ */ jsx(Badge, {
+                                text: q.status,
+                                variant: q.status === "APPROVED" || q.status === "ACCEPTED" ? "success" : q.status === "NEGOTIATING" ? "warning" : q.status === "REJECTED" ? "danger" : "neutral"
+                              })
+                            ]
                           })
                         }),
                     /* @__PURE__ */ jsxs("td", {
@@ -2037,7 +2215,13 @@ export default function AdminPortal({ onLogout }) {
                   children: "System Settings & Audit Log"
                 }
               ),
-            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Adjust default parameters, currency codes, and view security audit logs." })
+              /* @__PURE__ */ jsx(motion.div, {
+                initial: shouldReduceMotion ? { width: "100%" } : { width: 0 },
+                animate: { width: "100%" },
+                transition: { duration: 0.4, ease: "easeOut" },
+                className: "h-[2px] bg-[#E2E8F0] mt-1"
+              }),
+            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1.5", children: "Adjust default parameters, currency codes, and view security audit logs." })
               ]
             }),
           /* @__PURE__ */ jsxs("div", {
@@ -2048,12 +2232,12 @@ export default function AdminPortal({ onLogout }) {
                   children: [
                 /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A] mb-3", children: "Database Connection Status" }),
                 /* @__PURE__ */ jsxs("div", {
-                    className: "bg-[#ECFDF5] border border-[#10B981]/20 p-4 rounded-lg flex items-center gap-3", children: [
+                    className: "bg-[#ECFDF5] border border-[#10B981]/20 p-4 rounded-lg flex items-center gap-3 db-status-border", children: [
                   /* @__PURE__ */ jsx("div", { className: "w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse" }),
                   /* @__PURE__ */ jsxs("div", {
                       children: [
                     /* @__PURE__ */ jsx("p", { className: "font-bold text-[#059669]", children: "MySQL Schema Aligned" }),
-                    /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#059669] mt-0.5 leading-normal", children: "Tables verified: roles, users, categories, products, inventory, suppliers, orders, invoices, payments, notification_rules, notifications, audit_logs." })
+                    /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#059669] mt-0.5 leading-normal", children: /* @__PURE__ */ jsx(Typewriter, { text: "Tables verified: roles, users, categories, products, inventory, suppliers, orders, invoices, payments, notification_rules, notifications, audit_logs." }) })
                       ]
                     })
                     ]
@@ -2078,31 +2262,36 @@ export default function AdminPortal({ onLogout }) {
                 /* @__PURE__ */ jsx("label", { className: "font-bold text-[#0F172A]", children: "Risk Threshold Classifier (Late Payment Probability)" }),
                 /* @__PURE__ */ jsxs("div", {
                     className: "grid grid-cols-3 gap-2", children: [
-                  /* @__PURE__ */ jsxs("div", {
-                      className: "border border-[#E2E8F0] p-2.5 rounded-lg text-center bg-emerald-50/20", children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#64748B] font-bold block mb-1", children: "LOW RISK" }),
-                    /* @__PURE__ */ jsx("span", { className: "text-[#10B981] font-bold text-[10px]", children: "< 30%" })
-                      ]
-                    }),
-                  /* @__PURE__ */ jsxs("div", {
-                      className: "border border-[#E2E8F0] p-2.5 rounded-lg text-center bg-amber-50/20", children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#64748B] font-bold block mb-1", children: "MEDIUM RISK" }),
-                    /* @__PURE__ */ jsx("span", { className: "text-[#F59E0B] font-bold text-[10px]", children: "30% - 60%" })
-                      ]
-                    }),
-                  /* @__PURE__ */ jsxs("div", {
-                      className: "border border-[#E2E8F0] p-2.5 rounded-lg text-center bg-red-50/20", children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#64748B] font-bold block mb-1", children: "HIGH RISK" }),
-                    /* @__PURE__ */ jsx("span", { className: "text-[#EF4444] font-bold text-[10px]", children: "> 60%" })
-                      ]
-                    })
+                      [
+                        { label: "LOW RISK", value: "< 30%", bg: "bg-emerald-50/20", text: "text-[#10B981]" },
+                        { label: "MEDIUM RISK", value: "30% - 60%", bg: "bg-amber-50/20", text: "text-[#F59E0B]" },
+                        { label: "HIGH RISK", value: "> 60%", bg: "bg-red-50/20", text: "text-[#EF4444]" }
+                      ].map((risk, idx) => (
+                        /* @__PURE__ */ jsxs(
+                          motion.div,
+                          {
+                            initial: shouldReduceMotion ? {} : { scale: 0.85, opacity: 0 },
+                            animate: { scale: 1, opacity: 1 },
+                            transition: { type: "spring", stiffness: 300, damping: 15, delay: idx * 0.1 },
+                            className: `border border-[#E2E8F0] p-2.5 rounded-lg text-center ${risk.bg}`,
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#64748B] font-bold block mb-1", children: risk.label }),
+                              /* @__PURE__ */ jsx("span", { className: `${risk.text} font-bold text-[10px]`, children: risk.value })
+                            ]
+                          },
+                          risk.label
+                        ))
+                      )
                     ]
                   })
                   ]
                 })
                 ]
               }),
-            /* @__PURE__ */ jsxs("div", {
+            /* @__PURE__ */ jsxs(motion.div, {
+                initial: shouldReduceMotion ? {} : { x: 20, opacity: 0 },
+                animate: { x: 0, opacity: 1 },
+                transition: { duration: 0.35, ease: "easeOut" },
                 className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden lg:col-span-2 flex flex-col", children: [
               /* @__PURE__ */ jsxs("div", {
                   className: "px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between", children: [
@@ -2117,59 +2306,67 @@ export default function AdminPortal({ onLogout }) {
                 }),
               /* @__PURE__ */ jsx("div", {
                   className: "overflow-y-auto flex-1 max-h-[450px]", children: /* @__PURE__ */ jsx("div", {
-                    className: "flex flex-col divide-y divide-[#E2E8F0]", children: auditLogs.map((log) => /* @__PURE__ */ jsxs(
-                      "div",
+                    className: "flex flex-col divide-y divide-[#E2E8F0]", children: auditLogs.map((log, idx) => /* @__PURE__ */ jsxs(
+                      motion.div,
                       {
-                        className: "p-4 hover:bg-[#F8FAFC] transition-colors flex items-start gap-3 text-xs",
+                        initial: shouldReduceMotion ? {} : { x: 15, opacity: 0 },
+                        animate: { x: 0, opacity: 1 },
+                        transition: { duration: 0.35, ease: "easeOut", delay: idx * 0.08 },
+                        className: "p-4 hover:bg-[#F8FAFC] transition-colors flex items-start gap-3 text-xs group",
                         children: [
-                    /* @__PURE__ */ jsx(
-                          "div",
-                          {
-                            className: `w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${log.action === "UPDATE" ? "bg-[#EEF2FF] text-[#4F46E5]" : "bg-[#ECFDF5] text-[#10B981]"}`,
-                            children: /* @__PURE__ */ jsx(Database, { size: 15 })
-                          }
-                        ),
-                    /* @__PURE__ */ jsxs("div", {
-                          className: "flex-1 min-w-0", children: [
-                      /* @__PURE__ */ jsxs("div", {
-                            className: "flex justify-between items-start gap-2", children: [
+                        /* @__PURE__ */ jsx(motion.div, {
+                          animate: shouldReduceMotion ? {} : { rotate: 360 },
+                          transition: { repeat: Infinity, duration: 8, ease: "linear" },
+                          className: `w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${log.action === "UPDATE" ? "bg-[#EEF2FF] text-[#4F46E5]" : "bg-[#ECFDF5] text-[#10B981]"}`,
+                          children: /* @__PURE__ */ jsx(Database, { size: 15 })
+                        }),
                         /* @__PURE__ */ jsxs("div", {
-                              className: "flex items-center gap-2", children: [
-                          /* @__PURE__ */ jsx("span", { className: "font-extrabold text-[#0f172a]", children: log.table_name.toUpperCase() }),
-                          /* @__PURE__ */ jsx(
-                                Badge,
-                                {
-                                  text: log.action,
-                                  variant: log.action === "UPDATE" ? "warning" : "success",
-                                  className: "scale-90"
-                                }
-                              )
+                              className: "flex-1 min-w-0", children: [
+                          /* @__PURE__ */ jsxs("div", {
+                                className: "flex justify-between items-start gap-2", children: [
+                            /* @__PURE__ */ jsxs("div", {
+                                  className: "flex items-center gap-2", children: [
+                              /* @__PURE__ */ jsx("span", { className: "font-extrabold text-[#0f172a]", children: log.table_name.toUpperCase() }),
+                              /* @__PURE__ */ jsx(
+                                    Badge,
+                                    {
+                                      text: log.action,
+                                      variant: log.action === "UPDATE" ? "warning" : "success",
+                                      className: "scale-90"
+                                    }
+                                  )
+                                  ]
+                                }),
+                            /* @__PURE__ */ jsx(motion.span, {
+                              initial: { opacity: 0 },
+                              animate: { opacity: 1 },
+                              transition: { delay: (idx * 0.08) + 0.1, duration: 0.2 },
+                              className: "text-[9px] text-[#94A3B8]",
+                              children: formatDate(log.created_at)
+                            })
+                                ]
+                              }),
+                          /* @__PURE__ */ jsx("div", { className: "text-[11px] text-[#64748B] mt-1 font-medium leading-relaxed", children: /* @__PURE__ */ jsx(Typewriter, { text: log.notes }) }),
+                          /* @__PURE__ */ jsxs("p", {
+                                className: "text-[10px] text-[#4F46E5] font-semibold mt-1 opacity-70 group-hover:opacity-100 transition-opacity duration-200", children: [
+                                  "Performed by: ",
+                                  log.performed_by
+                                ]
+                              })
                               ]
-                            }),
-                        /* @__PURE__ */ jsx("span", { className: "text-[9px] text-[#94A3B8]", children: formatDate(log.created_at) })
+                            })
                             ]
-                          }),
-                      /* @__PURE__ */ jsx("p", { className: "text-[11px] text-[#64748B] mt-1 font-medium leading-relaxed", children: log.notes }),
-                      /* @__PURE__ */ jsxs("p", {
-                            className: "text-[10px] text-[#4F46E5] font-semibold mt-1", children: [
-                              "Performed by: ",
-                              log.performed_by
-                            ]
-                          })
-                          ]
-                        })
-                        ]
-                      },
-                      log.audit_id
-                    ))
+                          },
+                          log.audit_id
+                        ))
+                      })
+                    })
+                    ]
                   })
+                  ]
                 })
                 ]
-              })
-              ]
-            })
-            ]
-          }),
+              }),
           activeTab === "distributors" && /* @__PURE__ */ jsxs("div", {
             className: "page-container animate-cross-fade flex flex-col gap-6", children: [
               /* @__PURE__ */ jsxs("div", { children: [
@@ -2181,7 +2378,13 @@ export default function AdminPortal({ onLogout }) {
                     children: "Distributor Registrations & Approval Page"
                   }
                 ),
-                /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Approve pending distributor applications or manage currently registered partners." })
+                /* @__PURE__ */ jsx(motion.div, {
+                  initial: shouldReduceMotion ? { width: "100%" } : { width: 0 },
+                  animate: { width: "100%" },
+                  transition: { duration: 0.4, ease: "easeOut" },
+                  className: "h-[2px] bg-[#E2E8F0] mt-1"
+                }),
+                /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1.5", children: "Approve pending distributor applications or manage currently registered partners." })
               ] }),
               
               /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-sm flex flex-col gap-4", children: [
@@ -2191,9 +2394,12 @@ export default function AdminPortal({ onLogout }) {
                   if (pending.length === 0) {
                     return /* @__PURE__ */ jsx("div", { className: "text-center py-8 text-[#94A3B8] text-xs bg-slate-50 rounded-xl border border-dashed border-[#CBD5E1]", children: "No pending distributor registration requests." });
                   }
-                  return /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-3", children: pending.map((dist) => /* @__PURE__ */ jsxs(
-                    "div",
+                  return /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-3", children: pending.map((dist, idx) => /* @__PURE__ */ jsxs(
+                    motion.div,
                     {
+                      initial: shouldReduceMotion ? {} : { opacity: 0, y: 15 },
+                      animate: { opacity: 1, y: 0 },
+                      transition: { duration: 0.3, delay: idx * 0.08 },
                       className: "flex flex-wrap items-center justify-between gap-4 p-4 border border-[#E2E8F0] rounded-xl hover:border-blue-200 transition-colors bg-white",
                       children: [
                         /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1 min-w-[200px]", children: [
@@ -2210,29 +2416,107 @@ export default function AdminPortal({ onLogout }) {
                             "Region: ",
                             /* @__PURE__ */ jsx("strong", { className: "text-blue-600", children: dist.warehouse_region || "None" })
                           ] }),
-                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
-                            "Requested Limit: ",
-                            /* @__PURE__ */ jsx("strong", { className: "text-emerald-600", children: formatCurrency(parseFloat(dist.credit_request || 0)) })
+                          /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-[#64748B] flex flex-col gap-1 mt-1", children: [
+                            /* @__PURE__ */ jsxs("span", { children: [
+                              "Requested Limit: ",
+                              /* @__PURE__ */ jsx("strong", { className: "text-emerald-600 inline-block", children: /* @__PURE__ */ jsx(CountUp, { value: parseFloat(dist.credit_request || 0) }) })
+                            ] }),
+                            (() => {
+                              const limitVal = parseFloat(dist.credit_request || 0);
+                              const maxLimit = 5000000;
+                              const pct = Math.min((limitVal / maxLimit) * 100, 100);
+                              return (
+                                /* @__PURE__ */ jsxs("div", {
+                                  className: "w-36 mt-0.5",
+                                  children: [
+                                    /* @__PURE__ */ jsx("div", {
+                                      className: "h-1 bg-slate-100 rounded-full overflow-hidden",
+                                      children: /* @__PURE__ */ jsx(motion.div, {
+                                        className: "h-full bg-emerald-500 rounded-full",
+                                        initial: shouldReduceMotion ? { width: `${pct}%` } : { width: 0 },
+                                        animate: { width: `${pct}%` },
+                                        transition: { duration: 0.6, ease: "easeOut" }
+                                      })
+                                    }),
+                                    /* @__PURE__ */ jsxs("div", {
+                                      className: "flex justify-between text-[8px] text-[#94A3B8] mt-0.5 font-bold",
+                                      children: [
+                                        /* @__PURE__ */ jsx("span", { children: "Limit utilization" }),
+                                        /* @__PURE__ */ jsxs("span", { children: [Math.round(pct), "%"] })
+                                      ]
+                                    })
+                                  ]
+                                })
+                              );
+                            })()
                           ] })
                         ] }),
                         /* @__PURE__ */ jsxs("div", { className: "flex gap-2", children: [
-                          /* @__PURE__ */ jsx("button", {
+                          /* @__PURE__ */ jsx(motion.button, {
+                            whileHover: shouldReduceMotion ? {} : { scale: 1.04, boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)" },
+                            whileTap: shouldReduceMotion ? {} : { scale: 0.96 },
                             onClick: async () => {
                               if (confirm(`Are you sure you want to approve distributor "${dist.business_name}"?`)) {
-                                await approveDistributor(dist.id);
+                                setIsApproving(prev => ({ ...prev, [dist.id]: true }));
+                                setTimeout(async () => {
+                                  await approveDistributor(dist.id);
+                                  setIsApproving(prev => ({ ...prev, [dist.id]: false }));
+                                }, 600);
                               }
                             },
-                            className: "px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm",
-                            children: "Approve"
+                            className: "px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm flex items-center justify-center gap-1 min-w-[76px]",
+                            children: isApproving[dist.id] ? (
+                              /* @__PURE__ */ jsx(motion.svg, {
+                                className: "w-4 h-4 text-white",
+                                viewBox: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                strokeWidth: "3",
+                                children: /* @__PURE__ */ jsx(motion.path, {
+                                  initial: { pathLength: 0 },
+                                  animate: { pathLength: 1 },
+                                  transition: { duration: 0.3 },
+                                  d: "M5 13l4 4L19 7"
+                                })
+                              })
+                            ) : "Approve"
                           }),
-                          /* @__PURE__ */ jsx("button", {
+                          /* @__PURE__ */ jsx(motion.button, {
+                            whileHover: shouldReduceMotion ? {} : { scale: 1.04, boxShadow: "0 4px 12px rgba(225, 29, 72, 0.3)" },
+                            whileTap: shouldReduceMotion ? {} : { scale: 0.96 },
                             onClick: async () => {
                               if (confirm(`Are you sure you want to reject distributor application from "${dist.business_name}"?`)) {
-                                await removeDistributor(dist.id);
+                                setIsRejecting(prev => ({ ...prev, [dist.id]: true }));
+                                setTimeout(async () => {
+                                  await removeDistributor(dist.id);
+                                  setIsRejecting(prev => ({ ...prev, [dist.id]: false }));
+                                }, 600);
                               }
                             },
-                            className: "px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm",
-                            children: "Reject"
+                            className: "px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm flex items-center justify-center gap-1 min-w-[68px]",
+                            children: isRejecting[dist.id] ? (
+                              /* @__PURE__ */ jsx(motion.svg, {
+                                className: "w-4 h-4 text-white",
+                                viewBox: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                strokeWidth: "3",
+                                children: [
+                                  /* @__PURE__ */ jsx(motion.path, {
+                                    initial: { pathLength: 0 },
+                                    animate: { pathLength: 1 },
+                                    transition: { duration: 0.2 },
+                                    d: "M18 6L6 18"
+                                  }),
+                                  /* @__PURE__ */ jsx(motion.path, {
+                                    initial: { pathLength: 0 },
+                                    animate: { pathLength: 1 },
+                                    transition: { duration: 0.2, delay: 0.15 },
+                                    d: "M6 6l12 12"
+                                  })
+                                ]
+                              })
+                            ) : "Reject"
                           })
                         ] })
                       ]
@@ -2249,9 +2533,12 @@ export default function AdminPortal({ onLogout }) {
                   if (activeDists.length === 0) {
                     return /* @__PURE__ */ jsx("div", { className: "text-center py-8 text-[#94A3B8] text-xs bg-slate-50 rounded-xl border border-dashed border-[#CBD5E1]", children: "No registered distributors on the platform." });
                   }
-                  return /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-3", children: activeDists.map((dist) => /* @__PURE__ */ jsxs(
-                    "div",
+                  return /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-3", children: activeDists.map((dist, idx) => /* @__PURE__ */ jsxs(
+                    motion.div,
                     {
+                      initial: shouldReduceMotion ? {} : { opacity: 0, y: 15 },
+                      animate: { opacity: 1, y: 0 },
+                      transition: { duration: 0.3, delay: idx * 0.06 },
                       className: "flex flex-wrap items-center justify-between gap-4 p-4 border border-[#E2E8F0] rounded-xl hover:border-slate-300 transition-colors bg-white",
                       children: [
                         /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-1 min-w-[200px]", children: [
@@ -2270,13 +2557,17 @@ export default function AdminPortal({ onLogout }) {
                           ] })
                         ] }),
                         /* @__PURE__ */ jsx("div", { children: [
-                          /* @__PURE__ */ jsx("button", {
+                          /* @__PURE__ */ jsx(motion.button, {
+                            onMouseEnter: () => setRemoveHoveredId(dist.id),
+                            onMouseLeave: () => setRemoveHoveredId(null),
+                            animate: removeHoveredId === dist.id && !shouldReduceMotion ? { x: [-1, 1, -1, 1, 0] } : { x: 0 },
+                            transition: { duration: 0.15 },
                             onClick: async () => {
                               if (confirm(`WARNING: Are you sure you want to completely remove distributor "${dist.business_name}"?`)) {
                                 await removeDistributor(dist.id);
                               }
                             },
-                            className: "px-4 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-bold transition-colors cursor-pointer bg-white",
+                            className: "px-4 py-2 border border-rose-200 hover:border-rose-600 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white",
                             children: "Remove Partner"
                           })
                         ] })
@@ -2289,7 +2580,7 @@ export default function AdminPortal({ onLogout }) {
             ]
           })
         ]
-      })
+      }) }) })
       ]
     })
     ]
