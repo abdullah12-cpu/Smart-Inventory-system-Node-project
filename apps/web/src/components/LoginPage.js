@@ -11,7 +11,12 @@ import {
   ArrowLeft,
   CheckCircle2,
   Phone,
-  MapPin
+  MapPin,
+  Search,
+  Loader2,
+  XCircle,
+  Clock,
+  AlertCircle
 } from "lucide-react";
 import PortalSelector from "@/components/PortalSelector";
 import { useStore } from "@/lib/store";
@@ -41,6 +46,33 @@ export default function LoginPage({
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [regPassword, setRegPassword] = useState("");
+
+  const [statusEmail, setStatusEmail] = useState("");
+  const [statusResult, setStatusResult] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState("");
+
+  const handleCheckStatus = async (e) => {
+    e.preventDefault();
+    if (!statusEmail) return;
+    setStatusLoading(true);
+    setStatusError("");
+    setStatusResult(null);
+    try {
+      const response = await fetch(`/api/auth/application-status?email=${encodeURIComponent(statusEmail)}`);
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setStatusResult(data);
+      } else {
+        setStatusError(data.message || "Failed to retrieve application status.");
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusError("Failed to connect to the server.");
+    } finally {
+      setStatusLoading(false);
+    }
+  };
 
   const handleSubmitLogin = async (e) => {
     e.preventDefault();
@@ -362,9 +394,212 @@ export default function LoginPage({
                     }
                   )
                 ]
+              }),
+              /* @__PURE__ */ jsxs("div", {
+                className: "mt-2 pt-2 border-t border-[#E2E8F0]",
+                children: [
+                  "Track B2B application?",
+                  " ",
+                  /* @__PURE__ */ jsx(
+                    "button",
+                    {
+                      onClick: () => {
+                        setErrorMsg("");
+                        setMode("check_status");
+                      },
+                      className: "font-semibold text-[#4F46E5] hover:underline border-0 bg-transparent cursor-pointer",
+                      children: "Check Application Status"
+                    }
+                  )
+                ]
               })
             ]
           })
+          ]
+        }) : mode === "check_status" ? /* @__PURE__ */ jsxs(Fragment, {
+          children: [
+            /* @__PURE__ */ jsxs("div", {
+              className: "text-center", children: [
+                /* @__PURE__ */ jsx(
+                  "h1",
+                  {
+                    className: "text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight",
+                    style: { fontFamily: "Outfit, sans-serif" },
+                    children: "Track B2B Application"
+                  }
+                ),
+                /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Enter your registered business email to check approval progress." })
+              ]
+            }),
+            /* @__PURE__ */ jsxs(
+              "form",
+              {
+                onSubmit: handleCheckStatus,
+                className: "flex flex-col gap-3 text-xs",
+                children: [
+                  /* @__PURE__ */ jsxs("div", {
+                    className: "flex flex-col gap-1.5", children: [
+                      /* @__PURE__ */ jsx("label", { className: "text-[11px] font-semibold text-[#475569]", children: "Business Email" }),
+                      /* @__PURE__ */ jsxs("div", {
+                        className: "relative", children: [
+                          /* @__PURE__ */ jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]", children: /* @__PURE__ */ jsx(Mail, { size: 15 }) }),
+                          /* @__PURE__ */ jsx(
+                            "input",
+                            {
+                              className: "w-full pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
+                              type: "email",
+                              placeholder: "b2b@company.com",
+                              value: statusEmail,
+                              onChange: (e) => setStatusEmail(e.target.value),
+                              required: true
+                            }
+                          )
+                        ]
+                      })
+                    ]
+                  }),
+                  /* @__PURE__ */ jsxs(
+                    "button",
+                    {
+                      type: "submit",
+                      disabled: statusLoading,
+                      className: "w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold text-xs rounded-lg mt-1 cursor-pointer border-0 shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-70",
+                      children: [
+                        statusLoading ? /* @__PURE__ */ jsx(Loader2, { size: 14, className: "animate-spin" }) : /* @__PURE__ */ jsx(Search, { size: 14 }),
+                        "Find Application"
+                      ]
+                    }
+                  )
+                ]
+              }
+            ),
+            statusError && /* @__PURE__ */ jsxs("div", {
+              className: "bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-2xl text-[11px] font-medium flex items-start gap-2.5 animate-fade-up",
+              children: [
+                /* @__PURE__ */ jsx(AlertCircle, { size: 15, className: "mt-0.5 shrink-0" }),
+                /* @__PURE__ */ jsx("span", { children: statusError })
+              ]
+            }),
+            statusResult && /* @__PURE__ */ jsxs("div", {
+              className: "bg-slate-50 border border-[#E2E8F0] rounded-2xl p-4 flex flex-col gap-4 animate-fade-up",
+              children: [
+                /* @__PURE__ */ jsxs("div", {
+                  className: "border-b border-[#E2E8F0] pb-2.5 flex flex-col gap-0.5",
+                  children: [
+                    /* @__PURE__ */ jsx("span", { className: "text-[10px] text-[#94A3B8] font-bold uppercase tracking-wider", children: "Application Profile" }),
+                    /* @__PURE__ */ jsx("h4", { className: "font-bold text-xs text-[#0F172A]", children: statusResult.business_name }),
+                    /* @__PURE__ */ jsx("span", { className: "text-[10px] text-[#64748B]", children: statusResult.email })
+                  ]
+                }),
+                /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-4",
+                  children: [
+                    /* @__PURE__ */ jsxs("div", {
+                      className: "flex gap-3",
+                      children: [
+                        /* @__PURE__ */ jsx("div", {
+                          className: "w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200 text-xs font-semibold",
+                          children: "1"
+                        }),
+                        /* @__PURE__ */ jsxs("div", {
+                          className: "flex flex-col gap-0.5",
+                          children: [
+                            /* @__PURE__ */ jsx("h5", { className: "font-bold text-xs text-[#0F172A]", children: "B2B Application Submitted" }),
+                            /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B]", children: "Wholesale license detail received." })
+                          ]
+                        })
+                      ]
+                    }),
+                    /* @__PURE__ */ jsxs("div", {
+                      className: "flex gap-3",
+                      children: [
+                        /* @__PURE__ */ jsx("div", {
+                          className: `w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold ${
+                            statusResult.status === "PENDING_APPROVAL"
+                              ? "bg-blue-100 text-blue-600 border border-blue-200"
+                              : "bg-emerald-100 text-emerald-600 border border-emerald-200"
+                          }`,
+                          children: statusResult.status === "PENDING_APPROVAL" ? /* @__PURE__ */ jsx(Loader2, { size: 10, className: "animate-spin" }) : "2"
+                        }),
+                        /* @__PURE__ */ jsxs("div", {
+                          className: "flex flex-col gap-0.5",
+                          children: [
+                            /* @__PURE__ */ jsx("h5", { className: "font-bold text-xs text-[#0F172A]", children: "Under Review" }),
+                            /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B]", children: "Verification of warehouse and credit limits." })
+                          ]
+                        })
+                      ]
+                    }),
+                    /* @__PURE__ */ jsxs("div", {
+                      className: "flex gap-3",
+                      children: [
+                        /* @__PURE__ */ jsx("div", {
+                          className: `w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold ${
+                            statusResult.status === "ACTIVE"
+                              ? "bg-emerald-100 text-emerald-600 border border-emerald-200"
+                              : statusResult.status === "REJECTED"
+                              ? "bg-rose-100 text-rose-600 border border-rose-200"
+                              : "bg-slate-100 text-[#94A3B8] border border-slate-200"
+                          }`,
+                          children: statusResult.status === "ACTIVE" ? /* @__PURE__ */ jsx(CheckCircle2, { size: 12 }) : (statusResult.status === "REJECTED" ? /* @__PURE__ */ jsx(XCircle, { size: 12 }) : "3")
+                        }),
+                        /* @__PURE__ */ jsxs("div", {
+                          className: "flex flex-col gap-0.5",
+                          children: [
+                            /* @__PURE__ */ jsx("h5", {
+                              className: `font-bold text-xs ${
+                                statusResult.status === "ACTIVE"
+                                  ? "text-emerald-600"
+                                  : statusResult.status === "REJECTED"
+                                  ? "text-rose-600"
+                                  : "text-[#64748B]"
+                              }`,
+                              children: statusResult.status === "ACTIVE"
+                                ? "Application Approved!"
+                                : statusResult.status === "REJECTED"
+                                ? "Application Rejected"
+                                : "Outcome Pending"
+                            }),
+                            /* @__PURE__ */ jsx("p", {
+                              className: "text-[10px] text-[#64748B] leading-relaxed",
+                              children: statusResult.status === "ACTIVE"
+                                ? "Your distributor portal is fully active. You can now sign in using your credentials."
+                                : statusResult.status === "REJECTED"
+                                ? "Unfortunately, your application was not approved. Please contact wholesale support for inquiries."
+                                : "Your status will be updated as soon as review completes."
+                            })
+                          ]
+                        })
+                      ]
+                    })
+                  ]
+                }),
+                statusResult.status === "ACTIVE" && /* @__PURE__ */ jsx(
+                  "button",
+                  {
+                    onClick: () => {
+                      setEmail(statusResult.email);
+                      setPortal("distributor");
+                      setMode("login");
+                    },
+                    className: "w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg cursor-pointer border-0 shadow-sm transition-all mt-1",
+                    children: "Go to Login"
+                  }
+                )
+              ]
+            }),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => {
+                  setMode("login");
+                  setStatusResult(null);
+                  setStatusError("");
+                },
+                className: "text-center text-xs font-semibold text-[#4F46E5] hover:underline border-0 bg-transparent cursor-pointer mt-1",
+                children: "Back to Sign In"
+              }
+            )
           ]
         }) : /* @__PURE__ */ jsx(Fragment, {
           children: registerSuccess ? /* @__PURE__ */ jsxs("div", {

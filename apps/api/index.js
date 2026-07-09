@@ -273,6 +273,11 @@ app.post('/api/auth/login', async (req, res) => {
     if (user.status === 'PENDING_APPROVAL') {
       return res.status(403).json({ success: false, message: 'Your distributor account registration is pending approval by the Admin.' });
     }
+
+    if (user.status === 'REJECTED') {
+      return res.status(403).json({ success: false, message: 'Your distributor account registration has been rejected by the Admin.' });
+    }
+
     if (user.status === 'DEACTIVATED' || user.status === 'REMOVED') {
       return res.status(403).json({ success: false, message: 'Your account has been deactivated or removed.' });
     }
@@ -380,6 +385,34 @@ app.post('/api/auth/register-buyer', async (req, res) => {
   } catch (err) {
     console.error('Buyer registration error:', err);
     return res.status(500).json({ success: false, message: 'Database error during buyer registration.' });
+  }
+});
+
+// GET application status for a distributor or buyer by email
+app.get('/api/auth/application-status', async (req, res) => {
+  const { email } = req.query;
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email query parameter is required.' });
+  }
+
+  try {
+    const result = await pool.query('SELECT email, role, status, business_name, contact_name, created_at FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'No registered application found for this email address.' });
+    }
+
+    const user = result.rows[0];
+    return res.json({
+      success: true,
+      email: user.email,
+      role: user.role,
+      status: user.status || 'ACTIVE',
+      business_name: user.business_name || user.contact_name || 'Partner',
+      created_at: user.created_at
+    });
+  } catch (err) {
+    console.error('Error fetching application status:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching status.' });
   }
 });
 
@@ -937,17 +970,17 @@ app.post('/api/admin/distributors/approve', async (req, res) => {
   }
 });
 
-// POST remove distributor
+// POST remove distributor (reject application)
 app.post('/api/admin/distributors/remove', async (req, res) => {
   const { id } = req.body;
   if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
 
   try {
-    await pool.query("DELETE FROM users WHERE id = $1 AND role = 'distributor'", [id]);
-    return res.json({ success: true, message: 'Distributor removed successfully.' });
+    await pool.query("UPDATE users SET status = 'REJECTED' WHERE id = $1 AND role = 'distributor'", [id]);
+    return res.json({ success: true, message: 'Distributor application rejected.' });
   } catch (err) {
-    console.error('Error removing distributor:', err);
-    return res.status(500).json({ success: false, message: 'Database error removing distributor.' });
+    console.error('Error rejecting distributor:', err);
+    return res.status(500).json({ success: false, message: 'Database error rejecting distributor.' });
   }
 });
 
