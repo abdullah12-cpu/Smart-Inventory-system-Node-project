@@ -232,7 +232,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
           transition={{ duration: 0.5, delay: 0.5 }}
           className="text-sm sm:text-base text-[#64748B] max-w-2xl leading-relaxed mt-2"
         >
-          CommerceIQ tracks product quantities in Karachi and Lahore, checks payment deadlines, and logs mobile wallet and bank transfer payments.
+          CommerceIQ tracks product quantities across multiple warehouses, checks payment deadlines, and logs mobile wallet and bank transfer payments.
         </motion.p>
 
         {/* Action Buttons */}
@@ -277,7 +277,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
           {
             icon: <Database size={16} />,
             title: "Multi-Warehouse",
-            desc: "Stock updates between Karachi and Lahore."
+            desc: "Stock updates across all warehouses."
           },
           {
             icon: <Landmark size={16} />,
@@ -346,7 +346,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
               {
                 icon: <GitCompare size={16} className="text-[#4F46E5]" />,
                 title: "Warehouse Sync",
-                desc: "Automatic sync between Karachi and Lahore warehouses."
+                desc: "Automatic sync across all warehouse locations."
               },
               {
                 icon: <FileText size={16} className="text-[#4F46E5]" />,
