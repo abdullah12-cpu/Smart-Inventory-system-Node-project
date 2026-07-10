@@ -188,6 +188,8 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
         {
           warehouse_id: "wh-1",
           warehouse_name: "Karachi Central Depot",
+          city: "Karachi",
+          country: "Pakistan",
           quantity: qtyK,
           reserved_quantity: 0,
           available_quantity: qtyK
@@ -195,6 +197,8 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
         {
           warehouse_id: "wh-2",
           warehouse_name: "Lahore North Terminal",
+          city: "Lahore",
+          country: "Pakistan",
           quantity: qtyL,
           reserved_quantity: 0,
           available_quantity: qtyL

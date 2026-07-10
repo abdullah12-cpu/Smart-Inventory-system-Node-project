@@ -320,7 +320,10 @@ h1, h2, h3, h4 {
 .data-row-enhanced:hover {
   background-color: rgba(79, 70, 229, 0.04) !important;
 }
-.data-row-enhanced::before {
+.data-row-enhanced td:first-child {
+  position: relative;
+}
+.data-row-enhanced td:first-child::before {
   content: '';
   position: absolute;
   left: 0;
@@ -332,7 +335,7 @@ h1, h2, h3, h4 {
   transition: transform 150ms ease-out;
   transform-origin: top;
 }
-.data-row-enhanced:hover::before {
+.data-row-enhanced:hover td:first-child::before {
   transform: scaleY(1);
 }
 

@@ -75,6 +75,8 @@ async function initDb() {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS min_wholesale_qty INTEGER DEFAULT 1;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS max_discount INTEGER DEFAULT 10;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
     `);
 
     // Create orders table
@@ -220,19 +222,19 @@ async function initDb() {
           'p-1', 'SKU-CISCO-9300', '012345678901', 'Cisco Fiber Catalyst 9300', 
           'High performance catalyst networking fiber switch.', 'Cisco', 'Networking', 'Units', 4.5, 'ACTIVE', 15, 60, 90, 
           '{"RETAIL": 150000, "WHOLESALE": 120000, "LOYALTY": 135000}'::jsonb,
-          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "quantity": 42, "reserved_quantity": 0, "available_quantity": 42}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "quantity": 18, "reserved_quantity": 0, "available_quantity": 18}]'::jsonb
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 42, "reserved_quantity": 0, "available_quantity": 42}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 18, "reserved_quantity": 0, "available_quantity": 18}]'::jsonb
         ),
         (
           'p-2', 'SKU-CORNING-4KM', '012345678902', 'Corning Fiber Optic Spool 4km', 
           'High speed transmission single mode fiber optic spool.', 'Corning', 'Cables', 'Spools', 12.0, 'ACTIVE', 10, 40, 60, 
           '{"RETAIL": 85000, "WHOLESALE": 68000, "LOYALTY": 75000}'::jsonb,
-          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "quantity": 8, "reserved_quantity": 0, "available_quantity": 8}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "quantity": 12, "reserved_quantity": 0, "available_quantity": 12}]'::jsonb
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 8, "reserved_quantity": 0, "available_quantity": 8}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 12, "reserved_quantity": 0, "available_quantity": 12}]'::jsonb
         ),
         (
           'p-3', 'SKU-NVIDIA-CX6', '012345678903', 'Nvidia Mellanox ConnectX-6', 
           'Dual-port smart Network Interface Card 200Gb/s.', 'Nvidia', 'Hardware', 'Units', 0.8, 'ACTIVE', 8, 30, 45, 
           '{"RETAIL": 250000, "WHOLESALE": 200000, "LOYALTY": 220000}'::jsonb,
-          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "quantity": 15, "reserved_quantity": 0, "available_quantity": 15}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "quantity": 4, "reserved_quantity": 0, "available_quantity": 4}]'::jsonb
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 15, "reserved_quantity": 0, "available_quantity": 15}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 4, "reserved_quantity": 0, "available_quantity": 4}]'::jsonb
         )
       `);
       console.log("Predefined catalog products seeded successfully in PostgreSQL!");
@@ -309,7 +311,9 @@ app.post('/api/auth/login', async (req, res) => {
       buyer_store_name: user.buyer_store_name || '',
       buyer_phone: user.buyer_phone || '',
       buyer_address: user.buyer_address || '',
-      buyer_region: user.buyer_region || ''
+      buyer_region: user.buyer_region || '',
+      country: user.country || '',
+      city: user.city || ''
     };
 
     if (user.role === 'buyer') {
@@ -334,8 +338,8 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Register Distributor endpoint
 app.post('/api/auth/register-distributor', async (req, res) => {
-  const { businessName, contactName, regEmail, password } = req.body;
-  if (!businessName || !contactName || !regEmail || !password) {
+  const { businessName, contactName, regEmail, password, country, city } = req.body;
+  if (!businessName || !contactName || !regEmail || !password || !country || !city) {
     return res.status(400).json({ success: false, message: 'Required fields missing.' });
   }
 
@@ -348,9 +352,9 @@ app.post('/api/auth/register-distributor', async (req, res) => {
 
     // Insert distributor with user-provided password
     await pool.query(
-      `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [regEmail, password, 'distributor', contactName, businessName, 'wh-1', '2500000', 'PENDING_APPROVAL']
+      `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request, status, country, city) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [regEmail, password, 'distributor', contactName, businessName, 'wh-1', '2500000', 'PENDING_APPROVAL', country, city]
     );
 
     return res.status(201).json({ success: true, message: 'Distributor application registered successfully.' });
@@ -647,16 +651,29 @@ app.post('/api/orders', async (req, res) => {
 // PUT update order status
 app.put('/api/orders/:order_id/status', async (req, res) => {
   const { order_id } = req.params;
-  const { status } = req.body;
+  const { status, total_amount, subtotal, items } = req.body;
   if (!status) {
     return res.status(400).json({ success: false, message: 'Required status missing.' });
   }
 
   try {
-    const result = await pool.query(
-      'UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *',
-      [status, order_id]
-    );
+    let result;
+    if (total_amount !== undefined && subtotal !== undefined && items !== undefined) {
+      result = await pool.query(
+        'UPDATE orders SET status = $1, total_amount = $2, subtotal = $3, items = $4 WHERE order_id = $5 RETURNING *',
+        [status, total_amount, subtotal, JSON.stringify(items), order_id]
+      );
+    } else if (total_amount !== undefined) {
+      result = await pool.query(
+        'UPDATE orders SET status = $1, total_amount = $2, subtotal = $2 WHERE order_id = $3 RETURNING *',
+        [status, total_amount, order_id]
+      );
+    } else {
+      result = await pool.query(
+        'UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *',
+        [status, order_id]
+      );
+    }
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Order not found.' });
     }

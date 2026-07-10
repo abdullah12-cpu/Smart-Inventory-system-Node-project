@@ -496,9 +496,16 @@ export default function ProductDrawer({ product, open, onClose }) {
                   className: "bg-white border border-[#E2E8F0] rounded-lg p-3 flex flex-col gap-2 shadow-sm hover:border-[#4F46E5]/30 transition-colors",
                   children: [
                     /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
-                      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 text-[11px] font-bold text-[#0F172A]", children: [
-                        /* @__PURE__ */ jsx(Warehouse, { size: 13, className: "text-[#4F46E5]" }),
-                        inv.warehouse_name
+                      /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-0.5 text-left", children: [
+                        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 text-[11px] font-bold text-[#0F172A]", children: [
+                          /* @__PURE__ */ jsx(Warehouse, { size: 13, className: "text-[#4F46E5]" }),
+                          inv.warehouse_name
+                        ] }),
+                        /* @__PURE__ */ jsxs("span", { className: "text-[9px] text-[#64748B] pl-5 font-semibold", children: [
+                          inv.city || (inv.warehouse_id === "wh-1" ? "Karachi" : "Lahore"),
+                          ", ",
+                          inv.country || "Pakistan"
+                        ] })
                       ] }),
                       /* @__PURE__ */ jsx(
                         StockAlertBadge,

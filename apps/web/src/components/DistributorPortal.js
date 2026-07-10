@@ -99,8 +99,33 @@ function QuoteStatusBadge({ status }) {
   );
 }
 export default function DistributorPortal({ onLogout }) {
-  const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices, recordPaymentAllocation, currentUser } = useStore();
-  const [activeTab, setActiveTab] = useState("catalog");
+  const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices, recordPaymentAllocation, currentUser, placeOrder } = useStore();
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab) return tab;
+    return localStorage.getItem("ciq_distributor_activeTab") || "catalog";
+  });
+  useEffect(() => {
+    localStorage.setItem("ciq_distributor_activeTab", activeTab);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") !== activeTab) {
+      params.set("tab", activeTab);
+      window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab && tab !== activeTab) {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [activeTab]);
   const [quoteSearch, setQuoteSearch] = useState("");
   const [quoteStatusFilter, setQuoteStatusFilter] = useState("all");
   const [orderSearch, setOrderSearch] = useState("");
@@ -171,6 +196,80 @@ export default function DistributorPortal({ onLogout }) {
   const [activeProductForQuote, setActiveProductForQuote] = useState(null);
   const [quoteQuantity, setQuoteQuantity] = useState(1);
   const [customProposedPrice, setCustomProposedPrice] = useState("");
+  const [activeProductForDirectOrder, setActiveProductForDirectOrder] = useState(null);
+  const [directOrderQuantity, setDirectOrderQuantity] = useState(1);
+  const [directOrderSuccessToast, setDirectOrderSuccessToast] = useState("");
+
+  const handleDirectOrder = (product) => {
+    const minQty = product.min_wholesale_qty || 1;
+    const availableQty = (product.inventory || []).reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+    
+    if (availableQty <= 0) {
+      alert("This product is currently out of stock.");
+      return;
+    }
+    
+    if (minQty > availableQty) {
+      alert(`Warning: The minimum wholesale quantity (${minQty}) is greater than the total available warehouse stock (${availableQty}).`);
+      return;
+    }
+
+    setActiveProductForDirectOrder(product);
+    setDirectOrderQuantity(minQty);
+  };
+
+  const handleConfirmDirectOrder = async () => {
+    if (!activeProductForDirectOrder) return;
+
+    const minQty = activeProductForDirectOrder.min_wholesale_qty || 1;
+    const availableQty = (activeProductForDirectOrder.inventory || []).reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+    const qty = parseInt(directOrderQuantity);
+
+    if (isNaN(qty) || qty < minQty) {
+      alert(`Minimum wholesale requirement is ${minQty} units.`);
+      return;
+    }
+    if (qty > availableQty) {
+      alert(`Only ${availableQty} units available in stock.`);
+      return;
+    }
+
+    const unitPrice = activeProductForDirectOrder.prices.DISTRIBUTOR;
+    const subtotal = qty * unitPrice;
+    const orderNumber = `ORD-PO-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const orderPayload = {
+      order_id: `ord-${Date.now()}`,
+      order_number: orderNumber,
+      order_type: "B2B",
+      status: "PROCESSING",
+      subtotal: subtotal,
+      discount_total: 0,
+      tax_total: 0,
+      total_amount: subtotal,
+      currency: "PKR",
+      order_date: new Date().toISOString(),
+      items_summary: `${activeProductForDirectOrder.product_name} x ${qty}`,
+      items: [
+        {
+          product_id: activeProductForDirectOrder.product_id,
+          product_name: activeProductForDirectOrder.product_name,
+          price: unitPrice,
+          qty: qty
+        }
+      ],
+      customer_email: currentUser?.email || "asim@commerceiq.com"
+    };
+
+    const success = await placeOrder(orderPayload);
+    if (success) {
+      setDirectOrderSuccessToast(`Purchase Order ${orderNumber} placed successfully!`);
+      setTimeout(() => setDirectOrderSuccessToast(""), 3000);
+      setActiveProductForDirectOrder(null);
+    } else {
+      alert("Failed to place direct B2B order.");
+    }
+  };
 
   const handleAddToQuote = (product) => {
     const minQty = product.min_wholesale_qty || 1;
@@ -222,15 +321,16 @@ export default function DistributorPortal({ onLogout }) {
 
     const minAllowedPrice = currentPrice * (1 - maxDiscPercent / 100);
     if (proposed < minAllowedPrice) {
-      alert(`Proposed price cannot be less than Rs ${Math.round(minAllowedPrice).toLocaleString()} (Maximum ${maxDiscPercent}% discount set by admin for this product).`);
+      alert("Proposed price exceeds the maximum allowed discount limit. Please enter a valid price.");
       return;
     }
 
     setDraftItems((prev) => {
       const existing = prev.find((item) => item.product_id === activeProductForQuote.product_id);
       if (existing) {
+        const newQty = Math.min(existing.qty + qty, availableQty);
         return prev.map(
-          (item) => item.product_id === activeProductForQuote.product_id ? { ...item, qty, price: proposed } : item
+          (item) => item.product_id === activeProductForQuote.product_id ? { ...item, qty: newQty, price: proposed } : item
         );
       }
       return [...prev, { 
@@ -286,7 +386,11 @@ export default function DistributorPortal({ onLogout }) {
             await fetch(`/api/orders/${matchedOrder.order_id}/status`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ status: "PROCESSING" })
+              body: JSON.stringify({
+                status: "PROCESSING",
+                total_amount: activeQuote.total_amount,
+                subtotal: activeQuote.total_amount
+              })
             });
           } else {
             // Create a new B2B Order record since this quote was initiated as a custom B2B application
@@ -644,14 +748,24 @@ export default function DistributorPortal({ onLogout }) {
                       ] })
                     ] })
                   ] }),
-                  /* @__PURE__ */ jsx(
-                    "button",
-                    {
-                      onClick: () => handleAddToQuote(p),
-                      className: "mt-2 w-full py-2 bg-slate-50 border border-[#E2E8F0] text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-50 hover:border-blue-200 transition-colors cursor-pointer active:scale-[0.98]",
-                      children: "Add to Quote Request"
-                    }
-                  )
+                  /* @__PURE__ */ jsxs("div", { className: "flex gap-2.5 mt-2", children: [
+                    /* @__PURE__ */ jsx(
+                      "button",
+                      {
+                        onClick: () => handleAddToQuote(p),
+                        className: "flex-1 py-2 bg-slate-50 border border-[#E2E8F0] text-blue-600 rounded-lg text-[10px] font-extrabold hover:bg-blue-50 hover:border-blue-200 transition-colors cursor-pointer active:scale-[0.98] text-center",
+                        children: "Request Quote"
+                      }
+                    ),
+                    /* @__PURE__ */ jsx(
+                      "button",
+                      {
+                        onClick: () => handleDirectOrder(p),
+                        className: "flex-1 py-2 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-lg text-[10px] font-extrabold hover:bg-emerald-100 hover:border-emerald-300 transition-colors cursor-pointer active:scale-[0.98] text-center",
+                        children: "Direct Order"
+                      }
+                    )
+                  ] })
                 ]
               },
               p.product_id
@@ -1119,6 +1233,10 @@ export default function DistributorPortal({ onLogout }) {
       /* @__PURE__ */ jsx(CheckCircle, { size: 20, className: "text-emerald-400" }),
       /* @__PURE__ */ jsx("span", { className: "font-bold text-sm tracking-wide", children: addToQuoteToast })
     ] }),
+    directOrderSuccessToast && /* @__PURE__ */ jsxs("div", { className: "fixed bottom-10 left-1/2 -translate-x-1/2 bg-[#0F172A] text-white px-6 py-4 rounded-full shadow-2xl animate-fade-up z-[100] flex items-center gap-3", children: [
+      /* @__PURE__ */ jsx(CheckCircle, { size: 20, className: "text-emerald-400" }),
+      /* @__PURE__ */ jsx("span", { className: "font-bold text-sm tracking-wide", children: directOrderSuccessToast })
+    ] }),
     /* @__PURE__ */ jsx(
       Modal,
       {
@@ -1553,6 +1671,41 @@ export default function DistributorPortal({ onLogout }) {
                     };
                     const success = await submitQuotationRequest(quoteData);
                     if (success) {
+                      // Post a matching pending B2B order record so the Admin sees it in their Orders list
+                      const orderPayload = {
+                        order_id: `ord-${Date.now()}`,
+                        order_number: quoteData.quotation_number.replace("QUO-", "ORD-"),
+                        order_type: "B2B",
+                        status: "PENDING",
+                        subtotal: total,
+                        discount_total: 0,
+                        tax_total: 0,
+                        total_amount: total,
+                        currency: "PKR",
+                        order_date: new Date().toISOString(),
+                        items_summary: `B2B Order request from ${currentUser?.business_name || currentUser?.email || "Distributor"}`,
+                        items: draftItems.map((item) => ({
+                          product_id: item.product_id,
+                          product_name: item.name,
+                          price: item.price,
+                          qty: item.qty
+                        })),
+                        customer_email: currentUser?.email || "distributor@commerceiq.com"
+                      };
+                      try {
+                        const orderRes = await fetch("/api/orders", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(orderPayload)
+                        });
+                        if (orderRes.ok) {
+                          const ordRes = await fetch("/api/orders");
+                          if (ordRes.ok) setOrders(await ordRes.json());
+                        }
+                      } catch (err) {
+                        console.error("Error creating B2B order request:", err);
+                      }
+
                       setDraftModalOpen(false);
                       setDraftItems([]);
                       setActionToast("Quote Request formally submitted to vendor!");
@@ -1671,15 +1824,7 @@ export default function DistributorPortal({ onLogout }) {
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "p-4 bg-amber-50/50 border border-amber-100 rounded-xl flex flex-col gap-3", children: [
               /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
-                /* @__PURE__ */ jsxs("div", { className: "text-left", children: [
-                  /* @__PURE__ */ jsx("p", { className: "font-bold text-[#0F172A] text-xs", children: "Propose Custom Unit Price" }),
-                  /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: [
-                    "Allowed Range: Rs ",
-                    Math.round(activeProductForQuote.prices.DISTRIBUTOR * (1 - (activeProductForQuote.max_discount !== undefined ? activeProductForQuote.max_discount : 10) / 100)).toLocaleString(),
-                    " - Rs ",
-                    activeProductForQuote.prices.DISTRIBUTOR.toLocaleString()
-                  ] })
-                ] }),
+                /* @__PURE__ */ jsx("p", { className: "font-bold text-[#0F172A] text-xs", children: "Propose Custom Unit Price" }),
                 /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5", children: [
                   /* @__PURE__ */ jsx("span", { className: "text-[10px] font-mono font-bold text-[#64748B]", children: "Rs" }),
                   /* @__PURE__ */ jsx("input", {
@@ -1716,6 +1861,125 @@ export default function DistributorPortal({ onLogout }) {
     actionToast && /* @__PURE__ */ jsxs("div", { className: "fixed top-6 right-6 bg-[#0F172A] text-white px-5 py-3 rounded-lg shadow-2xl animate-fade-down z-[100] flex items-center gap-3", children: [
       /* @__PURE__ */ jsx(CheckCircle, { size: 16, className: "text-emerald-400" }),
       /* @__PURE__ */ jsx("span", { className: "font-medium text-xs tracking-wide", children: actionToast })
-    ] })
+    ] }),
+    /* @__PURE__ */ jsx(
+      Modal,
+      {
+        open: activeProductForDirectOrder !== null,
+        onClose: () => setActiveProductForDirectOrder(null),
+        title: "Place Direct Purchase Order",
+        children: activeProductForDirectOrder && (() => {
+          const availableQty = activeProductForDirectOrder.inventory.reduce((sum, inv) => sum + inv.available_quantity, 0);
+          const minQty = activeProductForDirectOrder.min_wholesale_qty || 1;
+          const unitPrice = activeProductForDirectOrder.prices.DISTRIBUTOR;
+          const totalVal = (parseInt(directOrderQuantity) || 0) * unitPrice;
+          
+          return /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-5 text-xs", children: [
+            /* @__PURE__ */ jsx("p", { className: "text-slate-500", children: "Skip the quotation request and buy this product directly at the current pre-approved distributor rate." }),
+            /* @__PURE__ */ jsxs("div", { className: "flex gap-4 items-center bg-slate-50 p-4 rounded-xl border border-[#E2E8F0]", children: [
+              /* @__PURE__ */ jsx("div", { className: "w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#CBD5E1] flex-shrink-0 flex items-center justify-center", children: /* @__PURE__ */ jsx("img", {
+                src: activeProductForDirectOrder.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
+                alt: activeProductForDirectOrder.product_name,
+                className: "w-full h-full object-cover"
+              }) }),
+              /* @__PURE__ */ jsxs("div", { className: "flex-1 min-w-0", children: [
+                /* @__PURE__ */ jsx("span", { className: "text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider", children: activeProductForDirectOrder.category }),
+                /* @__PURE__ */ jsx("h4", { className: "font-bold text-[#0F172A] mt-1.5 text-sm truncate", children: activeProductForDirectOrder.product_name }),
+                /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-mono mt-0.5", children: [
+                  "Product Code: ",
+                  activeProductForDirectOrder.sku
+                ] })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-4 text-center", children: [
+              /* @__PURE__ */ jsxs("div", { className: "bg-[#F0FDF4] p-3 rounded-lg border border-emerald-100", children: [
+                /* @__PURE__ */ jsx("p", { className: "text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1", children: "Distributor Rate" }),
+                /* @__PURE__ */ jsx("p", { className: "text-base font-extrabold text-[#16A34A]", children: formatCurrency(unitPrice) })
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 p-3 rounded-lg border border-[#E2E8F0]", children: [
+                /* @__PURE__ */ jsx("p", { className: "text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1", children: "Available Stock" }),
+                /* @__PURE__ */ jsxs("p", { className: "text-base font-extrabold text-[#0F172A]", children: [
+                  availableQty.toLocaleString(),
+                  " ",
+                  activeProductForDirectOrder.unit
+                ] })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "p-4 bg-blue-50/50 border border-blue-100 rounded-xl flex flex-col gap-3", children: [
+              /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
+                /* @__PURE__ */ jsxs("div", { children: [
+                  /* @__PURE__ */ jsx("p", { className: "font-bold text-[#0F172A] text-xs", children: "Order Quantity" }),
+                  /* @__PURE__ */ jsxs("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: [
+                    "Required MOQ: ",
+                    minQty,
+                    " ",
+                    activeProductForDirectOrder.unit
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+                  /* @__PURE__ */ jsx("button", {
+                    type: "button",
+                    onClick: () => {
+                      setDirectOrderQuantity(prev => Math.max(minQty, prev - 1));
+                    },
+                    disabled: directOrderQuantity <= minQty,
+                    className: "w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30",
+                    children: "-"
+                  }),
+                  /* @__PURE__ */ jsx("input", {
+                    type: "number",
+                    className: "w-16 h-8 text-center font-mono font-bold text-xs border border-[#CBD5E1] rounded-lg bg-white focus:outline-none focus:border-blue-500",
+                    value: directOrderQuantity,
+                    onChange: (e) => {
+                      const val = parseInt(e.target.value);
+                      if (!isNaN(val)) {
+                        setDirectOrderQuantity(val);
+                      } else {
+                        setDirectOrderQuantity("");
+                      }
+                    },
+                    onBlur: () => {
+                      const val = parseInt(directOrderQuantity);
+                      if (isNaN(val) || val < minQty) {
+                        setDirectOrderQuantity(minQty);
+                      } else if (val > availableQty) {
+                        setDirectOrderQuantity(availableQty);
+                      }
+                    }
+                  }),
+                  /* @__PURE__ */ jsx("button", {
+                    type: "button",
+                    onClick: () => {
+                      setDirectOrderQuantity(prev => Math.min(availableQty, prev + 1));
+                    },
+                    disabled: directOrderQuantity >= availableQty,
+                    className: "w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30",
+                    children: "+"
+                  })
+                ] })
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center border-t border-blue-100/50 pt-2.5 mt-1 text-[10px] text-[#64748B]", children: [
+                /* @__PURE__ */ jsx("span", { children: "Total Order Value" }),
+                /* @__PURE__ */ jsx("span", { className: "font-mono font-extrabold text-[#0F172A] text-sm", children: formatCurrency(totalVal) })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex gap-3 justify-end pt-2 border-t border-[#F1F5F9]", children: [
+              /* @__PURE__ */ jsx("button", {
+                type: "button",
+                onClick: () => setActiveProductForDirectOrder(null),
+                className: "px-4 py-2 bg-white border border-[#E2E8F0] text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 cursor-pointer",
+                children: "Cancel"
+              }),
+              /* @__PURE__ */ jsx("button", {
+                type: "button",
+                onClick: handleConfirmDirectOrder,
+                className: "px-5 py-2 bg-emerald-600 border-0 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm active:scale-95",
+                children: "Place Direct Order"
+              })
+            ] })
+          ] });
+        })()
+      }
+    )
   ] });
 }

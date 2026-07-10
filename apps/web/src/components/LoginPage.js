@@ -46,6 +46,16 @@ export default function LoginPage({
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [regPassword, setRegPassword] = useState("");
+  const [country, setCountry] = useState("");
+  const [city, setCity] = useState("");
+
+  const COUNTRY_CITY_DATA = {
+    "Pakistan": { flag: "🇵🇰", cities: ["Karachi", "Lahore", "Islamabad", "Rawalpindi"] },
+    "Saudi Arabia": { flag: "🇸🇦", cities: ["Riyadh", "Jeddah", "Mecca", "Medina"] },
+    "United Arab Emirates": { flag: "🇦🇪", cities: ["Dubai", "Abu Dhabi", "Sharjah"] },
+    "United Kingdom": { flag: "🇬🇧", cities: ["London", "Manchester", "Birmingham"] },
+    "United States": { flag: "🇺🇸", cities: ["New York", "Los Angeles", "Chicago", "Houston"] }
+  };
 
   const [statusEmail, setStatusEmail] = useState("");
   const [statusResult, setStatusResult] = useState(null);
@@ -116,7 +126,10 @@ export default function LoginPage({
 
   const handleSubmitRegister = async (e) => {
     e.preventDefault();
-    if (!businessName || !contactName || !regEmail || !regPassword) return;
+    if (!businessName || !contactName || !regEmail || !regPassword || !country || !city) {
+      alert("Please fill in all fields, including Country and City.");
+      return;
+    }
     try {
       const response = await fetch("/api/auth/register-distributor", {
         method: "POST",
@@ -128,6 +141,8 @@ export default function LoginPage({
           contactName,
           regEmail,
           password: regPassword,
+          country,
+          city
         }),
       });
       const data = await response.json();
@@ -136,7 +151,7 @@ export default function LoginPage({
           title: "B2B Partnership Registration Applied",
           message: `B2B partnership requested by ${businessName} (Contact: ${contactName}).`,
           severity: "INFO",
-          trigger_type: "CREDIT_LIMIT_BREACH"
+          trigger_type: "DISTRIBUTOR_REGISTRATION"
         });
         setRegisterSuccess(true);
       } else {
@@ -851,6 +866,44 @@ export default function LoginPage({
                   })
                   ]
                 }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Country *" }),
+                /* @__PURE__ */ jsxs(
+                  "select",
+                  {
+                    className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors cursor-pointer",
+                    value: country,
+                    onChange: (e) => {
+                      setCountry(e.target.value);
+                      setCity("");
+                    },
+                    required: true,
+                    children: [
+                      /* @__PURE__ */ jsx("option", { value: "", children: "Select Country" }),
+                      Object.keys(COUNTRY_CITY_DATA).map((c) => /* @__PURE__ */ jsx("option", { value: c, children: `${COUNTRY_CITY_DATA[c].flag} ${c}` }, c))
+                    ]
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ jsxs("div", {
+                  className: "flex flex-col gap-1", children: [
+                /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "City *" }),
+                /* @__PURE__ */ jsxs(
+                  "select",
+                  {
+                    className: "w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors cursor-pointer disabled:opacity-50",
+                    value: city,
+                    onChange: (e) => setCity(e.target.value),
+                    disabled: !country,
+                    required: true,
+                    children: [
+                      /* @__PURE__ */ jsx("option", { value: "", children: "Select City" }),
+                      country && COUNTRY_CITY_DATA[country].cities.map((ct) => /* @__PURE__ */ jsx("option", { value: ct, children: ct }, ct))
+                    ]
+                  }
+                )
+              ] }),
               /* @__PURE__ */ jsxs("div", {
                   className: "flex flex-col gap-1", children: [
                 /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold uppercase tracking-wider", children: "Create Password *" }),

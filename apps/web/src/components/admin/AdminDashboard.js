@@ -6,7 +6,9 @@ import {
   Clock,
   ShieldAlert,
   BarChart3,
-  CheckCircle
+  CheckCircle,
+  Edit,
+  Trash2
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { computeStockAlertStatus, formatCurrency } from "@/lib/data";
@@ -22,7 +24,8 @@ export default function AdminDashboard({ search, mode }) {
   const shouldReduceMotion = useReducedMotion();
   const [exportLoading, setExportLoading] = useState(false);
   const [exportHovered, setExportHovered] = useState(false);
-  const { products } = useStore();
+  const { products, deleteProduct } = useStore();
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [tab, setTab] = useState("all");
   const [warehouseFilter, setWarehouseFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -34,10 +37,54 @@ export default function AdminDashboard({ search, mode }) {
   const [prevStock, setPrevStock] = useState({});
   const [loading, setLoading] = useState(false);
   useEffect(() => {
+    setSelectedProductIds([]);
     setLoading(true);
     const timer = setTimeout(() => setLoading(false), 400);
     return () => clearTimeout(timer);
   }, [tab, search, warehouseFilter, categoryFilter, stockTypeFilter]);
+  const toggleSelectProduct = (productId) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId]
+    );
+  };
+  const toggleSelectAll = () => {
+    const filteredIds = filtered.map((p) => p.product_id);
+    const allSelected = filteredIds.every((id) => selectedProductIds.includes(id));
+    if (allSelected) {
+      setSelectedProductIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+    } else {
+      setSelectedProductIds((prev) => {
+        const newSelection = [...prev];
+        filteredIds.forEach((id) => {
+          if (!newSelection.includes(id)) {
+            newSelection.push(id);
+          }
+        });
+        return newSelection;
+      });
+    }
+  };
+  const handleBulkDelete = async () => {
+    if (selectedProductIds.length === 0) return;
+    const confirmMsg = `Are you sure you want to permanently delete the ${selectedProductIds.length} selected products? This will remove them from the inventory catalog and all warehouse ledgers.`;
+    if (!window.confirm(confirmMsg)) return;
+    setLoading(true);
+    try {
+      for (const id of selectedProductIds) {
+        await deleteProduct(id);
+      }
+      setSelectedProductIds([]);
+      setToast("Selected products deleted successfully.");
+      setTimeout(() => setToast(""), 3000);
+    } catch (err) {
+      console.error("Error bulk deleting products:", err);
+      alert("Failed to delete some products. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
   const categories = Array.from(new Set(products.map((p) => p.category)));
   useEffect(() => {
     const newFlashing = {};
@@ -101,7 +148,7 @@ export default function AdminDashboard({ search, mode }) {
     const alertStatus = computeStockAlertStatus(
       totalAvail,
       p.low_stock_threshold,
-      p.overstock_threshold
+      p.total_product_limit || 100
     );
     const matchTab = tab === "all" || tab === alertStatus;
     let matchWarehouse = true;
@@ -319,15 +366,26 @@ export default function AdminDashboard({ search, mode }) {
       ] }),
       /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse", children: [
         /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
+          /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-center w-12", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "checkbox",
+              className: "w-4 h-4 text-[#4F46E5] border-slate-300 rounded focus:ring-[#4F46E5] cursor-pointer",
+              checked: filtered.length > 0 && filtered.every((p) => selectedProductIds.includes(p.product_id)),
+              onChange: toggleSelectAll
+            }
+          ) }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Product Details" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Brand & Category" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Quantity" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Reserved" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Available" }),
           /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Alert Status" }),
-          /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Retail Price" })
+          /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Retail Price" }),
+          /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Actions" })
         ] }) }),
         /* @__PURE__ */ jsx("tbody", { children: loading ? Array.from({ length: 5 }).map((_, rowIdx) => /* @__PURE__ */ jsxs("tr", { className: "border-b border-[#E2E8F0]", children: [
+          /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsx("div", { className: "w-4 h-4 rounded shimmer-skeleton mx-auto" }) }),
           /* @__PURE__ */ jsxs("td", { className: "px-6 py-4", children: [
             /* @__PURE__ */ jsx("div", { className: "w-36 h-3 rounded shimmer-skeleton mb-1.5" }),
             /* @__PURE__ */ jsx("div", { className: "w-20 h-2 rounded shimmer-skeleton" })
@@ -340,11 +398,12 @@ export default function AdminDashboard({ search, mode }) {
           /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-10 h-3 rounded shimmer-skeleton ml-auto" }) }),
           /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-12 h-3 rounded shimmer-skeleton ml-auto" }) }),
           /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-16 h-4 rounded shimmer-skeleton mx-auto" }) }),
-          /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-16 h-3 rounded shimmer-skeleton ml-auto" }) })
+          /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-16 h-3 rounded shimmer-skeleton ml-auto" }) }),
+          /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("div", { className: "w-12 h-6 rounded shimmer-skeleton mx-auto" }) })
         ] }, rowIdx)) : filtered.length === 0 ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx(
           "td",
           {
-            colSpan: 7,
+            colSpan: 9,
             className: "text-center py-12 text-xs text-[#94A3B8] font-medium",
             children: "No products match the selected criteria."
           }
@@ -364,7 +423,7 @@ export default function AdminDashboard({ search, mode }) {
           const alertStatus = computeStockAlertStatus(
             totalAvail,
             p.low_stock_threshold,
-            p.overstock_threshold
+            p.total_product_limit || 100
           );
           const isFlashing = flashingIds[p.product_id];
           return /* @__PURE__ */ jsxs(
@@ -376,6 +435,15 @@ export default function AdminDashboard({ search, mode }) {
               transition: { duration: 0.25, delay: idx * 0.04 },
               className: `data-row-enhanced border-b border-[#E2E8F0] cursor-pointer text-xs group ${isFlashing ? "animate-row-flash" : ""}`,
               children: [
+                /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", onClick: (e) => e.stopPropagation(), children: /* @__PURE__ */ jsx(
+                  "input",
+                  {
+                    type: "checkbox",
+                    className: "w-4 h-4 text-[#4F46E5] border-slate-300 rounded focus:ring-[#4F46E5] cursor-pointer",
+                    checked: selectedProductIds.includes(p.product_id),
+                    onChange: () => toggleSelectProduct(p.product_id)
+                  }
+                ) }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
                   (() => {
                     const lastChar = p.product_id.toString().charAt(p.product_id.toString().length - 1);
@@ -413,7 +481,21 @@ export default function AdminDashboard({ search, mode }) {
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-medium text-[#E11D48]", children: totalRes.toLocaleString("en-US") }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#4F46E5]", children: /* @__PURE__ */ jsx(CountUp, { value: totalAvail }) }),
                 /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsx(StockAlertBadge, { status: alertStatus }) }),
-                /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#0F172A]", children: formatCurrency(p.prices.RETAIL) })
+                /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#0F172A]", children: formatCurrency(p.prices.RETAIL) }),
+                /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsxs(
+                  "button",
+                  {
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setSelectedId(p.product_id);
+                    },
+                    className: "px-2.5 py-1 bg-[#EEF2FF] hover:bg-[#E0E7FF] text-[#4F46E5] rounded-md text-[10px] font-bold cursor-pointer transition-all border-0 shadow-sm flex items-center gap-1 mx-auto hover:scale-105 active:scale-95 duration-100 font-semibold",
+                    children: [
+                      /* @__PURE__ */ jsx(Edit, { size: 10 }),
+                      "Edit"
+                    ]
+                  }
+                ) })
               ]
             },
             p.product_id
@@ -459,6 +541,43 @@ export default function AdminDashboard({ search, mode }) {
           setTimeout(() => setToast(""), 4e3);
         }
       }
-    )
+    ),
+    /* @__PURE__ */ jsx(AnimatePresence, { children: selectedProductIds.length > 0 && /* @__PURE__ */ jsx(
+      motion.div,
+      {
+        initial: { opacity: 0, y: 50, x: "-50%" },
+        animate: { opacity: 1, y: 0, x: "-50%" },
+        exit: { opacity: 0, y: 50, x: "-50%" },
+        className: "fixed bottom-6 left-1/2 bg-[#0F172A] text-white px-6 py-3.5 rounded-full shadow-2xl z-50 flex items-center gap-6 border border-[#334155] backdrop-blur-md bg-opacity-95",
+        children: [
+          /* @__PURE__ */ jsxs("div", { className: "text-xs font-semibold flex items-center gap-1", children: [
+            /* @__PURE__ */ jsx("span", { className: "text-[#818CF8] font-black", children: selectedProductIds.length }),
+            "selected"
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "w-px h-4 bg-[#334155]" }),
+          /* @__PURE__ */ jsxs("div", { className: "flex gap-2", children: [
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                onClick: handleBulkDelete,
+                className: "flex items-center gap-1.5 bg-[#EF4444] hover:bg-[#DC2626] text-white text-[11px] font-bold px-4 py-2 rounded-full transition-colors cursor-pointer border-0 shadow-sm",
+                children: [
+                  /* @__PURE__ */ jsx(Trash2, { size: 12 }),
+                  "Delete Selected"
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => setSelectedProductIds([]),
+                className: "text-[#94A3B8] hover:text-white text-[11px] font-bold px-3 py-2 rounded-full transition-colors cursor-pointer border-0 bg-transparent",
+                children: "Cancel"
+              }
+            )
+          ] })
+        ]
+      }
+    ) })
   ] });
 }

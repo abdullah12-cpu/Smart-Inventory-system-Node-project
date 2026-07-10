@@ -21,8 +21,31 @@ const GUEST_USER = {
   profile_image: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&fit=crop"
 };
 export function StoreProvider({ children }) {
-  const [portal, setPortal] = useState("admin");
-  const [currentUser, setCurrentUser] = useState(GUEST_USER);
+  const [portal, setPortal] = useState(() => {
+    return localStorage.getItem("ciq_portal") || "admin";
+  });
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ciq_currentUser");
+      return saved ? JSON.parse(saved) : GUEST_USER;
+    } catch (e) {
+      return GUEST_USER;
+    }
+  });
+
+  useEffect(() => {
+    if (portal) {
+      localStorage.setItem("ciq_portal", portal);
+    }
+  }, [portal]);
+
+  useEffect(() => {
+    if (currentUser && currentUser.user_id !== "guest") {
+      localStorage.setItem("ciq_currentUser", JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem("ciq_currentUser");
+    }
+  }, [currentUser]);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [quotations, setQuotations] = useState([]);
@@ -225,7 +248,7 @@ export function StoreProvider({ children }) {
           record_id: productId,
           action: "UPDATE",
           performed_by: `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role_name})`,
-          notes: `Updated safety alert parameters for ${affectedProdName}: Low-stock threshold = ${low} units, Overstock threshold = ${over} units.`,
+          notes: `Updated safety alert parameters for ${affectedProdName}: Low-stock threshold = ${low} units, Total Product Limit = ${totalProductLimit} units.`,
           created_at: new Date().toISOString()
         };
         await fetch("/api/audit-logs", {
@@ -522,10 +545,76 @@ export function StoreProvider({ children }) {
         });
         if (response.ok) {
           const res = await fetch("/api/quotations");
-          if (res.ok) setQuotations(await res.json());
+          const freshQuotes = res.ok ? await res.json() : [];
+          setQuotations(freshQuotes);
 
-          const matched = quotations.find(q => q.quotation_id === quoteId);
+          const matched = freshQuotes.find(q => q.quotation_id === quoteId) || quotations.find(q => q.quotation_id === quoteId);
           const quoteNo = matched ? matched.quotation_number : quoteId;
+
+          if (matched && (status === "APPROVED" || status === "ACCEPTED")) {
+            const orderNumber = matched.quotation_number.replace("QUO-", "ORD-");
+            const orderRes = await fetch("/api/orders");
+            const freshOrders = orderRes.ok ? await orderRes.json() : [];
+            const matchedOrder = freshOrders.find(o => o.order_number === orderNumber);
+
+            if (matchedOrder) {
+              await fetch(`/api/orders/${matchedOrder.order_id}/status`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  status: "CONFIRMED",
+                  total_amount: matched.total_amount,
+                  subtotal: matched.total_amount
+                })
+              });
+            } else {
+              const orderPayload = {
+                order_id: `ord-${Date.now()}`,
+                order_number: orderNumber,
+                order_type: "B2B",
+                status: "CONFIRMED",
+                subtotal: matched.total_amount,
+                discount_total: 0,
+                tax_total: 0,
+                total_amount: matched.total_amount,
+                currency: "PKR",
+                order_date: new Date().toISOString(),
+                items_summary: `B2B Order conversion from ${matched.quotation_number}`,
+                items: [
+                  {
+                    product_id: "b2b-stock",
+                    product_name: "B2B Stock Replenishment Bulk Purchase",
+                    price: matched.total_amount,
+                    qty: 1
+                  }
+                ],
+                customer_email: "asim@commerceiq.com"
+              };
+              await fetch("/api/orders", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(orderPayload)
+              });
+            }
+
+            const finalOrdersRes = await fetch("/api/orders");
+            if (finalOrdersRes.ok) setOrders(await finalOrdersRes.json());
+          } else if (matched && status === "REJECTED") {
+            const orderNumber = matched.quotation_number.replace("QUO-", "ORD-");
+            const orderRes = await fetch("/api/orders");
+            const freshOrders = orderRes.ok ? await orderRes.json() : [];
+            const matchedOrder = freshOrders.find(o => o.order_number === orderNumber);
+
+            if (matchedOrder) {
+              await fetch(`/api/orders/${matchedOrder.order_id}/status`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "REJECTED" })
+              });
+              const finalOrdersRes = await fetch("/api/orders");
+              if (finalOrdersRes.ok) setOrders(await finalOrdersRes.json());
+            }
+          }
 
           // Create audit log
           const newAudit = {
@@ -551,7 +640,7 @@ export function StoreProvider({ children }) {
       }
       return false;
     },
-    [quotations, currentUser]
+    [quotations, orders, currentUser]
   );
   const addToCart = useCallback(
     (productId) => {

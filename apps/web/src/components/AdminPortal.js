@@ -121,7 +121,12 @@ export default function AdminPortal({ onLogout }) {
     approveDistributor,
     removeDistributor
   } = useStore();
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab) return tab;
+    return localStorage.getItem("ciq_admin_activeTab") || "dashboard";
+  });
   const shouldReduceMotion = useReducedMotion();
   const [pageLoading, setPageLoading] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -133,9 +138,27 @@ export default function AdminPortal({ onLogout }) {
   const [clearShake, setClearShake] = useState(false);
 
   useEffect(() => {
+    localStorage.setItem("ciq_admin_activeTab", activeTab);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") !== activeTab) {
+      params.set("tab", activeTab);
+      window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+    }
     setPageLoading(true);
     const timer = setTimeout(() => setPageLoading(false), 350);
     return () => clearTimeout(timer);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab && tab !== activeTab) {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, [activeTab]);
   
   useEffect(() => {
@@ -2151,39 +2174,39 @@ export default function AdminPortal({ onLogout }) {
                           className: "px-6 py-3.5 text-center flex justify-center gap-2", children: [
                             (q.status === "DRAFT" || q.status === "NEGOTIATING") && /* @__PURE__ */ jsxs(Fragment, {
                               children: [
-                        /* @__PURE__ */ jsx("button", {
-                                onClick: () => {
-                                  if (confirm(`Approve quotation ${q.quotation_number} for Rs ${q.total_amount.toLocaleString()}?`)) {
-                                    updateQuotationStatus(q.quotation_id, "APPROVED");
-                                  }
-                                },
-                                className: "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
-                                children: "Approve"
-                              }),
-                        /* @__PURE__ */ jsx("button", {
-                                onClick: () => {
-                                  const val = prompt(`Propose counter-offer for quotation ${q.quotation_number} (Current: Rs ${q.total_amount.toLocaleString()}):`);
-                                  if (val) {
-                                    const parsed = parseFloat(val);
-                                    if (!isNaN(parsed) && parsed > 0) {
-                                      updateQuotationStatus(q.quotation_id, "NEGOTIATING", parsed);
-                                    } else {
-                                      alert("Invalid amount entered.");
+                                q.status === "DRAFT" && /* @__PURE__ */ jsx("button", {
+                                  onClick: () => {
+                                    if (confirm(`Approve quotation ${q.quotation_number} for Rs ${q.total_amount.toLocaleString()}?`)) {
+                                      updateQuotationStatus(q.quotation_id, "APPROVED");
                                     }
-                                  }
-                                },
-                                className: "px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
-                                children: "Counter"
-                              }),
-                        /* @__PURE__ */ jsx("button", {
-                                onClick: () => {
-                                  if (confirm(`Reject quotation request ${q.quotation_number}?`)) {
-                                    updateQuotationStatus(q.quotation_id, "REJECTED");
-                                  }
-                                },
-                                className: "px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
-                                children: "Reject"
-                              })
+                                  },
+                                  className: "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
+                                  children: "Approve"
+                                }),
+                                /* @__PURE__ */ jsx("button", {
+                                  onClick: () => {
+                                    const val = prompt(`Propose counter-offer for quotation ${q.quotation_number} (Current: Rs ${q.total_amount.toLocaleString()}):`);
+                                    if (val) {
+                                      const parsed = parseFloat(val);
+                                      if (!isNaN(parsed) && parsed > 0) {
+                                        updateQuotationStatus(q.quotation_id, "NEGOTIATING", parsed);
+                                      } else {
+                                        alert("Invalid amount entered.");
+                                      }
+                                    }
+                                  },
+                                  className: "px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
+                                  children: "Counter"
+                                }),
+                                /* @__PURE__ */ jsx("button", {
+                                  onClick: () => {
+                                    if (confirm(`Reject quotation request ${q.quotation_number}?`)) {
+                                      updateQuotationStatus(q.quotation_id, "REJECTED");
+                                    }
+                                  },
+                                  className: "px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-sm",
+                                  children: "Reject"
+                                })
                               ]
                             }),
                             q.status === "APPROVED" && /* @__PURE__ */ jsx("span", { className: "text-[#10B981] font-bold text-[10px]", children: "Approved & Ready" }),
@@ -2416,6 +2439,14 @@ export default function AdminPortal({ onLogout }) {
                             "Region: ",
                             /* @__PURE__ */ jsx("strong", { className: "text-blue-600", children: dist.warehouse_region || "None" })
                           ] }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
+                            "Location: ",
+                            /* @__PURE__ */ jsxs("strong", { className: "text-indigo-600", children: [
+                              dist.city || "Not Specified",
+                              ", ",
+                              dist.country || "Not Specified"
+                            ] })
+                          ] }),
                           /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-[#64748B] flex flex-col gap-1 mt-1", children: [
                             /* @__PURE__ */ jsxs("span", { children: [
                               "Requested Limit: ",
@@ -2554,6 +2585,14 @@ export default function AdminPortal({ onLogout }) {
                           /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
                             "Region: ",
                             /* @__PURE__ */ jsx("strong", { className: "text-blue-600", children: dist.warehouse_region || "None" })
+                          ] }),
+                          /* @__PURE__ */ jsxs("p", { className: "text-[11px] text-[#64748B]", children: [
+                            "Location: ",
+                            /* @__PURE__ */ jsxs("strong", { className: "text-indigo-600", children: [
+                              dist.city || "Not Specified",
+                              ", ",
+                              dist.country || "Not Specified"
+                            ] })
                           ] })
                         ] }),
                         /* @__PURE__ */ jsx("div", { children: [

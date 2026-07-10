@@ -28,7 +28,32 @@ export default function BuyerPortal({ onLogout }) {
     placeOrder,
     currentUser
   } = useStore();
-  const [activeTab, setActiveTab] = useState("catalog");
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab) return tab;
+    return localStorage.getItem("ciq_buyer_activeTab") || "catalog";
+  });
+  useEffect(() => {
+    localStorage.setItem("ciq_buyer_activeTab", activeTab);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") !== activeTab) {
+      params.set("tab", activeTab);
+      window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab && tab !== activeTab) {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [activeTab]);
   const [search, setSearch] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifBounce, setNotifBounce] = useState(false);
