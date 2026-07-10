@@ -956,7 +956,7 @@ export default function LoginPage({
       /* @__PURE__ */ jsxs("div", {
           className: "flex items-center justify-center gap-1.5 text-[10px] text-[#94A3B8] pt-2 border-t border-[#E2E8F0] mt-1", children: [
         /* @__PURE__ */ jsx(Shield, { size: 12 }),
-        /* @__PURE__ */ jsx("span", { children: "Secured wholesale pipeline \xB7 CommerceIQ" })
+        /* @__PURE__ */ jsx("span", { children: "B2B Portal \xB7 CommerceIQ" })
           ]
         })
       ]

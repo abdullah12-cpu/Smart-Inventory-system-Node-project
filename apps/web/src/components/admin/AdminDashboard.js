@@ -247,10 +247,10 @@ export default function AdminDashboard({ search, mode }) {
           {
             className: "text-2xl font-bold text-[#0F172A]",
             style: { fontFamily: "Outfit, sans-serif" },
-            children: "My Products Catalog"
+            children: "Products List"
           }
         ),
-        /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Real-time tracking of multi-warehouse availability, supply chain alert signals, and price tiers." })
+        /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1", children: "Track warehouse quantities, low stock alerts, and prices." })
       ] }),
       /* @__PURE__ */ jsxs(
         "button",
@@ -267,7 +267,7 @@ export default function AdminDashboard({ search, mode }) {
     /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
       /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between gap-4 flex-wrap", children: [
         /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-4", children: [
-          /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A] tracking-tight", children: "Stock Alert Ledgers" }),
+          /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A] tracking-tight", children: "Products" }),
           /* @__PURE__ */ jsx("div", { className: "flex border border-[#E2E8F0] rounded-md overflow-hidden text-[11px]", children: ALIGN_TABS.map((t) => /* @__PURE__ */ jsx(
             "button",
             {

@@ -498,7 +498,7 @@ export default function DistributorPortal({ onLogout }) {
                   className: activeTab === "catalog" ? "text-blue-600" : ""
                 }
               ),
-              "Bulk Catalog"
+              "Catalog"
             ]
           }
         ),
@@ -532,7 +532,7 @@ export default function DistributorPortal({ onLogout }) {
                   className: activeTab === "orders" ? "text-blue-600" : ""
                 }
               ),
-              "Sales Orders"
+              "Orders"
             ]
           }
         ),
@@ -550,7 +550,7 @@ export default function DistributorPortal({ onLogout }) {
                   className: activeTab === "ledger" ? "text-blue-600" : ""
                 }
               ),
-              "Invoices & Ledger"
+              "Ledger"
             ]
           }
         ),
@@ -567,7 +567,7 @@ export default function DistributorPortal({ onLogout }) {
                   className: activeTab === "reminders" ? "text-blue-600" : ""
                 }
               ),
-              "Smart Reminders"
+              "Reminders"
             ]
           }
         ),

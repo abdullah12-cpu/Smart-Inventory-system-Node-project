@@ -329,14 +329,14 @@ export default function AdminPortal({ onLogout }) {
       }),
       /* @__PURE__ */ jsxs("nav", {
         className: "flex-1 p-4 flex flex-col gap-1.5 overflow-y-auto relative", children: [
-          /* @__PURE__ */ jsx(SidebarLink, { id: "dashboard", label: "Dashboard Hub", icon: LayoutDashboard, activeTab, setActiveTab, shouldReduceMotion }),
-          /* @__PURE__ */ jsx(SidebarLink, { id: "products", label: "My Products", icon: Box, activeTab, setActiveTab, shouldReduceMotion }),
-          canAccessSuppliers && /* @__PURE__ */ jsx(SidebarLink, { id: "suppliers", label: "Suppliers Directory", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
-          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "orders", label: "Orders ", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
-          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "billing", label: "Billing & Reconcile", icon: Receipt, activeTab, setActiveTab, shouldReduceMotion }),
-          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "negotiations", label: "Quote Negotiations", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
-          /* @__PURE__ */ jsx(SidebarLink, { id: "distributors", label: "Distributors Management", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
-          /* @__PURE__ */ jsx(SidebarLink, { id: "settings", label: "System Settings", icon: Settings, activeTab, setActiveTab, shouldReduceMotion })
+          /* @__PURE__ */ jsx(SidebarLink, { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, activeTab, setActiveTab, shouldReduceMotion }),
+          /* @__PURE__ */ jsx(SidebarLink, { id: "products", label: "Products", icon: Box, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessSuppliers && /* @__PURE__ */ jsx(SidebarLink, { id: "suppliers", label: "Suppliers", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "orders", label: "Orders", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "billing", label: "Billing & Payments", icon: Receipt, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "negotiations", label: "Quotations", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
+          /* @__PURE__ */ jsx(SidebarLink, { id: "distributors", label: "Distributors", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
+          /* @__PURE__ */ jsx(SidebarLink, { id: "settings", label: "Settings", icon: Settings, activeTab, setActiveTab, shouldReduceMotion })
         ]
       }),
       /* @__PURE__ */ jsxs("div", {

@@ -104,7 +104,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
               CommerceIQ
             </div>
             <div className="text-[8px] text-[#4F46E5] font-extrabold tracking-widest uppercase mt-0.5">
-              Enterprise Logistics
+              Inventory & Orders
             </div>
           </div>
         </div>
@@ -209,19 +209,19 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="block text-[#0F172A]"
           >
-            Smarter Warehousing for
+            Warehouse Stock for
           </motion.span>
           <motion.span
             initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.35 }}
-            className="block bg-gradient-to-r from-[#4F46E5] via-[#38BDF8] to-[#06B6D4] bg-clip-text text-transparent mt-1 animate-shimmer"
+            className="block bg-gradient-to-r from-[#4F46E5] via-[#38BDF8] to-[#06B6D4] bg-clip-text text-transparent mt-1"
             style={{
               backgroundSize: "200% auto",
               backgroundImage: "linear-gradient(to right, #4F46E5 0%, #38BDF8 50%, #06B6D4 100%)"
             }}
           >
-            Modern B2B Supply Chains
+            B2B Businesses
           </motion.span>
         </h1>
 
@@ -232,7 +232,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
           transition={{ duration: 0.5, delay: 0.5 }}
           className="text-sm sm:text-base text-[#64748B] max-w-2xl leading-relaxed mt-2"
         >
-          CommerceIQ consolidates inventory allocations between Karachi Depot and Lahore Terminal, predicts late payment risk metrics, and automates JazzCash, EasyPaisa, and bank transfer reconciliations.
+          CommerceIQ tracks product quantities in Karachi and Lahore, checks payment deadlines, and logs mobile wallet and bank transfer payments.
         </motion.p>
 
         {/* Action Buttons */}
@@ -277,22 +277,22 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
           {
             icon: <Database size={16} />,
             title: "Multi-Warehouse",
-            desc: "Stock sync between Karachi Central & Lahore terminals."
+            desc: "Stock updates between Karachi and Lahore."
           },
           {
             icon: <Landmark size={16} />,
-            title: "Wallet Auto-Reconcile",
-            desc: "JazzCash, EasyPaisa transaction confirmation."
+            title: "Mobile Wallet Payments",
+            desc: "Instant payment confirmations."
           },
           {
             icon: <TrendingUp size={16} />,
-            title: "Price Tier Matrix",
+            title: "Multiple Price Tiers",
             desc: "Retail, Distributor, VIP pricing structures."
           },
           {
             icon: <Shield size={16} />,
-            title: "Audit Compliance",
-            desc: "Strict security audit log logs every action."
+            title: "Security Logging",
+            desc: "Every action is logged for safety."
           }
         ].map((feat, idx) => (
           <motion.div
@@ -334,7 +334,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
             variants={itemVariants}
             className="text-sm text-[#64748B] max-w-2xl leading-relaxed"
           >
-            Integrate inventory status, logistics alerts, ledger payment allocation models, and role policies. No complex setups. Start operating immediately.
+            Track stock levels, payment due dates, and user roles. No setup required.
           </motion.p>
 
           {/* Secondary Supporting Grid */}
@@ -346,12 +346,12 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
               {
                 icon: <GitCompare size={16} className="text-[#4F46E5]" />,
                 title: "Warehouse Sync",
-                desc: "Real-time sync between Karachi Central & Lahore terminals."
+                desc: "Automatic sync between Karachi and Lahore warehouses."
               },
               {
                 icon: <FileText size={16} className="text-[#4F46E5]" />,
                 title: "PKR Ledgers",
-                desc: "Real-time payment allocation & credit monitoring."
+                desc: "Tracks your balance and outstanding payments."
               },
               {
                 icon: <Users size={16} className="text-[#4F46E5]" />,
@@ -392,7 +392,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
           </div>
           {/* Copyright */}
           <p className="text-[11px] text-[#64748B] text-center leading-normal">
-            © 2026 CommerceIQ. Created for Smart Inventory B2B Management & Credit Term Ledgering.
+            © 2026 CommerceIQ. Created for B2B Inventory Management & Ledgers.
           </p>
         </div>
       </footer>
