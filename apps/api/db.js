@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 const path = require('path');
 
@@ -8,10 +9,11 @@ try {
   // Ignore if .env is missing (e.g., on your friend's Mac)
 }
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://mac@localhost:5432/commerceiq';
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:I$b2324563@localhost:5432/commerceiq';
 
 const pool = new Pool({
   connectionString,
 });
 
 module.exports = pool;
+
