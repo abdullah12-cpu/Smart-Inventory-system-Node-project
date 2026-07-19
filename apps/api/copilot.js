@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { createProductInDb } = require('./operations');
+const { createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb } = require('./operations');
 
 async function handleLocalFallback(pool, message, res) {
   const lower = message.toLowerCase();
@@ -102,6 +102,75 @@ function registerCopilotRoutes(app, pool) {
                     required: ['name', 'category', 'price', 'stock']
                   }
                 }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'deleteProduct',
+                  description: 'Deletes a product by its name or SKU.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      identifier: { type: 'string', description: 'Product Name or SKU to delete' }
+                    },
+                    required: ['identifier']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'updateProduct',
+                  description: 'Updates specific fields of an existing individual product. Do NOT use this to rename an entire category.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      identifier: { type: 'string', description: 'Product Name or SKU to update' },
+                      new_name: { type: 'string' },
+                      new_category: { type: 'string' },
+                      new_brand: { type: 'string' },
+                      new_price: { type: 'number', description: 'New buyer/retail price' },
+                      new_distributor_price: { type: 'number', description: 'New wholesale price' },
+                      stock_adjustment: { type: 'integer', description: 'Amount to add/subtract from stock' }
+                    },
+                    required: ['identifier']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'bulkUpdateProducts',
+                  description: 'Performs bulk updates on products matching a category or brand. Use this to explicitly rename an entire category or brand.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      category_filter: { type: 'string', description: 'Category to target (e.g. Networking)' },
+                      brand_filter: { type: 'string', description: 'Brand to target' },
+                      price_percentage_change: { type: 'number', description: 'Percentage to change retail prices (e.g., 5 for +5%)' },
+                      distributor_price_percentage_change: { type: 'number', description: 'Percentage to change distributor prices' },
+                      new_status: { type: 'string', description: 'New status for all matched products' },
+                      new_category: { type: 'string', description: 'New category for all matched products' },
+                      new_brand: { type: 'string', description: 'New brand for all matched products' }
+                    }
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'readProductData',
+                  description: 'Searches the database to read, check stock, or list products. Use this BEFORE updating/deleting if you are unsure.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      action_type: { type: 'string', enum: ['search', 'browse_category', 'low_stock'], description: 'Use "search" for specific products (even if asking for stock), "browse_category" for a whole category, and "low_stock" ONLY to list all globally low items.' },
+                      identifier: { type: 'string', description: 'Product Name or SKU to search for (if action_type is search)' },
+                      category: { type: 'string', description: 'Category to browse (if action_type is browse_category)' }
+                    },
+                    required: ['action_type']
+                  }
+                }
               }
             ],
             tool_choice: 'auto'
@@ -124,6 +193,92 @@ function registerCopilotRoutes(app, pool) {
                 ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}. *(Local Ollama Model: ${modelName})*`,
                 product: newProduct
               });
+            } else if (toolCall.function.name === 'deleteProduct') {
+              const args = JSON.parse(toolCall.function.arguments);
+              try {
+                const deleted = await deleteProductFromDb(pool, args.identifier);
+                return res.json({
+                  success: true,
+                  action_executed: 'deleteProduct',
+                  ai_message: `✅ Deleted product: **${deleted.product_name}** (SKU: ${deleted.sku}). *(Local Ollama Model: ${modelName})*`
+                });
+              } catch (err) {
+                return res.json({ success: true, ai_message: `❌ Could not find or delete product matching: "${args.identifier}"` });
+              }
+            } else if (toolCall.function.name === 'updateProduct') {
+              const args = JSON.parse(toolCall.function.arguments);
+              try {
+                const updated = await updateProductInDb(pool, args.identifier, args);
+                return res.json({
+                  success: true,
+                  action_executed: 'updateProduct',
+                  ai_message: `✅ Updated product: **${updated.product_name}**. (Edits applied successfully) *(Local Ollama Model: ${modelName})*`
+                });
+              } catch (err) {
+                return res.json({ success: true, ai_message: `❌ Could not update product matching: "${args.identifier}"` });
+              }
+            } else if (toolCall.function.name === 'bulkUpdateProducts') {
+              const args = JSON.parse(toolCall.function.arguments);
+              try {
+                const count = await bulkUpdateProductsInDb(pool, args.category_filter, args.brand_filter, args);
+                return res.json({
+                  success: true,
+                  action_executed: 'bulkUpdateProducts',
+                  ai_message: `✅ Bulk operation completed: Successfully modified **${count}** products matching your criteria. *(Local Ollama Model: ${modelName})*`
+                });
+              } catch (err) {
+                return res.json({ success: true, ai_message: `❌ Failed to execute bulk update.` });
+              }
+            } else if (toolCall.function.name === 'readProductData') {
+              let args;
+              try {
+                args = JSON.parse(toolCall.function.arguments);
+              } catch (e) {
+                return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
+              }
+              try {
+                let markdownMsg = '';
+                if (args.action_type === 'low_stock') {
+                  const rows = await getLowStockProductsFromDb(pool);
+                  if (rows.length === 0) markdownMsg = '✅ All products have sufficient stock.';
+                  else {
+                    markdownMsg = '### 📉 Low Stock Products\n\n| Product | SKU | Stock | Threshold |\n|---|---|---|---|\n' + 
+                      rows.map(r => {
+                        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+                        const stock = inv && inv.length > 0 ? inv[0].available_quantity : 0;
+                        return `| ${r.product_name} | ${r.sku} | **${stock}** | ${r.low_stock_threshold} |`;
+                      }).join('\n');
+                  }
+                } else if (args.action_type === 'browse_category' && args.category) {
+                  const rows = await getCategoryProductsFromDb(pool, args.category);
+                  if (rows.length === 0) markdownMsg = `❌ No products found in category: "${args.category}"`;
+                  else {
+                    markdownMsg = `### 📂 Category: ${args.category}\n\n| Product | Price | Stock |\n|---|---|---|\n` + 
+                      rows.map(r => {
+                        const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+                        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+                        const stock = inv && inv.length > 0 ? inv[0].available_quantity : 0;
+                        return `| ${r.product_name} | Rs ${prices.RETAIL?.toLocaleString() || 0} | ${stock} |`;
+                      }).join('\n');
+                  }
+                } else {
+                  const rows = await searchProductsInDb(pool, args.identifier || '');
+                  if (rows.length === 0) markdownMsg = `❌ Could not find product matching: "${args.identifier}"`;
+                  else {
+                    markdownMsg = `### 🔍 Search Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n` + 
+                      rows.map(r => {
+                        const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+                        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+                        const stock = inv && inv.length > 0 ? inv[0].available_quantity : 0;
+                        return `| ${r.product_name} | ${r.sku} | Rs ${prices.RETAIL?.toLocaleString() || 0} | ${stock} |`;
+                      }).join('\n');
+                  }
+                }
+                return res.json({ success: true, action_executed: 'readProductData', ai_message: markdownMsg + `\n\n*(Local Ollama Model: ${modelName})*` });
+              } catch (err) {
+                console.error("Error in readProductData:", err);
+                return res.json({ success: true, ai_message: `❌ Failed to read product data: ${err.message}` });
+              }
             }
           }
 
@@ -134,7 +289,12 @@ function registerCopilotRoutes(app, pool) {
         }
       }
     } catch (ollamaErr) {
-      // Local Ollama is not active, fallback to cloud APIs
+      if (ollamaErr.code === 'ECONNREFUSED' || (ollamaErr.message && ollamaErr.message.includes('fetch'))) {
+        // Local Ollama is not active, fallback to cloud APIs
+      } else {
+        console.error('Ollama Execution Error:', ollamaErr);
+        return res.json({ success: true, ai_message: `❌ Ollama Agent Error: ${ollamaErr.message}` });
+      }
     }
 
     // 1. Try Mistral AI if key is present

@@ -125,6 +125,123 @@ async function createProductInDb(pool, data) {
   };
 }
 
+
+async function updateProductInDb(pool, identifier, updates) {
+  const getRes = await pool.query(
+    'SELECT * FROM products WHERE product_name ILIKE $1 OR sku ILIKE $1 OR product_id = $1 LIMIT 1',
+    [`%${identifier}%`]
+  );
+  if (getRes.rows.length === 0) throw new Error('Product not found.');
+  const existing = getRes.rows[0];
+
+  const newName = updates.new_name || existing.product_name;
+  const newCat = updates.new_category || existing.category;
+  const newBrand = updates.new_brand || existing.brand;
+  
+  let prices = typeof existing.prices === 'string' ? JSON.parse(existing.prices) : existing.prices;
+  if (updates.new_price !== undefined) prices.RETAIL = parseFloat(updates.new_price);
+  if (updates.new_distributor_price !== undefined) prices.DISTRIBUTOR = parseFloat(updates.new_distributor_price);
+
+  let inventory = typeof existing.inventory === 'string' ? JSON.parse(existing.inventory) : existing.inventory;
+  if (updates.stock_adjustment !== undefined && inventory.length > 0) {
+    inventory[0].quantity += parseInt(updates.stock_adjustment);
+    inventory[0].available_quantity += parseInt(updates.stock_adjustment);
+  }
+
+  const upRes = await pool.query(
+    `UPDATE products SET 
+      product_name = $1, category = $2, brand = $3, prices = $4, inventory = $5 
+     WHERE product_id = $6 RETURNING *`,
+    [newName, newCat, newBrand, JSON.stringify(prices), JSON.stringify(inventory), existing.product_id]
+  );
+  return upRes.rows[0];
+}
+
+async function bulkUpdateProductsInDb(pool, categoryFilter, brandFilter, updates) {
+  let conditions = [];
+  let values = [];
+  let idx = 1;
+
+  if (categoryFilter) { conditions.push(`category ILIKE $${idx}`); values.push(`%${categoryFilter}%`); idx++; }
+  if (brandFilter) { conditions.push(`brand ILIKE $${idx}`); values.push(`%${brandFilter}%`); idx++; }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const getRes = await pool.query(`SELECT * FROM products ${whereClause}`, values);
+
+  if (getRes.rows.length === 0) return 0;
+  
+  let updatedCount = 0;
+  for (const prod of getRes.rows) {
+    let prices = typeof prod.prices === 'string' ? JSON.parse(prod.prices) : prod.prices;
+    let modified = false;
+
+    if (updates.price_percentage_change !== undefined) {
+       prices.RETAIL = Math.round(prices.RETAIL * (1 + parseFloat(updates.price_percentage_change) / 100));
+       modified = true;
+    }
+    if (updates.distributor_price_percentage_change !== undefined) {
+       prices.DISTRIBUTOR = Math.round(prices.DISTRIBUTOR * (1 + parseFloat(updates.distributor_price_percentage_change) / 100));
+       modified = true;
+    }
+
+    if (modified || updates.new_status !== undefined || updates.new_category !== undefined || updates.new_brand !== undefined) {
+       const status = updates.new_status || prod.status;
+       const category = updates.new_category || prod.category;
+       const brand = updates.new_brand || prod.brand;
+       await pool.query(
+         'UPDATE products SET prices = $1, status = $2, category = $3, brand = $4 WHERE product_id = $5',
+         [JSON.stringify(prices), status, category, brand, prod.product_id]
+       );
+       updatedCount++;
+    }
+  }
+  return updatedCount;
+}
+
+async function searchProductsInDb(pool, identifier) {
+  const getRes = await pool.query(
+    'SELECT * FROM products WHERE product_name ILIKE $1 OR sku ILIKE $1 OR product_id = $1 LIMIT 5',
+    [`%${identifier}%`]
+  );
+  return getRes.rows;
+}
+
+async function getCategoryProductsFromDb(pool, category) {
+  const getRes = await pool.query(
+    'SELECT * FROM products WHERE category ILIKE $1 LIMIT 20',
+    [`%${category}%`]
+  );
+  return getRes.rows;
+}
+
+async function getLowStockProductsFromDb(pool) {
+  const getRes = await pool.query(
+    `SELECT * FROM products 
+     WHERE (inventory->0->>'available_quantity')::int <= low_stock_threshold
+     LIMIT 20`
+  );
+  return getRes.rows;
+}
+
+async function deleteProductFromDb(pool, identifier) {
+  const getRes = await pool.query(
+    'SELECT * FROM products WHERE product_name ILIKE $1 OR sku ILIKE $1 OR product_id = $1 LIMIT 1',
+    [identifier]
+  );
+  if (getRes.rows.length === 0) {
+    throw new Error('Product not found');
+  }
+  const prod = getRes.rows[0];
+  await pool.query('DELETE FROM products WHERE product_id = $1', [prod.product_id]);
+  return prod;
+}
+
 module.exports = {
-  createProductInDb
+  createProductInDb,
+  updateProductInDb,
+  bulkUpdateProductsInDb,
+  searchProductsInDb,
+  getCategoryProductsFromDb,
+  getLowStockProductsFromDb,
+  deleteProductFromDb
 };

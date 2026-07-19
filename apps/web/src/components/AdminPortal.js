@@ -250,7 +250,7 @@ export default function AdminPortal({ onLogout }) {
       console.error(err);
       setChatMessages((prev) => [
         ...prev,
-        { sender: "ai", text: "Connection error: Failed to reach Copilot agent gateway." }
+        { sender: "ai", text: `Connection error: Failed to reach Copilot agent gateway. Error: ${err.message}` }
       ]);
     }
     setChatTyping(false);
@@ -2230,7 +2230,7 @@ export default function AdminPortal({ onLogout }) {
                           className: "px-6 py-3.5 text-center flex justify-center gap-2", children: [
                             (q.status === "DRAFT" || q.status === "NEGOTIATING") && /* @__PURE__ */ jsxs(Fragment, {
                               children: [
-                                q.status === "DRAFT" && /* @__PURE__ */ jsx("button", {
+                                /* @__PURE__ */ jsx("button", {
                                   onClick: () => {
                                     if (confirm(`Approve quotation ${q.quotation_number} for Rs ${q.total_amount.toLocaleString()}?`)) {
                                       updateQuotationStatus(q.quotation_id, "APPROVED");
