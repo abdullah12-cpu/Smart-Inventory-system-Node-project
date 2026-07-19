@@ -13,7 +13,10 @@ import {
   Plus,
   MapPin,
   Database,
-  Receipt
+  Receipt,
+  MessageSquare,
+  Sparkles,
+  Send
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/data";
@@ -119,7 +122,8 @@ export default function AdminPortal({ onLogout }) {
     distributors,
     fetchDistributors,
     approveDistributor,
-    removeDistributor
+    removeDistributor,
+    addNewProduct
   } = useStore();
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -199,6 +203,58 @@ export default function AdminPortal({ onLogout }) {
   const [allocSuccess, setAllocSuccess] = useState("");
   const notifRef = useRef(null);
   const roleRef = useRef(null);
+  const userCardRef = useRef(null);
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState([
+    {
+      sender: "ai",
+      text: "Hello Saif! I am your CIQ Admin Copilot. I can help you automate catalog actions. Try typing: 'Add product: Titanium Rods, category: Metals, price: 1500, stock: 100' or similar commands."
+    }
+  ]);
+  const [chatTyping, setChatTyping] = useState(false);
+
+  const handleSendChat = async (e) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    const userText = chatInput.trim();
+    setChatInput("");
+    setChatMessages((prev) => [...prev, { sender: "user", text: userText }]);
+    setChatTyping(true);
+
+    try {
+      const response = await fetch("/api/copilot/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userText, history: chatMessages })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.action_executed === "createProduct" && data.product) {
+          addNewProduct(data.product);
+        }
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ai", text: data.ai_message || "Processed." }
+        ]);
+      } else {
+        const errText = await response.text();
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ai", text: `Error connecting to Copilot Service: ${errText}` }
+        ]);
+      }
+    } catch (err) {
+      console.error(err);
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "ai", text: "Connection error: Failed to reach Copilot agent gateway." }
+      ]);
+    }
+    setChatTyping(false);
+  };
   const unreadNotifications = notifications.filter((n) => !n.is_read);
   useEffect(() => {
     if (unreadNotifications.length > 0) {
@@ -2620,6 +2676,89 @@ export default function AdminPortal({ onLogout }) {
           })
         ]
       }) }) })
+      
+      // Chatbot UI component
+      , /* @__PURE__ */ jsxs("div", {
+        className: "fixed bottom-6 right-6 z-[999] flex flex-col items-end gap-3 font-sans",
+        children: [
+          chatOpen && /* @__PURE__ */ jsxs(motion.div, {
+            initial: { opacity: 0, scale: 0.95, y: 10 },
+            animate: { opacity: 1, scale: 1, y: 0 },
+            exit: { opacity: 0, scale: 0.95, y: 10 },
+            className: "w-96 h-[480px] bg-white border border-[#E2E8F0] shadow-2xl rounded-2xl flex flex-col overflow-hidden",
+            children: [
+              /* @__PURE__ */ jsxs("div", {
+                className: "bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-4 py-3.5 text-white flex items-center justify-between shadow-sm",
+                children: [
+                  /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center gap-2",
+                    children: [
+                      /* @__PURE__ */ jsx("div", { className: "w-2 h-2 rounded-full bg-emerald-500 animate-pulse" }),
+                      /* @__PURE__ */ jsx("span", { className: "font-bold text-xs tracking-wide", children: "CIQ Admin Copilot" })
+                    ]
+                  }),
+                  /* @__PURE__ */ jsx("button", {
+                    onClick: () => setChatOpen(false),
+                    className: "text-[#94A3B8] hover:text-white border-0 bg-transparent cursor-pointer font-bold text-xs p-1",
+                    children: "✕"
+                  })
+                ]
+              }),
+              /* @__PURE__ */ jsxs("div", {
+                className: "flex-1 p-4 overflow-y-auto space-y-3 bg-[#F8FAFC]",
+                children: [
+                  chatMessages.map((msg, i) => /* @__PURE__ */ jsx("div", {
+                    className: `flex flex-col gap-1 max-w-[82%] ${msg.sender === "user" ? "ml-auto" : "mr-auto"}`,
+                    children: /* @__PURE__ */ jsx("div", {
+                      className: `p-3 rounded-xl text-xs leading-relaxed ${
+                        msg.sender === "user" 
+                          ? "bg-[#4F46E5] text-white rounded-br-none shadow-sm" 
+                          : "bg-white text-slate-800 border border-[#E2E8F0] rounded-bl-none shadow-sm"
+                      }`,
+                      children: msg.text
+                    })
+                  }, i)),
+                  chatTyping && /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center gap-1.5 text-[#64748B] text-[10px] bg-slate-100 px-3 py-2 rounded-lg w-max",
+                    children: [
+                      /* @__PURE__ */ jsx("span", { className: "animate-pulse", children: "Copilot is thinking" }),
+                      /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-100", children: "." }),
+                      /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-200", children: "." }),
+                      /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-300", children: "." })
+                    ]
+                  })
+                ]
+              }),
+              /* @__PURE__ */ jsxs("form", {
+                onSubmit: handleSendChat,
+                className: "p-3 border-t border-[#E2E8F0] bg-white flex gap-2",
+                children: [
+                  /* @__PURE__ */ jsx("input", {
+                    value: chatInput,
+                    onChange: (e) => setChatInput(e.target.value),
+                    placeholder: "Type natural instructions to perform actions...",
+                    className: "flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800"
+                  }),
+                  /* @__PURE__ */ jsx("button", {
+                    type: "submit",
+                    className: "p-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white border-0 rounded-lg flex items-center justify-center cursor-pointer transition-colors shadow-sm",
+                    children: /* @__PURE__ */ jsx(Send, { size: 14 })
+                  })
+                ]
+              })
+            ]
+          }),
+          /* @__PURE__ */ jsxs(motion.button, {
+            whileHover: { scale: 1.05 },
+            whileTap: { scale: 0.95 },
+            onClick: () => setChatOpen(!chatOpen),
+            className: "w-14 h-14 rounded-full bg-gradient-to-tr from-[#4F46E5] to-[#818CF8] text-white flex items-center justify-center shadow-xl hover:shadow-indigo-500/25 transition-all cursor-pointer border-0",
+            children: [
+              /* @__PURE__ */ jsx(Sparkles, { size: 22 })
+            ]
+          })
+        ]
+      })
       ]
     })
     ]

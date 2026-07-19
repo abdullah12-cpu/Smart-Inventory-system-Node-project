@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const pool = require('./db');
+const { createProductInDb } = require('./operations');
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -471,54 +472,8 @@ app.post('/api/products', async (req, res) => {
   }
 
   try {
-    await pool.query(
-      `INSERT INTO products (
-        product_id, sku, barcode, product_name, short_description, brand, 
-        category, unit, weight, status, low_stock_threshold, overstock_threshold, 
-        dead_stock_days, total_product_limit, prices, inventory, image_url, min_wholesale_qty, max_discount
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-      ON CONFLICT (sku) DO UPDATE SET 
-        barcode = EXCLUDED.barcode,
-        product_name = EXCLUDED.product_name,
-        short_description = EXCLUDED.short_description,
-        brand = EXCLUDED.brand,
-        category = EXCLUDED.category,
-        unit = EXCLUDED.unit,
-        weight = EXCLUDED.weight,
-        status = EXCLUDED.status,
-        low_stock_threshold = EXCLUDED.low_stock_threshold,
-        overstock_threshold = EXCLUDED.overstock_threshold,
-        dead_stock_days = EXCLUDED.dead_stock_days,
-        total_product_limit = EXCLUDED.total_product_limit,
-        prices = EXCLUDED.prices,
-        inventory = EXCLUDED.inventory,
-        image_url = EXCLUDED.image_url,
-        min_wholesale_qty = EXCLUDED.min_wholesale_qty,
-        max_discount = EXCLUDED.max_discount`,
-      [
-        prod.product_id,
-        prod.sku,
-        prod.barcode,
-        prod.product_name,
-        prod.short_description || '',
-        prod.brand || '',
-        prod.category || '',
-        prod.unit || 'Units',
-        prod.weight || 0,
-        prod.status || 'ACTIVE',
-        prod.low_stock_threshold || 0,
-        prod.overstock_threshold || 0,
-        prod.dead_stock_days || 0,
-        limit,
-        JSON.stringify(prod.prices || {}),
-        JSON.stringify(prod.inventory || []),
-        prod.image_url || '',
-        parseInt(prod.min_wholesale_qty || 1),
-        parseInt(prod.max_discount || 10)
-      ]
-    );
-
-    return res.status(201).json({ success: true, message: 'Product created/updated successfully.' });
+    const saved = await createProductInDb(pool, prod);
+    return res.status(201).json({ success: true, message: 'Product created/updated successfully.', product: saved });
   } catch (err) {
     console.error('Error inserting product:', err);
     return res.status(500).json({ success: false, message: 'Database error during product creation.' });
@@ -1000,6 +955,10 @@ app.post('/api/admin/distributors/remove', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Database error rejecting distributor.' });
   }
 });
+
+// Register AI Copilot modular routes
+const { registerCopilotRoutes } = require('./copilot');
+registerCopilotRoutes(app, pool);
 
 app.listen(port, () => {
   console.log(`CommerceIQ Auth API Server running on port ${port}`);
