@@ -1,33 +1,43 @@
 async function createProductInDb(pool, data) {
   const nameVal = data.name || data.product_name;
-  const catVal = data.category;
-  const brandVal = data.brand || 'Generic';
-  const descVal = data.description || data.short_description || 'Product registered dynamically via AI Copilot.';
+  const catVal = data.category || null;
+  const brandVal = data.brand || null;
+  const descVal = data.description || data.short_description || null;
 
-  let priceVal = 0;
+  let priceRetail = 0;
   if (data.price !== undefined) {
-    priceVal = parseFloat(data.price);
+    priceRetail = parseFloat(data.price);
+  } else if (data.retail_price !== undefined) {
+    priceRetail = parseFloat(data.retail_price);
   } else if (data.prices && data.prices.RETAIL !== undefined) {
-    priceVal = parseFloat(data.prices.RETAIL);
+    priceRetail = parseFloat(data.prices.RETAIL);
   }
 
-  let stockVal = 0;
-  if (data.stock !== undefined) {
-    stockVal = parseInt(data.stock);
-  } else if (data.inventory && Array.isArray(data.inventory)) {
-    stockVal = data.inventory.reduce((sum, item) => sum + parseInt(item.quantity || 0), 0);
+  let priceDist = null;
+  if (data.distributor_price !== undefined) {
+    priceDist = parseFloat(data.distributor_price);
+  } else if (data.prices && data.prices.DISTRIBUTOR !== undefined) {
+    priceDist = parseFloat(data.prices.DISTRIBUTOR);
   }
-
-  const cleanedSku = data.sku || `SKU-AI-${Math.floor(1000 + Math.random() * 9000)}`;
-  const cleanedBarcode = data.barcode || `890123${Math.floor(100000 + Math.random() * 900000)}`;
-  const newProdId = data.product_id || `p-${Date.now()}`;
 
   const prices = data.prices || {
-    RETAIL: priceVal,
-    DISTRIBUTOR: Math.round(priceVal * 0.85),
-    VIP: Math.round(priceVal * 0.8),
-    CUSTOM: Math.round(priceVal * 0.85)
+    RETAIL: priceRetail,
+    DISTRIBUTOR: priceDist,
+    VIP: priceDist,
+    CUSTOM: priceDist
   };
+
+  let kStock = 0;
+  let lStock = 0;
+  if (data.karachi_stock !== undefined) {
+    kStock = parseInt(data.karachi_stock);
+  }
+  if (data.lahore_stock !== undefined) {
+    lStock = parseInt(data.lahore_stock);
+  }
+  if (data.stock !== undefined && data.karachi_stock === undefined && data.lahore_stock === undefined) {
+    kStock = parseInt(data.stock);
+  }
 
   const inventory = data.inventory || [
     {
@@ -35,25 +45,32 @@ async function createProductInDb(pool, data) {
       warehouse_name: 'Karachi Central Depot',
       city: 'Karachi',
       country: 'Pakistan',
-      quantity: stockVal,
+      quantity: kStock,
       reserved_quantity: 0,
-      available_quantity: stockVal
+      available_quantity: kStock
     },
     {
       warehouse_id: 'wh-2',
       warehouse_name: 'Lahore North Terminal',
       city: 'Lahore',
       country: 'Pakistan',
-      quantity: 0,
+      quantity: lStock,
       reserved_quantity: 0,
-      available_quantity: 0
+      available_quantity: lStock
     }
   ];
 
-  const imageUrl = data.image_url || 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop';
-  const minWhQty = parseInt(data.min_wholesale_qty || 20);
-  const maxDisc = parseInt(data.max_discount || 15);
-  const limit = parseInt(data.total_product_limit || 500);
+  const cleanedSku = data.sku || data.product_code || `SKU-AI-${Math.floor(1000 + Math.random() * 9000)}`;
+  const cleanedBarcode = data.barcode || data.upc_barcode || null;
+  const newProdId = data.product_id || `p-${Date.now()}`;
+
+  const unitVal = data.unit || null;
+  const weightVal = data.weight !== undefined ? parseFloat(data.weight) : null;
+  const imageUrl = data.image_url || null;
+  const minWhQty = data.min_wholesale_qty !== undefined ? parseInt(data.min_wholesale_qty) : null;
+  const maxDisc = data.max_discount !== undefined ? parseInt(data.max_discount) : null;
+  const limit = data.total_product_limit !== undefined ? parseInt(data.total_product_limit) : null;
+  const lowStockVal = data.low_stock_threshold !== undefined ? parseInt(data.low_stock_threshold) : null;
 
   await pool.query(
     `INSERT INTO products (
@@ -87,11 +104,11 @@ async function createProductInDb(pool, data) {
       descVal,
       brandVal,
       catVal,
-      'Units',
-      10.0,
+      unitVal,
+      weightVal,
       'ACTIVE',
-      10,
-      500,
+      lowStockVal,
+      limit,
       90,
       limit,
       JSON.stringify(prices),
@@ -110,11 +127,11 @@ async function createProductInDb(pool, data) {
     short_description: descVal,
     brand: brandVal,
     category: catVal,
-    unit: 'Units',
-    weight: 10.0,
+    unit: unitVal,
+    weight: weightVal,
     status: 'ACTIVE',
-    low_stock_threshold: 10,
-    overstock_threshold: 500,
+    low_stock_threshold: lowStockVal,
+    overstock_threshold: limit,
     total_product_limit: limit,
     dead_stock_days: 90,
     prices,

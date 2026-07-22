@@ -68,18 +68,6 @@ async function initDb() {
       );
     `);
 
-    // Migrate existing DB if needed
-    await client.query(`
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS total_product_limit INTEGER DEFAULT 100;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
-      ALTER TABLE products ALTER COLUMN image_url TYPE TEXT;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS min_wholesale_qty INTEGER DEFAULT 1;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS max_discount INTEGER DEFAULT 10;
-      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS items JSONB;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100);
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
-    `);
 
     // Create orders table
     await client.query(`
@@ -188,6 +176,44 @@ async function initDb() {
         notes TEXT,
         created_at VARCHAR(100) NOT NULL
       );
+    `);
+
+    // Create warehouses table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS warehouses (
+        id SERIAL PRIMARY KEY,
+        warehouse_id VARCHAR(50) UNIQUE NOT NULL,
+        warehouse_name VARCHAR(255) NOT NULL,
+        city VARCHAR(255) NOT NULL,
+        country VARCHAR(255) NOT NULL,
+        manager_name VARCHAR(255)
+      );
+    `);
+
+    // Seed predefined warehouses
+    const whCountRes = await client.query('SELECT COUNT(*) FROM warehouses');
+    if (parseInt(whCountRes.rows[0].count) === 0) {
+      await client.query(`
+        INSERT INTO warehouses (warehouse_id, warehouse_name, city, country, manager_name)
+        VALUES 
+        ('wh-1', 'Karachi Central Depot', 'Karachi', 'Pakistan', 'Asim Raza'),
+        ('wh-2', 'Lahore North Terminal', 'Lahore', 'Pakistan', 'Imran Khan'),
+        ('wh-3', 'Islamabad Capital Hub', 'Islamabad', 'Pakistan', 'Zafar Ali')
+      `);
+      console.log("Predefined warehouses seeded successfully in PostgreSQL!");
+    }
+
+    // Migrate existing DB if needed
+    await client.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS total_product_limit INTEGER DEFAULT 100;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
+      ALTER TABLE products ALTER COLUMN image_url TYPE TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS min_wholesale_qty INTEGER DEFAULT 1;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS max_discount INTEGER DEFAULT 10;
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS items JSONB;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
     `);
 
     // Seed predefined admin
@@ -607,7 +633,7 @@ app.post('/api/orders', async (req, res) => {
 // PUT update order status
 app.put('/api/orders/:order_id/status', async (req, res) => {
   const { order_id } = req.params;
-  const { status, total_amount, subtotal, items } = req.body;
+  const { status, total_amount, subtotal, items, warehouse_id } = req.body;
   if (!status) {
     return res.status(400).json({ success: false, message: 'Required status missing.' });
   }
@@ -633,10 +659,112 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Order not found.' });
     }
+
+    // Stock deduction logic if shipping order from a specific warehouse
+    if (status === 'SHIPPED' && warehouse_id) {
+      const order = result.rows[0];
+      const orderItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+      
+      const whDbRes = await pool.query('SELECT warehouse_name FROM warehouses WHERE warehouse_id = $1', [warehouse_id]);
+      const warehouseName = whDbRes.rows.length > 0 ? whDbRes.rows[0].warehouse_name : 'Unknown Depot';
+
+      for (const item of orderItems) {
+        const qty = parseInt(item.qty || item.quantity || 0);
+        if (qty <= 0) continue;
+
+        // Find product by id or sku
+        const prodRes = await pool.query('SELECT * FROM products WHERE product_id = $1 OR sku = $2', [item.product_id, item.sku]);
+        if (prodRes.rows.length > 0) {
+          const product = prodRes.rows[0];
+          let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : product.inventory;
+          
+          let updated = false;
+          let remainingToDeductReserved = qty;
+          inventory = inventory.map(inv => {
+            let invQty = inv.quantity;
+            let invReserved = inv.reserved_quantity || 0;
+
+            if (inv.warehouse_id === warehouse_id) {
+              updated = true;
+              invQty = Math.max(0, invQty - qty);
+            }
+
+            if (invReserved > 0 && remainingToDeductReserved > 0) {
+              updated = true;
+              const deductRes = Math.min(invReserved, remainingToDeductReserved);
+              invReserved = invReserved - deductRes;
+              remainingToDeductReserved = remainingToDeductReserved - deductRes;
+            }
+
+            const invAvail = Math.max(0, invQty - invReserved);
+            return {
+              ...inv,
+              quantity: invQty,
+              reserved_quantity: invReserved,
+              available_quantity: invAvail
+            };
+          });
+
+          if (updated) {
+            await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inventory), product.product_id]);
+            
+            // Record stock movement
+            const movementId = `mv-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+            await pool.query(
+              `INSERT INTO stock_movements (movement_id, product_id, product_name, warehouse_id, warehouse_name, movement_type, quantity, notes, performed_by, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+              [
+                movementId,
+                product.product_id,
+                product.product_name,
+                warehouse_id,
+                warehouseName,
+                'OUT',
+                -qty,
+                `Shipped for order ${order.order_number}`,
+                'System Admin',
+                new Date().toISOString()
+              ]
+            );
+          }
+        }
+      }
+    }
+
     return res.json({ success: true, order: result.rows[0] });
   } catch (err) {
     console.error('Error updating order status:', err);
     return res.status(500).json({ success: false, message: 'Database error updating order status.' });
+  }
+});
+
+// GET all warehouses
+app.get('/api/warehouses', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM warehouses ORDER BY id ASC');
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching warehouses:', err);
+    return res.status(500).json({ success: false, message: 'Database error fetching warehouses.' });
+  }
+});
+
+// POST a new warehouse
+app.post('/api/warehouses', async (req, res) => {
+  const { warehouse_id, warehouse_name, city, country, manager_name } = req.body;
+  if (!warehouse_id || !warehouse_name || !city || !country) {
+    return res.status(400).json({ success: false, message: 'Required fields missing.' });
+  }
+  try {
+    const result = await pool.query(
+      `INSERT INTO warehouses (warehouse_id, warehouse_name, city, country, manager_name)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [warehouse_id, warehouse_name, city, country, manager_name]
+    );
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating warehouse:', err);
+    return res.status(500).json({ success: false, message: 'Database error creating warehouse.' });
   }
 });
 

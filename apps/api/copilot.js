@@ -1,35 +1,246 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb } = require('./operations');
 
-async function handleLocalFallback(pool, message, res) {
-  const lower = message.toLowerCase();
-  if (lower.includes('add product') || lower.includes('create product')) {
-    const nameMatch = message.match(/(?:product|name):\s*([^,]+)/i);
-    const catMatch = message.match(/category:\s*([^,]+)/i);
-    const priceMatch = message.match(/price:\s*(\d+)/i);
-    const stockMatch = message.match(/(?:stock|qty):\s*(\d+)/i);
+const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog assistant. You are strictly restricted to performing and discussing operations related to managing catalog inventory: creating products ("createProduct"), updating details/stocks ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), and reading, searching, or checking low stock alerts ("readProductData"). If the user asks generic questions, conversational prompts, or attempts tasks outside this catalog inventory scope, you MUST decline to answer, stating: "I can only assist with the registered operations: product catalog inventory management." Keep your conversational answers extremely short, direct, and focused strictly on inventory catalog records. Do not add conversational fluff.';
 
-    if (nameMatch && catMatch && priceMatch && stockMatch) {
-      const args = {
-        name: nameMatch[1].trim(),
-        category: catMatch[1].trim(),
-        price: parseFloat(priceMatch[1]),
-        stock: parseInt(stockMatch[1])
-      };
-      try {
-        const newProduct = await createProductInDb(pool, args);
-        return res.json({
-          success: true,
-          action_executed: 'createProduct',
-          ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}. *(Local fallback)*`,
-          product: newProduct
-        });
-      } catch (err) {
-        console.error('Error inserting product locally:', err);
-        return res.status(500).json({ success: false, message: 'Database error during local fallback creation.' });
-      }
+function filterProductsByMessage(rows, message) {
+  const lower = message.toLowerCase();
+  
+  const hasPriceKeyword = /price|rate|cost/i.test(lower);
+
+  const numMatch = lower.match(/(?:less than|greater than|more than|fewer than|above|below|<=|>=|<|>)\s*(\d+)/i);
+  const isLessThan = /(?:less than|fewer than|below|<)/i.test(lower);
+  const isGreaterThan = /(?:greater than|more than|above|>)/i.test(lower);
+
+  const qtyGtMatch = lower.match(/(?:quantity|stock|qty)\s*(?:greater than|more than|>|above)\s*(\d+)/i);
+  const qtyLtMatch = lower.match(/(?:quantity|stock|qty)\s*(?:less than|fewer than|<|below)\s*(\d+)/i);
+  const qtyEqMatch = lower.match(/(?:quantity|stock|qty)\s*(?:equal to|=)\s*(\d+)/i);
+
+  const priceGtMatch = lower.match(/(?:price|rate|cost)\s*(?:greater than|more than|>|above)\s*(\d+)/i);
+  const priceLtMatch = lower.match(/(?:price|rate|cost)\s*(?:less than|fewer than|<|below)\s*(\d+)/i);
+
+  let filtered = rows;
+
+  if (qtyGtMatch) {
+    const limit = parseInt(qtyGtMatch[1]);
+    filtered = filtered.filter(r => {
+      const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+      const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+      return stock > limit;
+    });
+  } else if (qtyLtMatch) {
+    const limit = parseInt(qtyLtMatch[1]);
+    filtered = filtered.filter(r => {
+      const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+      const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+      return stock < limit;
+    });
+  } else if (qtyEqMatch) {
+    const limit = parseInt(qtyEqMatch[1]);
+    filtered = filtered.filter(r => {
+      const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+      const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+      return stock === limit;
+    });
+  } else if (priceGtMatch) {
+    const limit = parseFloat(priceGtMatch[1]);
+    filtered = filtered.filter(r => {
+      const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+      const price = prices && prices.RETAIL !== undefined ? prices.RETAIL : 0;
+      return price > limit;
+    });
+  } else if (priceLtMatch) {
+    const limit = parseFloat(priceLtMatch[1]);
+    filtered = filtered.filter(r => {
+      const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+      const price = prices && prices.RETAIL !== undefined ? prices.RETAIL : 0;
+      return price < limit;
+    });
+  } else if (numMatch) {
+    const limit = parseInt(numMatch[1]);
+    if (hasPriceKeyword) {
+      filtered = filtered.filter(r => {
+        const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+        const price = prices && prices.RETAIL !== undefined ? prices.RETAIL : 0;
+        return isLessThan ? price < limit : (isGreaterThan ? price > limit : true);
+      });
+    } else {
+      filtered = filtered.filter(r => {
+        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+        const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+        return isLessThan ? stock < limit : (isGreaterThan ? stock > limit : true);
+      });
     }
   }
+
+  return filtered;
+}
+
+async function handleReadProductData(pool, args, message) {
+  const filterText = (message + ' ' + (args.identifier || '')).trim();
+  const isFilterQuery = 
+    /quantity|stock|qty|price|rate|cost/i.test(filterText) ||
+    /(?:less than|greater than|more than|fewer than|above|below|<=|>=|<|>)\s*\d+/i.test(filterText);
+
+  if (isFilterQuery) {
+    const getRes = await pool.query('SELECT * FROM products');
+    const filteredRows = filterProductsByMessage(getRes.rows, filterText);
+    if (filteredRows.length === 0) {
+      return '❌ No products match your filter criteria.';
+    }
+    return '### 🔍 Filter Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n' +
+      filteredRows.map(r => {
+        const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+        const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+        return `| ${r.product_name} | ${r.sku} | Rs ${prices.RETAIL?.toLocaleString() || 0} | ${stock} |`;
+      }).join('\n');
+  }
+
+  if (args.action_type === 'low_stock') {
+    const rows = await getLowStockProductsFromDb(pool);
+    if (rows.length === 0) return '✅ All products have sufficient stock.';
+    return '### 📉 Low Stock Products\n\n| Product | SKU | Stock | Threshold |\n|---|---|---|---|\n' +
+      rows.map(r => {
+        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+        const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+        return `| ${r.product_name} | ${r.sku} | **${stock}** | ${r.low_stock_threshold} |`;
+      }).join('\n');
+  }
+
+  if (args.action_type === 'browse_category' && args.category) {
+    const rows = await getCategoryProductsFromDb(pool, args.category);
+    if (rows.length === 0) return `❌ No products found in category: "${args.category}"`;
+    return `### 📂 Category: ${args.category}\n\n| Product | Price | Stock |\n|---|---|---|\n` +
+      rows.map(r => {
+        const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+        const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+        return `| ${r.product_name} | Rs ${prices.RETAIL?.toLocaleString() || 0} | ${stock} |`;
+      }).join('\n');
+  }
+
+  const rows = await searchProductsInDb(pool, args.identifier || '');
+  if (rows.length === 0) return `❌ Could not find product matching: "${args.identifier}"`;
+  return `### 🔍 Search Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n` +
+    rows.map(r => {
+      const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
+      const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
+      const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
+      return `| ${r.product_name} | ${r.sku} | Rs ${prices.RETAIL?.toLocaleString() || 0} | ${stock} |`;
+    }).join('\n');
+}
+
+function extractSpecsFromMessage(message) {
+  const lower = message.toLowerCase();
+  const specs = {};
+
+  const labelLookahead = '(?=\\s*(?:product name|name|category|retail rate|retail price|price|rate|stock|qty|image|image_url|img|product code|sku|upc barcode|barcode|brand name|brand|unit|weight|distributor price|distributor rate|wholesale price|min\\. wholesale qty|min wholesale qty|max discount|karachi stock|lahore stock|low stock trigger|low trigger|total limit|total product limit|short description|description)(?:\\s*\\([^)]+\\))?:|$)';
+
+  const nameMatch = message.match(new RegExp(`(?:product name|name):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const catMatch = message.match(new RegExp(`category:\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const priceMatch = message.match(/(?:retail rate|retail price|price|rate)(?:\s*\([^)]+\))?:\s*(?:rs)?\s*(\d+)/i);
+  const stockMatch = message.match(/(?:stock|qty):\s*(\d+)/i);
+  const imageMatch = message.match(new RegExp(`(?:image|image_url|img):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+
+  const skuMatch = message.match(new RegExp(`(?:product code|sku):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const barcodeMatch = message.match(new RegExp(`(?:upc barcode|barcode):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const brandMatch = message.match(new RegExp(`(?:brand name|brand):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const unitMatch = message.match(new RegExp(`unit:\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const weightMatch = message.match(/weight(?:\s*\(kg\))?:\s*([\d.]+)/i);
+  const distPriceMatch = message.match(/(?:distributor price|distributor rate|wholesale price)(?:\s*\([^)]+\))?:\s*(?:rs)?\s*(\d+)/i);
+  const minWholesaleMatch = message.match(/(?:min\. wholesale qty|min wholesale qty):\s*(\d+)/i);
+  const maxDiscountMatch = message.match(/(?:max discount)(?:\s*\([^)]+\))?:\s*(\d+)/i);
+  
+  const karachiStockMatch = message.match(/karachi stock:\s*(\d+)/i);
+  const lahoreStockMatch = message.match(/lahore stock:\s*(\d+)/i);
+  const lowTriggerMatch = message.match(/(?:low stock trigger|low trigger):\s*(\d+)/i);
+  const totalLimitMatch = message.match(/(?:total limit|total product limit):\s*(\d+)/i);
+
+  if (nameMatch) specs.name = nameMatch[1].trim();
+  if (catMatch) specs.category = catMatch[1].trim();
+  if (priceMatch) specs.price = parseFloat(priceMatch[1]);
+  if (stockMatch) specs.stock = parseInt(stockMatch[1]);
+  if (imageMatch) specs.image_url = imageMatch[1].trim();
+
+  if (skuMatch) specs.sku = skuMatch[1].trim();
+  if (barcodeMatch) specs.barcode = barcodeMatch[1].trim();
+  if (brandMatch) specs.brand = brandMatch[1].trim();
+  if (unitMatch) specs.unit = unitMatch[1].trim();
+  if (weightMatch) specs.weight = parseFloat(weightMatch[1]);
+  if (distPriceMatch) specs.distributor_price = parseFloat(distPriceMatch[1]);
+  if (minWholesaleMatch) specs.min_wholesale_qty = parseInt(minWholesaleMatch[1]);
+  if (maxDiscountMatch) specs.max_discount = parseInt(maxDiscountMatch[1]);
+  
+  if (karachiStockMatch) specs.karachi_stock = parseInt(karachiStockMatch[1]);
+  if (lahoreStockMatch) specs.lahore_stock = parseInt(lahoreStockMatch[1]);
+  if (lowTriggerMatch) specs.low_stock_threshold = parseInt(lowTriggerMatch[1]);
+  if (totalLimitMatch) specs.total_product_limit = parseInt(totalLimitMatch[1]);
+
+  let descVal = '';
+  const descLabel = 'description:';
+  const shortDescLabel = 'short description:';
+  let labelUsed = '';
+  if (lower.includes(shortDescLabel)) {
+    labelUsed = shortDescLabel;
+  } else if (lower.includes(descLabel)) {
+    labelUsed = descLabel;
+  }
+  if (labelUsed) {
+    const idx = lower.indexOf(labelUsed);
+    const remaining = message.slice(idx + labelUsed.length).trim();
+    const lines = remaining.split('\n');
+    if (lines.length > 0 && lines[0].trim()) {
+      descVal = lines[0].trim();
+    }
+  }
+  if (descVal) specs.description = descVal;
+
+  return specs;
+}
+
+function mergeSpecsIntoArgs(args, specs) {
+  for (const key in specs) {
+    if (args[key] === undefined || args[key] === null || args[key] === '') {
+      args[key] = specs[key];
+    }
+  }
+  return args;
+}
+
+async function handleLocalFallback(pool, message, attached_image, res) {
+  const specs = extractSpecsFromMessage(message);
+  
+  const hasStock = specs.stock !== undefined || specs.karachi_stock !== undefined || specs.lahore_stock !== undefined;
+  const hasPrice = specs.price !== undefined || specs.distributor_price !== undefined;
+
+  if (specs.name && specs.category && hasPrice && hasStock) {
+    const args = {
+      name: specs.name,
+      category: specs.category,
+      price: specs.price || 0,
+      stock: specs.stock || 0,
+      ...specs
+    };
+
+    if (attached_image) {
+      args.image_url = attached_image;
+    }
+    
+    try {
+      const newProduct = await createProductInDb(pool, args);
+      return res.json({
+        success: true,
+        action_executed: 'createProduct',
+        ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}. *(Local fallback)*`,
+        product: newProduct
+      });
+    } catch (err) {
+      console.error('Error inserting product locally:', err);
+      return res.status(500).json({ success: false, message: 'Database error during local fallback creation.' });
+    }
+  }
+
 
   return res.json({
     success: true,
@@ -39,9 +250,56 @@ async function handleLocalFallback(pool, message, res) {
 
 function registerCopilotRoutes(app, pool) {
   app.post('/api/copilot/chat', async (req, res) => {
-    const { message, history } = req.body;
+    const { message, history, attached_image } = req.body;
     if (!message) {
       return res.status(400).json({ success: false, message: 'Message payload is required.' });
+    }
+
+    const lowerMsg = message.toLowerCase().trim();
+
+    // 1. Simple greetings
+    const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/i.test(lowerMsg);
+    if (isGreeting && lowerMsg.split(/\s+/).length <= 3) {
+      return res.json({
+        success: true,
+        ai_message: `Hello Saif! How can I assist with your product catalog inventory today?`
+      });
+    }
+
+    // 2. Allowed business keywords (Static list + Platform tabs + Synonyms)
+    const STATIC_KEYWORDS = [
+      'product', 'catalog', 'inventory', 'stock', 'qty', 'quantity', 'price', 'rate', 'cost', 
+      'wholesale', 'distributor', 'discount', 'category', 'brand', 'low trigger', 'limit', 
+      'karachi', 'lahore', 'depot', 'warehouse', 'add', 'create', 'insert', 'register', 
+      'update', 'edit', 'change', 'modify', 'delete', 'remove', 'bulk', 'alert', 'threshold',
+      'find', 'search', 'get', 'list', 'show', 'check', 'audit', 'under', 'over', 'less', 'greater',
+      'above', 'below', 'equal', 'sku', 'barcode', 'upc', 'description', 'unit', 'weight',
+      'switch', 'router', 'access point', 'fiber', 'cable', 'cisco', 'tp-link', 'samsung', 'ssd',
+      'box', 'pcs', 'user', 'admin', 'dashboard', 'portal', 'profile', 'account', 'settings', 
+      'logout', 'notification', 'order', 'supplier', 'invoice', 'payment', 'movement', 'log', 
+      'history', 'analytics', 'report', 'view', 'display', 'tell', 'info', 'detail', 'total', 
+      'count', 'summary', 'status'
+    ];
+
+    let dbKeywords = [];
+    try {
+      const catRes = await pool.query('SELECT DISTINCT category, brand FROM products');
+      for (const r of catRes.rows) {
+        if (r.category) dbKeywords.push(r.category.toLowerCase().trim());
+        if (r.brand) dbKeywords.push(r.brand.toLowerCase().trim());
+      }
+    } catch (e) {
+      console.error("Error fetching dynamic keywords from DB:", e);
+    }
+
+    const ALLOWED_KEYWORDS = [...STATIC_KEYWORDS, ...dbKeywords];
+    const hasKeyword = ALLOWED_KEYWORDS.some(kw => lowerMsg.includes(kw));
+
+    if (!hasKeyword) {
+      return res.json({
+        success: true,
+        ai_message: `I can only assist with the registered operations: product catalog inventory management.`
+      });
     }
 
     const mistralKey = process.env.MISTRAL_API_KEY || 't2d7sL1xG1bmzcPP9avwhHXyq6lMppSH';
@@ -65,7 +323,7 @@ function registerCopilotRoutes(app, pool) {
         const messages = [
           {
             role: 'system',
-            content: 'You are CIQ Admin Copilot. You are strictly restricted to performing and discussing the operations defined in operations.js (currently, only product creation via the \'createProduct\' tool is supported). If the user asks generic questions, conversational prompts, or attempts tasks outside this scope, you must decline to answer, stating: "I can only assist with the registered operations: product catalog creation." Keep your answers extremely minimalistic, short, direct, and strictly within the catalog context. Do not add conversational fluff.'
+            content: SYSTEM_PROMPT
           },
           ...(history || []).map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -97,7 +355,21 @@ function registerCopilotRoutes(app, pool) {
                       name: { type: 'string', description: 'Product Name' },
                       category: { type: 'string', description: 'Catalog Category' },
                       price: { type: 'number', description: 'Selling price in PKR' },
-                      stock: { type: 'integer', description: 'Initial stock units' }
+                      stock: { type: 'integer', description: 'Initial stock units' },
+                      image_url: { type: 'string', description: 'Product image URL (optional)' },
+                      sku: { type: 'string', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
+                      barcode: { type: 'string', description: 'UPC Barcode (e.g. 889728248741)' },
+                      brand: { type: 'string', description: 'Brand Name (e.g. Cisco)' },
+                      description: { type: 'string', description: 'Product short description' },
+                      unit: { type: 'string', description: 'Base unit of measure (e.g. PCS, units)' },
+                      weight: { type: 'number', description: 'Weight of unit in kg' },
+                      distributor_price: { type: 'number', description: 'Wholesale / distributor rate in PKR' },
+                      min_wholesale_qty: { type: 'integer', description: 'Minimum wholesale quantity restriction' },
+                      max_discount: { type: 'integer', description: 'Maximum discount percent (0-100)' },
+                      karachi_stock: { type: 'integer', description: 'Karachi Central Depot stock level' },
+                      lahore_stock: { type: 'integer', description: 'Lahore North Terminal stock level' },
+                      low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
+                      total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
                     },
                     required: ['name', 'category', 'price', 'stock']
                   }
@@ -186,6 +458,11 @@ function registerCopilotRoutes(app, pool) {
             const toolCall = toolCalls[0];
             if (toolCall.function.name === 'createProduct') {
               const args = JSON.parse(toolCall.function.arguments);
+              if (attached_image) {
+                args.image_url = attached_image;
+              }
+              const specs = extractSpecsFromMessage(message);
+              mergeSpecsIntoArgs(args, specs);
               const newProduct = await createProductInDb(pool, args);
               return res.json({
                 success: true,
@@ -237,43 +514,7 @@ function registerCopilotRoutes(app, pool) {
                 return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
               }
               try {
-                let markdownMsg = '';
-                if (args.action_type === 'low_stock') {
-                  const rows = await getLowStockProductsFromDb(pool);
-                  if (rows.length === 0) markdownMsg = '✅ All products have sufficient stock.';
-                  else {
-                    markdownMsg = '### 📉 Low Stock Products\n\n| Product | SKU | Stock | Threshold |\n|---|---|---|---|\n' + 
-                      rows.map(r => {
-                        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
-                        const stock = inv && inv.length > 0 ? inv[0].available_quantity : 0;
-                        return `| ${r.product_name} | ${r.sku} | **${stock}** | ${r.low_stock_threshold} |`;
-                      }).join('\n');
-                  }
-                } else if (args.action_type === 'browse_category' && args.category) {
-                  const rows = await getCategoryProductsFromDb(pool, args.category);
-                  if (rows.length === 0) markdownMsg = `❌ No products found in category: "${args.category}"`;
-                  else {
-                    markdownMsg = `### 📂 Category: ${args.category}\n\n| Product | Price | Stock |\n|---|---|---|\n` + 
-                      rows.map(r => {
-                        const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
-                        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
-                        const stock = inv && inv.length > 0 ? inv[0].available_quantity : 0;
-                        return `| ${r.product_name} | Rs ${prices.RETAIL?.toLocaleString() || 0} | ${stock} |`;
-                      }).join('\n');
-                  }
-                } else {
-                  const rows = await searchProductsInDb(pool, args.identifier || '');
-                  if (rows.length === 0) markdownMsg = `❌ Could not find product matching: "${args.identifier}"`;
-                  else {
-                    markdownMsg = `### 🔍 Search Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n` + 
-                      rows.map(r => {
-                        const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
-                        const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
-                        const stock = inv && inv.length > 0 ? inv[0].available_quantity : 0;
-                        return `| ${r.product_name} | ${r.sku} | Rs ${prices.RETAIL?.toLocaleString() || 0} | ${stock} |`;
-                      }).join('\n');
-                  }
-                }
+                const markdownMsg = await handleReadProductData(pool, args, message);
                 return res.json({ success: true, action_executed: 'readProductData', ai_message: markdownMsg + `\n\n*(Local Ollama Model: ${modelName})*` });
               } catch (err) {
                 console.error("Error in readProductData:", err);
@@ -303,7 +544,7 @@ function registerCopilotRoutes(app, pool) {
         const messages = [
           {
             role: 'system',
-            content: 'You are CIQ Admin Copilot. You are strictly restricted to performing and discussing the operations defined in operations.js (currently, only product creation via the \'createProduct\' tool is supported). If the user asks generic questions, conversational prompts, or attempts tasks outside this scope, you must decline to answer, stating: "I can only assist with the registered operations: product catalog creation." Keep your answers extremely minimalistic, short, direct, and strictly within the catalog context. Do not add conversational fluff.'
+            content: SYSTEM_PROMPT
           },
           ...(history || []).map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -337,7 +578,21 @@ function registerCopilotRoutes(app, pool) {
                       name: { type: 'string', description: 'Product Name' },
                       category: { type: 'string', description: 'Catalog Category' },
                       price: { type: 'number', description: 'Selling price in PKR' },
-                      stock: { type: 'integer', description: 'Initial stock units' }
+                      stock: { type: 'integer', description: 'Initial stock units' },
+                      image_url: { type: 'string', description: 'Product image URL (optional)' },
+                      sku: { type: 'string', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
+                      barcode: { type: 'string', description: 'UPC Barcode (e.g. 889728248741)' },
+                      brand: { type: 'string', description: 'Brand Name (e.g. Cisco)' },
+                      description: { type: 'string', description: 'Product short description' },
+                      unit: { type: 'string', description: 'Base unit of measure (e.g. PCS, units)' },
+                      weight: { type: 'number', description: 'Weight of unit in kg' },
+                      distributor_price: { type: 'number', description: 'Wholesale / distributor rate in PKR' },
+                      min_wholesale_qty: { type: 'integer', description: 'Minimum wholesale quantity restriction' },
+                      max_discount: { type: 'integer', description: 'Maximum discount percent (0-100)' },
+                      karachi_stock: { type: 'integer', description: 'Karachi Central Depot stock level' },
+                      lahore_stock: { type: 'integer', description: 'Lahore North Terminal stock level' },
+                      low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
+                      total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
                     },
                     required: ['name', 'category', 'price', 'stock']
                   }
@@ -361,6 +616,11 @@ function registerCopilotRoutes(app, pool) {
           const toolCall = toolCalls[0];
           if (toolCall.function.name === 'createProduct') {
             const args = JSON.parse(toolCall.function.arguments);
+            if (attached_image) {
+              args.image_url = attached_image;
+            }
+            const specs = extractSpecsFromMessage(message);
+            mergeSpecsIntoArgs(args, specs);
             const newProduct = await createProductInDb(pool, args);
             return res.json({
               success: true,
@@ -387,7 +647,7 @@ function registerCopilotRoutes(app, pool) {
         const messages = [
           {
             role: 'system',
-            content: 'You are CIQ Admin Copilot. You are strictly restricted to performing and discussing the operations defined in operations.js (currently, only product creation via the \'createProduct\' tool is supported). If the user asks generic questions, conversational prompts, or attempts tasks outside this scope, you must decline to answer, stating: "I can only assist with the registered operations: product catalog creation." Keep your answers extremely minimalistic, short, direct, and strictly within the catalog context. Do not add conversational fluff.'
+            content: SYSTEM_PROMPT
           },
           ...(history || []).map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -420,7 +680,21 @@ function registerCopilotRoutes(app, pool) {
                       name: { type: 'string', description: 'Product Name' },
                       category: { type: 'string', description: 'Catalog Category' },
                       price: { type: 'number', description: 'Selling price in PKR' },
-                      stock: { type: 'integer', description: 'Initial stock units' }
+                      stock: { type: 'integer', description: 'Initial stock units' },
+                      image_url: { type: 'string', description: 'Product image URL (optional)' },
+                      sku: { type: 'string', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
+                      barcode: { type: 'string', description: 'UPC Barcode (e.g. 889728248741)' },
+                      brand: { type: 'string', description: 'Brand Name (e.g. Cisco)' },
+                      description: { type: 'string', description: 'Product short description' },
+                      unit: { type: 'string', description: 'Base unit of measure (e.g. PCS, units)' },
+                      weight: { type: 'number', description: 'Weight of unit in kg' },
+                      distributor_price: { type: 'number', description: 'Wholesale / distributor rate in PKR' },
+                      min_wholesale_qty: { type: 'integer', description: 'Minimum wholesale quantity restriction' },
+                      max_discount: { type: 'integer', description: 'Maximum discount percent (0-100)' },
+                      karachi_stock: { type: 'integer', description: 'Karachi Central Depot stock level' },
+                      lahore_stock: { type: 'integer', description: 'Lahore North Terminal stock level' },
+                      low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
+                      total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
                     },
                     required: ['name', 'category', 'price', 'stock']
                   }
@@ -443,6 +717,11 @@ function registerCopilotRoutes(app, pool) {
           const toolCall = toolCalls[0];
           if (toolCall.function.name === 'createProduct') {
             const args = JSON.parse(toolCall.function.arguments);
+            if (attached_image) {
+              args.image_url = attached_image;
+            }
+            const specs = extractSpecsFromMessage(message);
+            mergeSpecsIntoArgs(args, specs);
             const newProduct = await createProductInDb(pool, args);
             return res.json({
               success: true,
@@ -469,7 +748,7 @@ function registerCopilotRoutes(app, pool) {
         const genAI = new GoogleGenerativeAI(geminiKey);
         const model = genAI.getGenerativeModel({
           model: 'gemini-2.5-flash',
-          systemInstruction: 'You are CIQ Admin Copilot. You are strictly restricted to performing and discussing the operations defined in operations.js (currently, only product creation via the \'createProduct\' tool is supported). If the user asks generic questions, conversational prompts, or attempts tasks outside this scope, you must decline to answer, stating: "I can only assist with the registered operations: product catalog creation." Keep your answers extremely minimalistic, short, direct, and strictly within the catalog context. Do not add conversational fluff.',
+          systemInstruction: SYSTEM_PROMPT,
         });
 
         const createProductTool = {
@@ -481,7 +760,21 @@ function registerCopilotRoutes(app, pool) {
               name: { type: 'STRING', description: 'Product Name' },
               category: { type: 'STRING', description: 'Catalog Category' },
               price: { type: 'NUMBER', description: 'Selling price in PKR' },
-              stock: { type: 'INTEGER', description: 'Initial stock units' }
+              stock: { type: 'INTEGER', description: 'Initial stock units' },
+              image_url: { type: 'STRING', description: 'Product image URL (optional)' },
+              sku: { type: 'STRING', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
+              barcode: { type: 'STRING', description: 'UPC Barcode (e.g. 889728248741)' },
+              brand: { type: 'STRING', description: 'Brand Name (e.g. Cisco)' },
+              description: { type: 'STRING', description: 'Product short description' },
+              unit: { type: 'STRING', description: 'Base unit of measure (e.g. PCS, units)' },
+              weight: { type: 'NUMBER', description: 'Weight of unit in kg' },
+              distributor_price: { type: 'NUMBER', description: 'Wholesale / distributor rate in PKR' },
+              min_wholesale_qty: { type: 'INTEGER', description: 'Minimum wholesale quantity restriction' },
+              max_discount: { type: 'INTEGER', description: 'Maximum discount percent (0-100)' },
+              karachi_stock: { type: 'INTEGER', description: 'Karachi Central Depot stock level' },
+              lahore_stock: { type: 'INTEGER', description: 'Lahore North Terminal stock level' },
+              low_stock_threshold: { type: 'INTEGER', description: 'Low Stock trigger threshold limit' },
+              total_product_limit: { type: 'INTEGER', description: 'Maximum total product limit capacity' }
             },
             required: ['name', 'category', 'price', 'stock']
           }
@@ -505,6 +798,11 @@ function registerCopilotRoutes(app, pool) {
           const call = calls[0];
           if (call.name === 'createProduct') {
             const args = call.args;
+            if (attached_image) {
+              args.image_url = attached_image;
+            }
+            const specs = extractSpecsFromMessage(message);
+            mergeSpecsIntoArgs(args, specs);
             const newProduct = await createProductInDb(pool, args);
             return res.json({
               success: true,
@@ -526,7 +824,7 @@ function registerCopilotRoutes(app, pool) {
     }
 
     // 4. Fallback locally if keys are not working
-    return handleLocalFallback(pool, message, res);
+    return handleLocalFallback(pool, message, attached_image, res);
   });
 }
 

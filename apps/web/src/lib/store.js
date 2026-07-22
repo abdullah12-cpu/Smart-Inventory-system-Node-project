@@ -57,11 +57,15 @@ export function StoreProvider({ children }) {
   const [auditLogs, setAuditLogs] = useState([]);
   const [cart, setCart] = useState([]);
   const [distributors, setDistributors] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   useEffect(() => {
     const fetchAllData = async () => {
       try {
         const prodRes = await fetch("/api/products");
         if (prodRes.ok) setProducts(await prodRes.json());
+
+        const whRes = await fetch("/api/warehouses");
+        if (whRes.ok) setWarehouses(await whRes.json());
 
         const ordersRes = await fetch("/api/orders");
         if (ordersRes.ok) setOrders(await ordersRes.json());
@@ -389,7 +393,7 @@ export function StoreProvider({ children }) {
     [invoices, currentUser]
   );
   const dispatchOrder = useCallback(
-    async (orderId) => {
+    async (orderId, warehouseId) => {
       let orderNum = "";
       const updatedOrders = orders.map((o) => {
         if (o.order_id !== orderId) return o;
@@ -401,9 +405,15 @@ export function StoreProvider({ children }) {
         await fetch(`/api/orders/${orderId}/status`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "SHIPPED" })
+          body: JSON.stringify({ status: "SHIPPED", warehouse_id: warehouseId })
         });
         setOrders(updatedOrders);
+
+        const prodRes = await fetch("/api/products");
+        if (prodRes.ok) setProducts(await prodRes.json());
+
+        const movementsRes = await fetch("/api/stock-movements");
+        if (movementsRes.ok) setStockMovements(await movementsRes.json());
 
         const matchingOrder = orders.find(o => o.order_id === orderId);
         if (matchingOrder) {
@@ -432,7 +442,7 @@ export function StoreProvider({ children }) {
           record_id: orderId,
           action: "UPDATE",
           performed_by: `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role_name})`,
-          notes: `Updated status of order ${orderNum} to SHIPPED (cargo dispatched).`,
+          notes: `Updated status of order ${orderNum} to SHIPPED (cargo dispatched from warehouse ${warehouseId}).`,
           created_at: new Date().toISOString()
         };
         await fetch("/api/audit-logs", {
@@ -445,7 +455,7 @@ export function StoreProvider({ children }) {
         console.error("Error dispatching order:", err);
       }
     },
-    [orders, currentUser]
+    [orders, currentUser, products]
   );
   const approveOrder = useCallback(
     async (orderId) => {
@@ -1010,6 +1020,24 @@ export function StoreProvider({ children }) {
     return false;
   }, [fetchDistributors, addNotification]);
 
+  const addWarehouse = useCallback(async (whData) => {
+    try {
+      const response = await fetch("/api/warehouses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(whData)
+      });
+      if (response.ok) {
+        const newWh = await response.json();
+        setWarehouses(prev => [...prev, newWh]);
+        return true;
+      }
+    } catch (e) {
+      console.error("Error adding warehouse:", e);
+    }
+    return false;
+  }, []);
+
   return /* @__PURE__ */ jsx(
     StoreContext.Provider,
     {
@@ -1052,7 +1080,9 @@ export function StoreProvider({ children }) {
         setOrders,
         approveOrder,
         submitQuotationRequest,
-        updateQuotationStatus
+        updateQuotationStatus,
+        warehouses,
+        addWarehouse
       },
       children
     }

@@ -16,7 +16,8 @@ import {
   Receipt,
   MessageSquare,
   Sparkles,
-  Send
+  Send,
+  Paperclip
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/data";
@@ -99,6 +100,52 @@ function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldRed
   );
 }
 
+function renderMessageText(text) {
+  if (!text) return null;
+  if (text.includes("|") && text.includes("---")) {
+    const lines = text.split("\n");
+    const tableLines = [];
+    const beforeTable = [];
+    const afterTable = [];
+    let inTable = false;
+    for (let line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+        inTable = true;
+        tableLines.push(trimmed);
+      } else {
+        if (inTable) {
+          afterTable.push(line);
+        } else {
+          beforeTable.push(line);
+        }
+      }
+    }
+    if (tableLines.length >= 3) {
+      const headerLine = tableLines[0];
+      const headers = headerLine.split("|").slice(1, -1).map(h => h.trim());
+      const rows = tableLines.slice(2).map(rowLine => {
+        return rowLine.split("|").slice(1, -1).map(c => c.trim());
+      });
+      return /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
+        beforeTable.length > 0 && /* @__PURE__ */ jsx("p", { className: "whitespace-pre-wrap text-left m-0", children: beforeTable.join("\n") }),
+        /* @__PURE__ */ jsx("div", { className: "overflow-x-auto my-2 border border-slate-200 rounded-lg shadow-sm bg-white", children: 
+          /* @__PURE__ */ jsxs("table", { className: "min-w-full divide-y divide-slate-200 text-[10px] text-left", children: [
+            /* @__PURE__ */ jsx("thead", { className: "bg-slate-50", children: 
+              /* @__PURE__ */ jsx("tr", { children: headers.map((h, idx) => /* @__PURE__ */ jsx("th", { className: "px-2 py-1.5 font-bold text-slate-500 uppercase tracking-wider", children: h }, idx)) })
+            }),
+            /* @__PURE__ */ jsx("tbody", { className: "bg-white divide-y divide-slate-100", children: 
+              rows.map((row, rIdx) => /* @__PURE__ */ jsx("tr", { className: "hover:bg-slate-50", children: row.map((cell, cIdx) => /* @__PURE__ */ jsx("td", { className: "px-2 py-1.5 text-slate-700 font-medium whitespace-nowrap", children: cell }, cIdx)) }, rIdx))
+            })
+          ] })
+        }),
+        afterTable.length > 0 && /* @__PURE__ */ jsx("p", { className: "whitespace-pre-wrap text-left m-0", children: afterTable.join("\n") })
+      ] });
+    }
+  }
+  return /* @__PURE__ */ jsx("p", { className: "whitespace-pre-wrap text-left m-0", children: text });
+}
+
 export default function AdminPortal({ onLogout }) {
   const {
     notifications,
@@ -123,7 +170,8 @@ export default function AdminPortal({ onLogout }) {
     fetchDistributors,
     approveDistributor,
     removeDistributor,
-    addNewProduct
+    addNewProduct,
+    warehouses
   } = useStore();
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -201,11 +249,14 @@ export default function AdminPortal({ onLogout }) {
   const [allocMethod, setAllocMethod] = useState("JAZZCASH");
   const [allocRef, setAllocRef] = useState("");
   const [allocSuccess, setAllocSuccess] = useState("");
+  const [shippingOrderId, setShippingOrderId] = useState(null);
+  const [selectedShipWarehouse, setSelectedShipWarehouse] = useState("wh-1");
   const notifRef = useRef(null);
   const roleRef = useRef(null);
   const userCardRef = useRef(null);
 
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatMinimized, setChatMinimized] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([
     {
@@ -214,21 +265,39 @@ export default function AdminPortal({ onLogout }) {
     }
   ]);
   const [chatTyping, setChatTyping] = useState(false);
+  const [chatAttachedImage, setChatAttachedImage] = useState("");
+
+  const handleChatFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert("File size too large. Please select an image under 2MB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setChatAttachedImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSendChat = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
     const userText = chatInput.trim();
+    const attachedImg = chatAttachedImage;
     setChatInput("");
-    setChatMessages((prev) => [...prev, { sender: "user", text: userText }]);
+    setChatAttachedImage("");
+    setChatMessages((prev) => [...prev, { sender: "user", text: userText, image: attachedImg }]);
     setChatTyping(true);
 
     try {
       const response = await fetch("/api/copilot/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText, history: chatMessages })
+        body: JSON.stringify({ message: userText, history: chatMessages.slice(1), attached_image: attachedImg })
       });
       if (response.ok) {
         const data = await response.json();
@@ -304,13 +373,9 @@ export default function AdminPortal({ onLogout }) {
     }
   };
 
-  const handleShipOrder = async (orderId) => {
-    try {
-      await dispatchOrder(orderId);
-      alert("Order shipped successfully! Invoice generated.");
-    } catch (e) {
-      alert("Failed to ship order.");
-    }
+  const handleShipOrder = (orderId) => {
+    setShippingOrderId(orderId);
+    setSelectedShipWarehouse("wh-1");
   };
   useEffect(() => {
     if (allocInvoiceId) {
@@ -342,6 +407,47 @@ export default function AdminPortal({ onLogout }) {
     if (notifFilter === "WARNING") return n.severity === "WARNING";
     return true;
   });
+
+  const getOrderStockDetails = () => {
+    if (!shippingOrderId) return { stocks: {}, items: [] };
+    const selectedOrder = orders.find(o => o.order_id === shippingOrderId);
+    if (!selectedOrder) return { stocks: {}, items: [] };
+
+    const orderItems = typeof selectedOrder.items === "string" ? JSON.parse(selectedOrder.items) : selectedOrder.items;
+
+    const warehouseStockInfo = {};
+
+    warehouses.forEach(wh => {
+      let minStock = Infinity;
+      let hasProductInWh = false;
+
+      orderItems.forEach(item => {
+        const prod = products.find(p => p.product_id === item.product_id || p.sku === item.sku);
+        if (prod) {
+          const whEntry = prod.inventory.find(i => i.warehouse_id === wh.warehouse_id);
+          if (whEntry) {
+            hasProductInWh = true;
+            if (whEntry.quantity < minStock) {
+              minStock = whEntry.quantity;
+            }
+          } else {
+            minStock = 0;
+          }
+        } else {
+          minStock = 0;
+        }
+      });
+
+      warehouseStockInfo[wh.warehouse_id] = {
+        name: wh.warehouse_name,
+        stock: hasProductInWh && minStock !== Infinity ? minStock : 0,
+        exists: hasProductInWh
+      };
+    });
+
+    return { stocks: warehouseStockInfo, items: orderItems };
+  };
+
   return /* @__PURE__ */ jsxs("div", {
     className: "flex h-screen bg-[#F8FAFC] overflow-hidden text-xs relative", children: [
     
@@ -2681,47 +2787,147 @@ export default function AdminPortal({ onLogout }) {
       , /* @__PURE__ */ jsxs("div", {
         className: "fixed bottom-6 right-6 z-[999] flex flex-col items-end gap-3 font-sans",
         children: [
-          chatOpen && /* @__PURE__ */ jsxs(motion.div, {
-            initial: { opacity: 0, scale: 0.95, y: 10 },
+          chatOpen && !chatMinimized && /* @__PURE__ */ jsxs(motion.div, {
+            initial: { opacity: 0, scale: 0.9, y: 50 },
             animate: { opacity: 1, scale: 1, y: 0 },
-            exit: { opacity: 0, scale: 0.95, y: 10 },
-            className: "w-96 h-[480px] bg-white border border-[#E2E8F0] shadow-2xl rounded-2xl flex flex-col overflow-hidden",
+            exit: { opacity: 0, scale: 0.9, y: 50 },
+            transition: { type: "spring", stiffness: 300, damping: 25 },
+            className: "w-96 h-[500px] bg-white border border-[#E2E8F0] shadow-2xl rounded-2xl flex flex-col overflow-hidden font-sans",
             children: [
               /* @__PURE__ */ jsxs("div", {
-                className: "bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-4 py-3.5 text-white flex items-center justify-between shadow-sm",
+                className: "bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-4 py-3.5 text-white flex items-center justify-between border-b border-indigo-950/40 relative overflow-hidden",
                 children: [
+                  /* @__PURE__ */ jsx("div", { className: "absolute -left-8 -top-8 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl animate-pulse" }),
+                  /* @__PURE__ */ jsx("div", { className: "absolute -right-8 -bottom-8 w-24 h-24 bg-purple-500/10 rounded-full blur-xl animate-pulse" }),
                   /* @__PURE__ */ jsxs("div", {
-                    className: "flex items-center gap-2",
+                    className: "flex items-center gap-2.5 z-10",
                     children: [
-                      /* @__PURE__ */ jsx("div", { className: "w-2 h-2 rounded-full bg-emerald-500 animate-pulse" }),
-                      /* @__PURE__ */ jsx("span", { className: "font-bold text-xs tracking-wide", children: "CIQ Admin Copilot" })
+                      /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+                        /* @__PURE__ */ jsx("div", { className: "w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-md", children:
+                          /* @__PURE__ */ jsx(Sparkles, { size: 13, className: "text-white animate-spin-slow" })
+                        }),
+                        /* @__PURE__ */ jsx("span", { className: "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-slate-900 animate-ping" }),
+                        /* @__PURE__ */ jsx("span", { className: "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-slate-900" })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { className: "text-left", children: [
+                        /* @__PURE__ */ jsx("span", { className: "font-bold text-xs tracking-wide block", children: "CIQ Admin Copilot" }),
+                        /* @__PURE__ */ jsx("span", { className: "text-[9px] text-slate-400 font-semibold tracking-wider block", children: "ACTIVE AGENT" })
+                      ] })
                     ]
                   }),
-                  /* @__PURE__ */ jsx("button", {
-                    onClick: () => setChatOpen(false),
-                    className: "text-[#94A3B8] hover:text-white border-0 bg-transparent cursor-pointer font-bold text-xs p-1",
-                    children: "✕"
+                  /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center gap-1.5 z-10",
+                    children: [
+                      /* @__PURE__ */ jsx("button", {
+                        type: "button",
+                        onClick: () => setChatMinimized(true),
+                        className: "text-[#94A3B8] hover:text-white border-0 bg-transparent cursor-pointer font-extrabold text-sm p-1 leading-none transition-colors",
+                        title: "Minimize Chat",
+                        children: "−"
+                      }),
+                      /* @__PURE__ */ jsx("button", {
+                        type: "button",
+                        onClick: () => {
+                          setChatOpen(false);
+                          setChatMinimized(false);
+                          setChatMessages([
+                            {
+                              sender: "ai",
+                              text: "Hello Saif! I am your CIQ Admin Copilot. I can help you automate catalog actions. Try typing: 'Add product: Titanium Rods, category: Metals, price: 1500, stock: 100' or similar commands."
+                            }
+                          ]);
+                        },
+                        className: "text-[#94A3B8] hover:text-white border-0 bg-transparent cursor-pointer font-bold text-xs p-1 leading-none transition-colors",
+                        title: "Close Chat (Clear History)",
+                        children: "✕"
+                      })
+                    ]
                   })
                 ]
               }),
               /* @__PURE__ */ jsxs("div", {
                 className: "flex-1 p-4 overflow-y-auto space-y-3 bg-[#F8FAFC]",
                 children: [
-                  chatMessages.map((msg, i) => /* @__PURE__ */ jsx("div", {
-                    className: `flex flex-col gap-1 max-w-[82%] ${msg.sender === "user" ? "ml-auto" : "mr-auto"}`,
-                    children: /* @__PURE__ */ jsx("div", {
-                      className: `p-3 rounded-xl text-xs leading-relaxed ${
-                        msg.sender === "user" 
-                          ? "bg-[#4F46E5] text-white rounded-br-none shadow-sm" 
-                          : "bg-white text-slate-800 border border-[#E2E8F0] rounded-bl-none shadow-sm"
-                      }`,
-                      children: msg.text
+                  chatMessages.length === 1 && chatMessages[0].sender === "ai" ? (
+                    /* @__PURE__ */ jsxs("div", {
+                      className: "flex flex-col items-center justify-center text-center py-2 space-y-4 animate-fade-up",
+                      children: [
+                        /* @__PURE__ */ jsxs("div", { className: "relative my-2", children: [
+                          /* @__PURE__ */ jsx("div", { className: "w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#4F46E5] to-[#818CF8] flex items-center justify-center shadow-lg relative z-10", children:
+                            /* @__PURE__ */ jsx(Sparkles, { size: 28, className: "text-white" })
+                          }),
+                          /* @__PURE__ */ jsx("div", { className: "absolute -inset-1.5 bg-[#4F46E5]/30 rounded-2xl blur animate-pulse" })
+                        ] }),
+                        /* @__PURE__ */ jsxs("div", { children: [
+                          /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-slate-800", children: "Welcome Saif! 👋" }),
+                          /* @__PURE__ */ jsx("p", { className: "text-[11px] text-slate-500 mt-1 max-w-[85%] mx-auto leading-relaxed", children: "I can help you create, update, and audit products in your catalog instantly. Let's do something amazing!" })
+                        ] }),
+                        /* @__PURE__ */ jsxs("div", { className: "w-full space-y-2 pt-2 text-left", children: [
+                          /* @__PURE__ */ jsx("p", { className: "text-[9px] uppercase font-extrabold tracking-wider text-slate-400 pl-1", children: "Quick Action Templates" }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Add product: Wireless Router X, category: Networking, price: 5400, stock: 50"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📦" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Add New Product" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Create a catalog item with name, category, and pricing" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Show all products in the Networking category"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "🔍" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Filter Category Records" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Retrieve details of all products inside a given group" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Find all products with low stock levels in database"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "⚠️" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Query Low Stock Alerts" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Identify inventory currently running below threshold levels" })
+                              ] })
+                            ]
+                          })
+                        ] })
+                      ]
                     })
-                  }, i)),
+                  ) : (
+                    chatMessages.slice(1).map((msg, i) => /* @__PURE__ */ jsx(motion.div, {
+                      initial: { opacity: 0, y: 12, scale: 0.97 },
+                      animate: { opacity: 1, y: 0, scale: 1 },
+                      transition: { duration: 0.2 },
+                      className: `flex flex-col gap-1 max-w-[82%] ${msg.sender === "user" ? "ml-auto" : "mr-auto"}`,
+                      children: /* @__PURE__ */ jsxs("div", {
+                        className: `p-3 rounded-xl text-xs leading-relaxed ${
+                          msg.sender === "user" 
+                            ? "bg-gradient-to-tr from-indigo-600 to-violet-600 text-white rounded-br-none shadow-md" 
+                            : "bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-sm"
+                        }`,
+                        children: [
+                          msg.image && /* @__PURE__ */ jsx("div", { className: "mb-2 rounded-lg overflow-hidden max-h-32 border border-[#FFFFFF]/25 bg-black/10", children: 
+                            /* @__PURE__ */ jsx("img", { src: msg.image, alt: "Attached Preview", className: "w-full h-full object-cover" })
+                          }),
+                          renderMessageText(msg.text)
+                        ]
+                      })
+                    }, i))
+                  ),
                   chatTyping && /* @__PURE__ */ jsxs("div", {
-                    className: "flex items-center gap-1.5 text-[#64748B] text-[10px] bg-slate-100 px-3 py-2 rounded-lg w-max",
+                    className: "flex items-center gap-1.5 text-[#64748B] text-[10px] bg-slate-100 px-3 py-2 rounded-lg w-max animate-pulse",
                     children: [
-                      /* @__PURE__ */ jsx("span", { className: "animate-pulse", children: "Copilot is thinking" }),
+                      /* @__PURE__ */ jsx("span", { children: "Copilot is thinking" }),
                       /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-100", children: "." }),
                       /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-200", children: "." }),
                       /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-300", children: "." })
@@ -2731,19 +2937,44 @@ export default function AdminPortal({ onLogout }) {
               }),
               /* @__PURE__ */ jsxs("form", {
                 onSubmit: handleSendChat,
-                className: "p-3 border-t border-[#E2E8F0] bg-white flex gap-2",
+                className: "p-3 border-t border-[#E2E8F0] bg-white flex flex-col gap-2",
                 children: [
-                  /* @__PURE__ */ jsx("input", {
-                    value: chatInput,
-                    onChange: (e) => setChatInput(e.target.value),
-                    placeholder: "Type natural instructions to perform actions...",
-                    className: "flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800"
-                  }),
-                  /* @__PURE__ */ jsx("button", {
-                    type: "submit",
-                    className: "p-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white border-0 rounded-lg flex items-center justify-center cursor-pointer transition-colors shadow-sm",
-                    children: /* @__PURE__ */ jsx(Send, { size: 14 })
-                  })
+                  chatAttachedImage && /* @__PURE__ */ jsxs("div", { className: "relative w-14 h-14 rounded-lg border border-[#E2E8F0] overflow-hidden bg-slate-50 flex-shrink-0 mb-1 shadow-sm group", children: [
+                    /* @__PURE__ */ jsx("img", { src: chatAttachedImage, alt: "Attached Preview", className: "w-full h-full object-cover" }),
+                    /* @__PURE__ */ jsx("button", {
+                      type: "button",
+                      onClick: () => setChatAttachedImage(""),
+                      className: "absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center border-0 text-[8px] font-bold cursor-pointer shadow-sm",
+                      children: "×"
+                    })
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { className: "flex gap-2 w-full items-center", children: [
+                    /* @__PURE__ */ jsxs("label", {
+                      htmlFor: "chat-file-input",
+                      className: "p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg flex items-center justify-center cursor-pointer transition-colors shadow-sm border border-slate-200",
+                      children: [
+                        /* @__PURE__ */ jsx(Paperclip, { size: 14 }),
+                        /* @__PURE__ */ jsx("input", {
+                          type: "file",
+                          accept: "image/*",
+                          onChange: handleChatFileChange,
+                          className: "hidden",
+                          id: "chat-file-input"
+                        })
+                      ]
+                    }),
+                    /* @__PURE__ */ jsx("input", {
+                      value: chatInput,
+                      onChange: (e) => setChatInput(e.target.value),
+                      placeholder: "Type natural instructions to perform actions...",
+                      className: "flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800"
+                    }),
+                    /* @__PURE__ */ jsx("button", {
+                      type: "submit",
+                      className: "p-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white border-0 rounded-lg flex items-center justify-center cursor-pointer transition-colors shadow-sm",
+                      children: /* @__PURE__ */ jsx(Send, { size: 14 })
+                    })
+                  ] })
                 ]
               })
             ]
@@ -2751,12 +2982,121 @@ export default function AdminPortal({ onLogout }) {
           /* @__PURE__ */ jsxs(motion.button, {
             whileHover: { scale: 1.05 },
             whileTap: { scale: 0.95 },
-            onClick: () => setChatOpen(!chatOpen),
+            onClick: () => {
+              if (!chatOpen) {
+                setChatOpen(true);
+                setChatMinimized(false);
+              } else {
+                setChatMinimized(!chatMinimized);
+              }
+            },
             className: "w-14 h-14 rounded-full bg-gradient-to-tr from-[#4F46E5] to-[#818CF8] text-white flex items-center justify-center shadow-xl hover:shadow-indigo-500/25 transition-all cursor-pointer border-0",
             children: [
               /* @__PURE__ */ jsx(Sparkles, { size: 22 })
             ]
-          })
+          }),
+          shippingOrderId && (() => {
+            const { stocks: orderWhStocks, items: orderWhItems } = getOrderStockDetails();
+            return /* @__PURE__ */ jsx("div", {
+              className: "fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+              children: /* @__PURE__ */ jsxs("div", {
+                className: "bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-[#E2E8F0] overflow-hidden animate-dropdown",
+                children: [
+                  /* @__PURE__ */ jsxs("div", { className: "px-5 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
+                    /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-slate-800 uppercase tracking-wider", children: "Select Shipping Depot" }),
+                    /* @__PURE__ */ jsx("button", { onClick: () => setShippingOrderId(null), className: "text-slate-400 hover:text-slate-600 border-0 bg-transparent cursor-pointer text-lg leading-none", children: "×" })
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { className: "p-5 flex flex-col gap-4 text-xs", children: [
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx("label", { className: "text-[10px] text-slate-500 font-bold block mb-1.5 uppercase", children: "Choose Dispatch Warehouse *" }),
+                      /* @__PURE__ */ jsx("select", {
+                        value: selectedShipWarehouse,
+                        onChange: (e) => setSelectedShipWarehouse(e.target.value),
+                        className: "w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-indigo-500",
+                        children: warehouses.map(wh => (
+                          /* @__PURE__ */ jsx("option", { value: wh.warehouse_id, children: `${wh.warehouse_name} (Stock: ${orderWhStocks[wh.warehouse_id]?.stock ?? 0})` }, wh.warehouse_id)
+                        ))
+                      })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 p-2.5 rounded-lg border border-slate-100", children: [
+                      /* @__PURE__ */ jsx("span", { className: "text-[10px] text-slate-500 font-bold block mb-1.5 uppercase", children: "Items in Order" }),
+                      orderWhItems.map((item, idx) => {
+                        const prod = products.find(p => p.product_id === item.product_id || p.sku === item.sku);
+                        const whEntry = prod?.inventory.find(i => i.warehouse_id === selectedShipWarehouse);
+                        const whStock = whEntry ? whEntry.quantity : 0;
+                        const orderQty = parseInt(item.qty || item.quantity || 0);
+                        const hasSufficient = whStock >= orderQty;
+                        return /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center py-1 border-b border-slate-100 last:border-0", children: [
+                          /* @__PURE__ */ jsxs("span", { className: "font-semibold text-slate-700 max-w-[180px] truncate", children: [item.product_name, ` (x${orderQty})`] }),
+                          /* @__PURE__ */ jsxs("span", { className: `font-bold ${hasSufficient ? "text-emerald-600" : "text-rose-500"}`, children: [
+                            "Stock: ",
+                            whStock
+                          ] })
+                        ] }, idx);
+                      })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "flex gap-2.5 pt-2", children: [
+                      /* @__PURE__ */ jsx("button", {
+                        onClick: () => setShippingOrderId(null),
+                        className: "flex-1 py-2 border border-slate-200 text-slate-600 rounded-lg font-bold hover:bg-slate-50 cursor-pointer bg-white",
+                        children: "Cancel"
+                      }),
+                      /* @__PURE__ */ jsx("button", {
+                        onClick: async () => {
+                          const orderId = shippingOrderId;
+                          const { stocks: whStocks, items: whItems } = getOrderStockDetails();
+                          
+                          let hasInsufficientStock = false;
+                          let insufficientItemName = "";
+                          let currentStockInWh = 0;
+                          let neededQty = 0;
+
+                          for (const item of whItems) {
+                            const qty = parseInt(item.qty || item.quantity || 0);
+                            const prod = products.find(p => p.product_id === item.product_id || p.sku === item.sku);
+                            if (prod) {
+                              const whEntry = prod.inventory.find(i => i.warehouse_id === selectedShipWarehouse);
+                              const whStock = whEntry ? whEntry.quantity : 0;
+                              if (whStock < qty) {
+                                hasInsufficientStock = true;
+                                insufficientItemName = prod.product_name;
+                                currentStockInWh = whStock;
+                                neededQty = qty;
+                                break;
+                              }
+                            } else {
+                              hasInsufficientStock = true;
+                              insufficientItemName = item.product_name || "Unknown Product";
+                              currentStockInWh = 0;
+                              neededQty = qty;
+                              break;
+                            }
+                          }
+
+                          if (hasInsufficientStock) {
+                            const matchedWh = warehouses.find(w => w.warehouse_id === selectedShipWarehouse);
+                            const whName = matchedWh ? matchedWh.warehouse_name : 'selected warehouse';
+                            alert(`Insufficient Stock:\n\nCannot ship "${insufficientItemName}" from ${whName}.\nAvailable stock: ${currentStockInWh} units.\nRequired quantity: ${neededQty} units.`);
+                            return;
+                          }
+
+                          setShippingOrderId(null);
+                          try {
+                            await dispatchOrder(orderId, selectedShipWarehouse);
+                            alert("Order shipped successfully! Warehouse stock updated.");
+                          } catch (e) {
+                            alert("Failed to ship order.");
+                          }
+                        },
+                        className: "flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold cursor-pointer border-0 shadow-sm",
+                        children: "Confirm Shipment"
+                      })
+                    ] })
+                  ] })
+                ]
+              })
+            });
+          })()
         ]
       })
       ]

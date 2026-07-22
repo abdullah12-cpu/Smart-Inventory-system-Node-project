@@ -1,9 +1,9 @@
 import { jsx, jsxs } from "react/jsx-runtime";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import Modal from "@/components/Modal";
 export default function AddSkuModal({ open, onClose, onSuccess }) {
-  const { addNewProduct, products } = useStore();
+  const { addNewProduct, products, warehouses = [] } = useStore();
   const [sku, setSku] = useState("");
   const [barcode, setBarcode] = useState("");
   const [name, setName] = useState("");
@@ -33,9 +33,21 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
   const [maxDiscount, setMaxDiscount] = useState("10");
   const [priceRetail, setPriceRetail] = useState("12000");
   const [priceDistributor, setPriceDistributor] = useState("10500");
-  const [stockKarachi, setStockKarachi] = useState("20");
-  const [stockLahore, setStockLahore] = useState("15");
+  const [warehouseSelections, setWarehouseSelections] = useState({});
   const [imageUrl, setImageUrl] = useState("");
+
+  useEffect(() => {
+    if (open && warehouses.length > 0) {
+      const initial = {};
+      warehouses.forEach((wh, idx) => {
+        initial[wh.warehouse_id] = {
+          enabled: idx < 2, // Enable first two by default
+          qty: idx === 0 ? "20" : (idx === 1 ? "15" : "0")
+        };
+      });
+      setWarehouseSelections(initial);
+    }
+  }, [open, warehouses]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -146,16 +158,32 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     }
 
     // Quantities validation
-    const qtyK = parseInt(stockKarachi);
-    const qtyL = parseInt(stockLahore);
+    const inventory = [];
+    let totalQtyInput = 0;
 
-    if (isNaN(qtyK) || qtyK < 0 || isNaN(qtyL) || qtyL < 0) {
-      alert("Validation Error: Initial stock quantities cannot be negative or empty.");
-      return;
+    for (const wh of warehouses) {
+      const sel = warehouseSelections[wh.warehouse_id] || { enabled: false, qty: "0" };
+      if (sel.enabled) {
+        const qty = parseInt(sel.qty);
+        if (isNaN(qty) || qty < 0) {
+          alert(`Validation Error: ${wh.warehouse_name} stock quantity cannot be negative or empty.`);
+          return;
+        }
+        totalQtyInput += qty;
+        inventory.push({
+          warehouse_id: wh.warehouse_id,
+          warehouse_name: wh.warehouse_name,
+          city: wh.city,
+          country: wh.country,
+          quantity: qty,
+          reserved_quantity: 0,
+          available_quantity: qty
+        });
+      }
     }
 
-    if (qtyK + qtyL > parsedLimit) {
-      alert(`Validation Error: The sum of Karachi Depot (${qtyK}) and Lahore Terminal (${qtyL}) stocks is ${qtyK + qtyL}, which exceeds the Total Product Limit of ${parsedLimit}.`);
+    if (totalQtyInput > parsedLimit) {
+      alert(`Validation Error: The sum of warehouse stocks (${totalQtyInput}) exceeds the Total Product Limit of ${parsedLimit}.`);
       return;
     }
 
@@ -184,26 +212,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
       image_url: imageUrl.trim() || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
       min_wholesale_qty: parsedMinWholesale,
       max_discount: parsedMaxDiscount,
-      inventory: [
-        {
-          warehouse_id: "wh-1",
-          warehouse_name: "Karachi Central Depot",
-          city: "Karachi",
-          country: "Pakistan",
-          quantity: qtyK,
-          reserved_quantity: 0,
-          available_quantity: qtyK
-        },
-        {
-          warehouse_id: "wh-2",
-          warehouse_name: "Lahore North Terminal",
-          city: "Lahore",
-          country: "Pakistan",
-          quantity: qtyL,
-          reserved_quantity: 0,
-          available_quantity: qtyL
-        }
-      ]
+      inventory
     };
     addNewProduct(newProduct);
     onSuccess(name.trim());
@@ -216,8 +225,7 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
     setCategory("Networking");
     setNewCategory("");
     setIsCreatingCategory(false);
-    setStockKarachi("20");
-    setStockLahore("15");
+    setWarehouseSelections({});
     setImageUrl("");
     setMinWholesaleQty("1");
     setMaxDiscount("10");
@@ -453,54 +461,57 @@ export default function AddSkuModal({ open, onClose, onSuccess }) {
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "border-t border-[#F1F5F9] pt-3", children: [
           /* @__PURE__ */ jsx("p", { className: "text-[10px] font-bold text-[#4F46E5] uppercase tracking-wider mb-2", children: "Inventory Levels & Alerts" }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 gap-2", children: [
+          /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-2 mb-3", children: warehouses.map((wh) => {
+            const sel = warehouseSelections[wh.warehouse_id] || { enabled: false, qty: "0" };
+            return /* @__PURE__ */ jsxs("div", {
+              className: "flex items-center gap-4 bg-slate-50 p-2.5 rounded-lg border border-slate-100",
+              children: [
+                /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-2 font-semibold text-slate-700 min-w-[180px] cursor-pointer", children: [
+                  /* @__PURE__ */ jsx("input", {
+                    type: "checkbox",
+                    checked: sel.enabled,
+                    onChange: (e) => setWarehouseSelections(prev => ({
+                      ...prev,
+                      [wh.warehouse_id]: { ...sel, enabled: e.target.checked }
+                    })),
+                    className: "w-4 h-4 text-[#4F46E5] border-slate-300 rounded focus:ring-[#4F46E5]"
+                  }),
+                  wh.warehouse_name
+                ] }),
+                /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 ml-auto", children: [
+                  /* @__PURE__ */ jsx("span", { className: "text-[#64748B] text-[10px]", children: "Initial Qty:" }),
+                  /* @__PURE__ */ jsx("input", {
+                    type: "number",
+                    disabled: !sel.enabled,
+                    className: "input-field py-1 px-2.5 w-24 text-xs disabled:opacity-50 disabled:bg-slate-100",
+                    value: sel.qty,
+                    onChange: (e) => setWarehouseSelections(prev => ({
+                      ...prev,
+                      [wh.warehouse_id]: { ...sel, qty: e.target.value }
+                    }))
+                  })
+                ] })
+              ]
+            }, wh.warehouse_id);
+          }) }),
+          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
             /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Karachi Stock" }),
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "number",
-                  className: "input-field py-1.5 text-xs",
-                  value: stockKarachi,
-                  onChange: (e) => setStockKarachi(e.target.value)
-                }
-              )
+              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Low Trigger" }),
+              /* @__PURE__ */ jsx("input", {
+                type: "number",
+                className: "input-field py-1.5 text-xs",
+                value: lowStock,
+                onChange: (e) => setLowStock(e.target.value)
+              })
             ] }),
             /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Lahore Stock" }),
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "number",
-                  className: "input-field py-1.5 text-xs",
-                  value: stockLahore,
-                  onChange: (e) => setStockLahore(e.target.value)
-                }
-              )
-            ] }),
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Low Trigger" }),
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "number",
-                  className: "input-field py-1.5 text-xs",
-                  value: lowStock,
-                  onChange: (e) => setLowStock(e.target.value)
-                }
-              )
-            ] }),
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("label", { className: "text-[9px] text-[#64748B] block mb-1", children: "Total Limit" }),
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "number",
-                  className: "input-field py-1.5 text-xs",
-                  value: totalProductLimit,
-                  onChange: (e) => setTotalProductLimit(e.target.value)
-                }
-              )
+              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Total Limit" }),
+              /* @__PURE__ */ jsx("input", {
+                type: "number",
+                className: "input-field py-1.5 text-xs",
+                value: totalProductLimit,
+                onChange: (e) => setTotalProductLimit(e.target.value)
+              })
             ] })
           ] })
         ] }),

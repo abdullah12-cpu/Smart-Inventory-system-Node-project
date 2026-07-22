@@ -454,14 +454,17 @@ export default function ProductDrawer({ product, open, onClose }) {
             /* @__PURE__ */ jsxs("span", { className: "text-[11px] text-[#64748B] font-medium ml-auto", children: [
               "Total: ",
               /* @__PURE__ */ jsx("strong", { className: "text-[#0F172A]", children: totalQuantity }),
-              " | Reserved: ",
-              /* @__PURE__ */ jsx("strong", { className: "text-[#E11D48]", children: totalReserved }),
-              " ",
-              "| Available:",
-              " ",
+              " | Available: ",
               /* @__PURE__ */ jsx("strong", { className: "text-[#4F46E5]", children: totalAvailable })
             ] })
           ] }),
+          /* @__PURE__ */ jsx("div", { className: "w-full h-44 rounded-xl border border-[#E2E8F0] overflow-hidden bg-slate-50 mt-4 shadow-sm", children: 
+            /* @__PURE__ */ jsx("img", { 
+              src: product.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop", 
+              alt: product.product_name, 
+              className: "w-full h-full object-cover" 
+            })
+          }),
           /* @__PURE__ */ jsxs(InfoSection, { title: "Product Metadata", children: [
             /* @__PURE__ */ jsx(
               InfoGrid,
@@ -525,14 +528,10 @@ export default function ProductDrawer({ product, open, onClose }) {
                         style: { width: `${Math.min(pct, 100)}%` }
                       }
                     ) }),
-                    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-2 text-center text-[10px] pt-1 border-t border-[#F8FAFC]", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-2 text-center text-[10px] pt-1 border-t border-[#F8FAFC]", children: [
                       /* @__PURE__ */ jsxs("div", { children: [
                         /* @__PURE__ */ jsx("div", { className: "text-[#64748B]", children: "Quantity" }),
                         /* @__PURE__ */ jsx("div", { className: "font-bold text-[#0F172A]", children: inv.quantity })
-                      ] }),
-                      /* @__PURE__ */ jsxs("div", { children: [
-                        /* @__PURE__ */ jsx("div", { className: "text-[#64748B]", children: "Reserved" }),
-                        /* @__PURE__ */ jsx("div", { className: "font-bold text-[#E11D48]", children: inv.reserved_quantity })
                       ] }),
                       /* @__PURE__ */ jsxs("div", { children: [
                         /* @__PURE__ */ jsx("div", { className: "text-[#4F46E5] font-semibold", children: "Available" }),
@@ -624,18 +623,6 @@ export default function ProductDrawer({ product, open, onClose }) {
                     }
                   )
                 ] }),
-                /* @__PURE__ */ jsxs("div", { children: [
-                  /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-medium mb-1 block", children: "Total Product limit" }),
-                  /* @__PURE__ */ jsx(
-                    "input",
-                    {
-                      type: "number",
-                      className: "input-field py-2 text-xs bg-white",
-                      value: totalProductLimit,
-                      onChange: (e) => setTotalProductLimit(e.target.value)
-                    }
-                  )
-                ] }),
                 /* @__PURE__ */ jsxs("div", { className: "flex gap-2 pt-1.5", children: [
                   /* @__PURE__ */ jsx(
                     "button",
@@ -667,14 +654,6 @@ export default function ProductDrawer({ product, open, onClose }) {
                     {
                       label: "Low Stock Trigger",
                       val: `${product.low_stock_threshold} units`
-                    },
-                    {
-                      label: "Total Product Limit",
-                      val: `${product.total_product_limit || 100} units`
-                    },
-                    {
-                      label: "Dead Stock Limit",
-                      val: `${product.dead_stock_days} days`
                     }
                   ]
                 }
