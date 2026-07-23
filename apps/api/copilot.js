@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb } = require('./operations');
 
-const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog assistant. You are strictly restricted to performing and discussing operations related to managing catalog inventory: creating products ("createProduct"), updating details/stocks ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), and reading, searching, or checking low stock alerts ("readProductData"). If the user asks generic questions, conversational prompts, or attempts tasks outside this catalog inventory scope, you MUST decline to answer, stating: "I can only assist with the registered operations: product catalog inventory management." Keep your conversational answers extremely short, direct, and focused strictly on inventory catalog records. Do not add conversational fluff.';
+const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog assistant. You are strictly restricted to performing and discussing operations related to managing catalog inventory: creating products ("createProduct"), updating details/stocks ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), and reading, searching, or checking low stock alerts ("readProductData"). If the user asks generic questions, conversational prompts, or attempts tasks outside this catalog inventory scope, you MUST decline to answer, stating: "I can only assist with the registered operations: product catalog inventory management." Keep your conversational answers extremely short, direct, and focused strictly on inventory catalog records. Do not add conversational fluff. IMPORTANT: When creating a product, do NOT invent or fill in default values (like category, price, stock, brand, etc.) if they are not explicitly specified in the user prompt. Leave them empty/null.';
 
 function filterProductsByMessage(rows, message) {
   const lower = message.toLowerCase();
@@ -371,7 +371,7 @@ function registerCopilotRoutes(app, pool) {
                       low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
                       total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
                     },
-                    required: ['name', 'category', 'price', 'stock']
+                    required: ['name']
                   }
                 }
               },
@@ -594,7 +594,7 @@ function registerCopilotRoutes(app, pool) {
                       low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
                       total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
                     },
-                    required: ['name', 'category', 'price', 'stock']
+                    required: ['name']
                   }
                 }
               }
@@ -696,7 +696,7 @@ function registerCopilotRoutes(app, pool) {
                       low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
                       total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
                     },
-                    required: ['name', 'category', 'price', 'stock']
+                    required: ['name']
                   }
                 }
               }
@@ -776,7 +776,7 @@ function registerCopilotRoutes(app, pool) {
               low_stock_threshold: { type: 'INTEGER', description: 'Low Stock trigger threshold limit' },
               total_product_limit: { type: 'INTEGER', description: 'Maximum total product limit capacity' }
             },
-            required: ['name', 'category', 'price', 'stock']
+            required: ['name']
           }
         };
 

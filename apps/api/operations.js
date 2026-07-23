@@ -4,73 +4,80 @@ async function createProductInDb(pool, data) {
   const brandVal = data.brand || null;
   const descVal = data.description || data.short_description || null;
 
-  let priceRetail = 0;
-  if (data.price !== undefined) {
+  let priceRetail = null;
+  if (data.price !== undefined && data.price !== null) {
     priceRetail = parseFloat(data.price);
-  } else if (data.retail_price !== undefined) {
+  } else if (data.retail_price !== undefined && data.retail_price !== null) {
     priceRetail = parseFloat(data.retail_price);
-  } else if (data.prices && data.prices.RETAIL !== undefined) {
+  } else if (data.prices && data.prices.RETAIL !== undefined && data.prices.RETAIL !== null) {
     priceRetail = parseFloat(data.prices.RETAIL);
   }
 
   let priceDist = null;
-  if (data.distributor_price !== undefined) {
+  if (data.distributor_price !== undefined && data.distributor_price !== null) {
     priceDist = parseFloat(data.distributor_price);
-  } else if (data.prices && data.prices.DISTRIBUTOR !== undefined) {
+  } else if (data.prices && data.prices.DISTRIBUTOR !== undefined && data.prices.DISTRIBUTOR !== null) {
     priceDist = parseFloat(data.prices.DISTRIBUTOR);
   }
 
-  const prices = data.prices || {
+  const prices = {
     RETAIL: priceRetail,
     DISTRIBUTOR: priceDist,
     VIP: priceDist,
     CUSTOM: priceDist
   };
 
-  let kStock = 0;
-  let lStock = 0;
-  if (data.karachi_stock !== undefined) {
+  let kStock = null;
+  let lStock = null;
+  if (data.karachi_stock !== undefined && data.karachi_stock !== null) {
     kStock = parseInt(data.karachi_stock);
   }
-  if (data.lahore_stock !== undefined) {
+  if (data.lahore_stock !== undefined && data.lahore_stock !== null) {
     lStock = parseInt(data.lahore_stock);
   }
-  if (data.stock !== undefined && data.karachi_stock === undefined && data.lahore_stock === undefined) {
+  if (data.stock !== undefined && data.stock !== null && data.karachi_stock === undefined && data.lahore_stock === undefined) {
     kStock = parseInt(data.stock);
   }
 
-  const inventory = data.inventory || [
-    {
-      warehouse_id: 'wh-1',
-      warehouse_name: 'Karachi Central Depot',
-      city: 'Karachi',
-      country: 'Pakistan',
-      quantity: kStock,
-      reserved_quantity: 0,
-      available_quantity: kStock
-    },
-    {
-      warehouse_id: 'wh-2',
-      warehouse_name: 'Lahore North Terminal',
-      city: 'Lahore',
-      country: 'Pakistan',
-      quantity: lStock,
-      reserved_quantity: 0,
-      available_quantity: lStock
+  let inventory = [];
+  if (data.inventory) {
+    inventory = data.inventory;
+  } else {
+    if (kStock !== null) {
+      inventory.push({
+        warehouse_id: 'wh-1',
+        warehouse_name: 'Karachi Central Depot',
+        city: 'Karachi',
+        country: 'Pakistan',
+        quantity: kStock,
+        reserved_quantity: 0,
+        available_quantity: kStock
+      });
     }
-  ];
+    if (lStock !== null) {
+      inventory.push({
+        warehouse_id: 'wh-2',
+        warehouse_name: 'Lahore North Terminal',
+        city: 'Lahore',
+        country: 'Pakistan',
+        quantity: lStock,
+        reserved_quantity: 0,
+        available_quantity: lStock
+      });
+    }
+  }
 
   const cleanedSku = data.sku || data.product_code || `SKU-AI-${Math.floor(1000 + Math.random() * 9000)}`;
   const cleanedBarcode = data.barcode || data.upc_barcode || null;
   const newProdId = data.product_id || `p-${Date.now()}`;
 
   const unitVal = data.unit || null;
-  const weightVal = data.weight !== undefined ? parseFloat(data.weight) : null;
+  const weightVal = data.weight !== undefined && data.weight !== null ? parseFloat(data.weight) : null;
   const imageUrl = data.image_url || null;
-  const minWhQty = data.min_wholesale_qty !== undefined ? parseInt(data.min_wholesale_qty) : null;
-  const maxDisc = data.max_discount !== undefined ? parseInt(data.max_discount) : null;
-  const limit = data.total_product_limit !== undefined ? parseInt(data.total_product_limit) : null;
-  const lowStockVal = data.low_stock_threshold !== undefined ? parseInt(data.low_stock_threshold) : null;
+  const minWhQty = data.min_wholesale_qty !== undefined && data.min_wholesale_qty !== null ? parseInt(data.min_wholesale_qty) : null;
+  const maxDisc = data.max_discount !== undefined && data.max_discount !== null ? parseInt(data.max_discount) : null;
+  const limit = data.total_product_limit !== undefined && data.total_product_limit !== null ? parseInt(data.total_product_limit) : null;
+  const lowStockVal = data.low_stock_threshold !== undefined && data.low_stock_threshold !== null ? parseInt(data.low_stock_threshold) : null;
 
   await pool.query(
     `INSERT INTO products (
