@@ -36,7 +36,13 @@ const PORTAL_OPTIONS = [
 export default function PortalSelector({ value, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const selected = PORTAL_OPTIONS.find((o) => o.id === value) || PORTAL_OPTIONS[0];
+
+  const params = new URLSearchParams(window.location.search);
+  const isAdminRoute = params.get("portal") === "admin";
+  const options = isAdminRoute ? PORTAL_OPTIONS : PORTAL_OPTIONS.filter(o => o.id !== "admin");
+
+  const selected = options.find((o) => o.id === value) || options[0];
+
   useEffect(() => {
     const handler = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
@@ -79,7 +85,7 @@ export default function PortalSelector({ value, onChange }) {
         ]
       }
     ),
-    open && /* @__PURE__ */ jsx("div", { className: "absolute top-[calc(100%+4px)] left-0 right-0 bg-white border border-[#E2E8F0] rounded-[10px] shadow-lg z-50 p-1.5 animate-dropdown", children: PORTAL_OPTIONS.map((opt) => /* @__PURE__ */ jsxs(
+    open && /* @__PURE__ */ jsx("div", { className: "absolute top-[calc(100%+4px)] left-0 right-0 bg-white border border-[#E2E8F0] rounded-[10px] shadow-lg z-50 p-1.5 animate-dropdown", children: options.map((opt) => /* @__PURE__ */ jsxs(
       "div",
       {
         onMouseDown: (e) => e.stopPropagation(),

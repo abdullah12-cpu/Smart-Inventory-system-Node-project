@@ -282,8 +282,8 @@ initDb();
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, portal } = req.body;
-  if (!email || !password || !portal) {
-    return res.status(400).json({ success: false, message: 'Please provide email, password, and portal context.' });
+  if (!email || !password) {
+    return res.status(400).json({ success: false, message: 'Please provide email and password.' });
   }
 
   try {
@@ -315,10 +315,11 @@ app.post('/api/auth/login', async (req, res) => {
     // Role vs Portal Context validation
     // Portal can be 'admin', 'distributor', 'buyer'.
     // DB user role can be 'admin', 'distributor', 'buyer'.
-    if (user.role !== portal) {
+    const activePortal = portal || user.role;
+    if (user.role !== activePortal) {
       return res.status(403).json({ 
         success: false, 
-        message: `Role mismatch. This account is registered as a ${user.role}, but you are trying to sign into the ${portal} portal.` 
+        message: `Role mismatch. This account is registered as a ${user.role}, but you are trying to sign into the ${activePortal} portal.` 
       });
     }
 
@@ -326,6 +327,7 @@ app.post('/api/auth/login', async (req, res) => {
     let sessionUser = {
       user_id: `u-${user.id}`,
       email: user.email,
+      role: user.role,
       role_name: user.role === 'admin' ? 'Super Admin' : (user.role === 'distributor' ? 'Inventory Manager' : 'B2B Buyer'),
       profile_image: user.role === 'admin' 
         ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop'
@@ -778,7 +780,8 @@ app.get('/api/quotations', async (req, res) => {
       status: row.status,
       total_amount: parseFloat(row.total_amount),
       valid_until: row.valid_until,
-      created_at: row.created_at
+      created_at: row.created_at,
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items
     }));
     return res.json(quotations);
   } catch (err) {
@@ -795,15 +798,16 @@ app.post('/api/quotations', async (req, res) => {
 
   try {
     await pool.query(
-      `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at, items)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         q.quotation_id,
         q.quotation_number,
         q.status || 'DRAFT',
         q.total_amount,
         q.valid_until || new Date(Date.now() + 15*24*60*60*1000).toISOString(),
-        q.created_at || new Date().toISOString()
+        q.created_at || new Date().toISOString(),
+        q.items ? (typeof q.items === 'string' ? q.items : JSON.stringify(q.items)) : null
       ]
     );
     return res.status(201).json({ success: true });

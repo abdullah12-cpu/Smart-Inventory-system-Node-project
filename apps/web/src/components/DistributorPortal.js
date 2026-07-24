@@ -86,6 +86,7 @@ function QuoteStatusBadge({ status }) {
     SENT: "bg-blue-50 text-blue-700 border-blue-200",
     NEGOTIATING: "bg-amber-50 text-amber-700 border-amber-200",
     ACCEPTED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
     REJECTED: "bg-red-50 text-red-700 border-red-200",
     EXPIRED: "bg-stone-50 text-stone-700 border-stone-200",
     CONVERTED: "bg-purple-50 text-purple-700 border-purple-200"
@@ -807,8 +808,12 @@ export default function DistributorPortal({ onLogout }) {
                 value: (quotations || []).filter(
                   (q) => q.status === "SENT" || q.status === "NEGOTIATING" || q.status === "APPROVED"
                 ).length,
-                trend: "Action required",
-                trendUp: false,
+                trend: (quotations || []).filter(
+                  (q) => q.status === "SENT" || q.status === "NEGOTIATING" || q.status === "APPROVED"
+                ).length > 0 ? "Action required" : "No pending actions",
+                trendUp: (quotations || []).filter(
+                  (q) => q.status === "SENT" || q.status === "NEGOTIATING" || q.status === "APPROVED"
+                ).length > 0,
                 icon: /* @__PURE__ */ jsx(Clock, { size: 18 }),
                 iconBg: "#FEF3C7",
                 iconColor: "#F59E0B",
@@ -1287,14 +1292,22 @@ export default function DistributorPortal({ onLogout }) {
           ] }) : /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 border border-slate-200 rounded-lg p-4 animate-fade-up", children: [
             /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-[#0F172A] mb-3", children: "Line Items" }),
             /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
-              /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center text-xs", children: [
-                /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: "Cement 50kg Bags x 1000" }),
-                /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: formatCurrency(145e4) })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center text-xs", children: [
-                /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: "Steel Rebar 12mm x 500" }),
-                /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: formatCurrency(2231600) })
-              ] })
+              Array.isArray(activeQuote.items) && activeQuote.items.length > 0 ? (
+                activeQuote.items.map((item, idx) => {
+                  const qty = parseInt(item.qty || item.quantity || 1);
+                  const price = parseFloat(item.price || 0);
+                  const name = item.name || item.product_name || "B2B Bulk Item";
+                  return /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center text-xs", children: [
+                    /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: `${name} x ${qty}` }),
+                    /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: formatCurrency(price * qty) })
+                  ] }, idx);
+                })
+              ) : (
+                /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center text-xs", children: [
+                  /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: "B2B Bulk Replenishment (Virtual Item) x 1" }),
+                  /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: formatCurrency(activeQuote.total_amount) })
+                ] })
+              )
             ] })
           ] }),
           /* @__PURE__ */ jsx("div", { className: "flex justify-end gap-3 pt-2", children: isCounterMode ? /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -1619,20 +1632,6 @@ export default function DistributorPortal({ onLogout }) {
               draftItems.length === 0 && /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 3, className: "text-center py-6 text-[#94A3B8]", children: "Your draft is empty." }) })
             ] })
           ] }) }),
-          (() => {
-            const total = draftItems.reduce((sum, item) => sum + item.price * item.qty, 0);
-            if (total > remainingCredit) {
-              return /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 text-red-800 text-[11px] p-3.5 rounded-lg flex items-start gap-2.5 animate-fade-up", children: [
-                /* @__PURE__ */ jsx(AlertCircle, { size: 14, className: "text-red-600 flex-shrink-0 mt-0.5" }),
-                /* @__PURE__ */ jsxs("span", { children: [
-                  "This order exceeds your remaining credit limit of ",
-                  formatCurrency(remainingCredit),
-                  ". Please request a limit increase or settle outstanding invoices."
-                ] })
-              ] });
-            }
-            return null;
-          })(),
           /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center pt-2", children: [
             /* @__PURE__ */ jsxs("div", { className: "text-left", children: [
               /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#64748B] font-bold uppercase tracking-wider mb-1", children: "Estimated Total" }),
@@ -1655,7 +1654,7 @@ export default function DistributorPortal({ onLogout }) {
               /* @__PURE__ */ jsx(
                 "button",
                 {
-                  disabled: draftItems.length === 0 || draftItems.reduce((sum, item) => sum + item.price * item.qty, 0) > remainingCredit,
+                  disabled: draftItems.length === 0,
                   onClick: async () => {
                     const total = draftItems.reduce(
                       (sum, item) => sum + item.price * item.qty,
@@ -1667,7 +1666,8 @@ export default function DistributorPortal({ onLogout }) {
                       status: "DRAFT",
                       total_amount: total,
                       valid_until: new Date(Date.now() + 15*24*60*60*1000).toISOString(),
-                      created_at: new Date().toISOString()
+                      created_at: new Date().toISOString(),
+                      items: draftItems
                     };
                     const success = await submitQuotationRequest(quoteData);
                     if (success) {

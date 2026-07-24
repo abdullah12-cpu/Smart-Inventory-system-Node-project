@@ -152,6 +152,7 @@ export default function AdminPortal({ onLogout }) {
     currentUser,
     setCurrentUser,
     markNotificationRead,
+    products,
     orders,
     invoices,
     payments,
@@ -409,43 +410,55 @@ export default function AdminPortal({ onLogout }) {
   });
 
   const getOrderStockDetails = () => {
-    if (!shippingOrderId) return { stocks: {}, items: [] };
-    const selectedOrder = orders.find(o => o.order_id === shippingOrderId);
-    if (!selectedOrder) return { stocks: {}, items: [] };
+    try {
+      if (!shippingOrderId) return { stocks: {}, items: [] };
+      const selectedOrder = orders.find(o => o.order_id === shippingOrderId);
+      if (!selectedOrder) return { stocks: {}, items: [] };
 
-    const orderItems = typeof selectedOrder.items === "string" ? JSON.parse(selectedOrder.items) : selectedOrder.items;
+      let orderItems = [];
+      if (Array.isArray(selectedOrder.items)) {
+        orderItems = selectedOrder.items;
+      } else if (typeof selectedOrder.items === "string") {
+        const parsed = JSON.parse(selectedOrder.items);
+        orderItems = Array.isArray(parsed) ? parsed : [];
+      }
 
-    const warehouseStockInfo = {};
+      const warehouseStockInfo = {};
 
-    warehouses.forEach(wh => {
-      let minStock = Infinity;
-      let hasProductInWh = false;
+      warehouses.forEach(wh => {
+        let minStock = Infinity;
+        let hasProductInWh = false;
 
-      orderItems.forEach(item => {
-        const prod = products.find(p => p.product_id === item.product_id || p.sku === item.sku);
-        if (prod) {
-          const whEntry = prod.inventory.find(i => i.warehouse_id === wh.warehouse_id);
-          if (whEntry) {
-            hasProductInWh = true;
-            if (whEntry.quantity < minStock) {
-              minStock = whEntry.quantity;
+        orderItems.forEach(item => {
+          if (!item) return;
+          const prod = products.find(p => p.product_id === item.product_id || p.sku === item.sku);
+          if (prod) {
+            const whEntry = Array.isArray(prod.inventory) ? prod.inventory.find(i => i.warehouse_id === wh.warehouse_id) : null;
+            if (whEntry) {
+              hasProductInWh = true;
+              if (whEntry.quantity < minStock) {
+                minStock = whEntry.quantity;
+              }
+            } else {
+              minStock = 0;
             }
           } else {
             minStock = 0;
           }
-        } else {
-          minStock = 0;
-        }
+        });
+
+        warehouseStockInfo[wh.warehouse_id] = {
+          name: wh.warehouse_name,
+          stock: hasProductInWh && minStock !== Infinity ? minStock : 0,
+          exists: hasProductInWh
+        };
       });
 
-      warehouseStockInfo[wh.warehouse_id] = {
-        name: wh.warehouse_name,
-        stock: hasProductInWh && minStock !== Infinity ? minStock : 0,
-        exists: hasProductInWh
-      };
-    });
-
-    return { stocks: warehouseStockInfo, items: orderItems };
+      return { stocks: warehouseStockInfo, items: orderItems };
+    } catch (e) {
+      console.error("Error in getOrderStockDetails:", e);
+      return { stocks: {}, items: [] };
+    }
   };
 
   return /* @__PURE__ */ jsxs("div", {
@@ -3020,17 +3033,18 @@ export default function AdminPortal({ onLogout }) {
                     ] }),
                     /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 p-2.5 rounded-lg border border-slate-100", children: [
                       /* @__PURE__ */ jsx("span", { className: "text-[10px] text-slate-500 font-bold block mb-1.5 uppercase", children: "Items in Order" }),
-                      orderWhItems.map((item, idx) => {
+                      (orderWhItems || []).map((item, idx) => {
+                        if (!item) return null;
                         const prod = products.find(p => p.product_id === item.product_id || p.sku === item.sku);
-                        const whEntry = prod?.inventory.find(i => i.warehouse_id === selectedShipWarehouse);
+                        const whEntry = Array.isArray(prod?.inventory) ? prod.inventory.find(i => i.warehouse_id === selectedShipWarehouse) : null;
                         const whStock = whEntry ? whEntry.quantity : 0;
                         const orderQty = parseInt(item.qty || item.quantity || 0);
-                        const hasSufficient = whStock >= orderQty;
+                        const hasSufficient = prod ? (whStock >= orderQty) : true;
                         return /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center py-1 border-b border-slate-100 last:border-0", children: [
-                          /* @__PURE__ */ jsxs("span", { className: "font-semibold text-slate-700 max-w-[180px] truncate", children: [item.product_name, ` (x${orderQty})`] }),
+                          /* @__PURE__ */ jsxs("span", { className: "font-semibold text-slate-700 max-w-[180px] truncate", children: [item.product_name || "Unknown Product", ` (x${orderQty})`] }),
                           /* @__PURE__ */ jsxs("span", { className: `font-bold ${hasSufficient ? "text-emerald-600" : "text-rose-500"}`, children: [
                             "Stock: ",
-                            whStock
+                            prod ? whStock : "N/A (Virtual Item)"
                           ] })
                         ] }, idx);
                       })
@@ -3044,48 +3058,13 @@ export default function AdminPortal({ onLogout }) {
                       /* @__PURE__ */ jsx("button", {
                         onClick: async () => {
                           const orderId = shippingOrderId;
-                          const { stocks: whStocks, items: whItems } = getOrderStockDetails();
-                          
-                          let hasInsufficientStock = false;
-                          let insufficientItemName = "";
-                          let currentStockInWh = 0;
-                          let neededQty = 0;
-
-                          for (const item of whItems) {
-                            const qty = parseInt(item.qty || item.quantity || 0);
-                            const prod = products.find(p => p.product_id === item.product_id || p.sku === item.sku);
-                            if (prod) {
-                              const whEntry = prod.inventory.find(i => i.warehouse_id === selectedShipWarehouse);
-                              const whStock = whEntry ? whEntry.quantity : 0;
-                              if (whStock < qty) {
-                                hasInsufficientStock = true;
-                                insufficientItemName = prod.product_name;
-                                currentStockInWh = whStock;
-                                neededQty = qty;
-                                break;
-                              }
-                            } else {
-                              hasInsufficientStock = true;
-                              insufficientItemName = item.product_name || "Unknown Product";
-                              currentStockInWh = 0;
-                              neededQty = qty;
-                              break;
-                            }
-                          }
-
-                          if (hasInsufficientStock) {
-                            const matchedWh = warehouses.find(w => w.warehouse_id === selectedShipWarehouse);
-                            const whName = matchedWh ? matchedWh.warehouse_name : 'selected warehouse';
-                            alert(`Insufficient Stock:\n\nCannot ship "${insufficientItemName}" from ${whName}.\nAvailable stock: ${currentStockInWh} units.\nRequired quantity: ${neededQty} units.`);
-                            return;
-                          }
-
                           setShippingOrderId(null);
                           try {
                             await dispatchOrder(orderId, selectedShipWarehouse);
                             alert("Order shipped successfully! Warehouse stock updated.");
                           } catch (e) {
-                            alert("Failed to ship order.");
+                            console.error("Shipping failed:", e);
+                            alert("Failed to ship order:\n\n" + (e.message || e));
                           }
                         },
                         className: "flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold cursor-pointer border-0 shadow-sm",

@@ -402,11 +402,17 @@ export function StoreProvider({ children }) {
       });
 
       try {
-        await fetch(`/api/orders/${orderId}/status`, {
+        const response = await fetch(`/api/orders/${orderId}/status`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "SHIPPED", warehouse_id: warehouseId })
         });
+
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody.message || `Server responded with status ${response.status}`);
+        }
+
         setOrders(updatedOrders);
 
         const prodRes = await fetch("/api/products");
@@ -417,9 +423,11 @@ export function StoreProvider({ children }) {
 
         const matchingOrder = orders.find(o => o.order_id === orderId);
         if (matchingOrder) {
+          const orderParts = (matchingOrder.order_number || "").split("-");
+          const invoiceSuffix = orderParts[orderParts.length - 1] || "0000";
           const newInvoice = {
             invoice_id: `inv-${Date.now()}`,
-            invoice_number: `INV-2026-${matchingOrder.order_number.split("-")[2]}`,
+            invoice_number: `INV-2026-${invoiceSuffix}`,
             status: "SENT",
             total_amount: matchingOrder.total_amount,
             amount_paid: 0,
@@ -436,12 +444,13 @@ export function StoreProvider({ children }) {
           if (resInv.ok) setInvoices(await resInv.json());
         }
 
+        const performedName = currentUser ? `${currentUser.first_name || "System"} ${currentUser.last_name || "Admin"} (${currentUser.role_name || "Staff"})` : "System Admin";
         const newAudit = {
           audit_id: `aud-${Date.now()}`,
           table_name: "orders",
           record_id: orderId,
           action: "UPDATE",
-          performed_by: `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role_name})`,
+          performed_by: performedName,
           notes: `Updated status of order ${orderNum} to SHIPPED (cargo dispatched from warehouse ${warehouseId}).`,
           created_at: new Date().toISOString()
         };
@@ -453,6 +462,7 @@ export function StoreProvider({ children }) {
         setAuditLogs((prev) => [newAudit, ...prev]);
       } catch (err) {
         console.error("Error dispatching order:", err);
+        throw err;
       }
     },
     [orders, currentUser, products]

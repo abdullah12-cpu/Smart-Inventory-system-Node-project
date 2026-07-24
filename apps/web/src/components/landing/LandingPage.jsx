@@ -1,419 +1,759 @@
 import { useState, useEffect } from "react";
-import { 
-  motion, 
-  useScroll, 
-  useSpring, 
-  useReducedMotion 
-} from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowRight,
-  Landmark,
-  Warehouse,
+  Search,
+  ShoppingCart,
+  ShoppingBag,
+  Plus,
+  Minus,
   Sparkles,
-  TrendingUp,
-  Database,
-  Shield,
-  Menu,
+  LogIn,
+  Store,
+  Globe,
+  Tag,
+  Info,
+  ArrowRight,
+  ShieldCheck,
+  ChevronRight,
+  UserCheck,
+  AlertTriangle,
+  SlidersHorizontal,
   X,
-  FileText,
-  Users,
-  GitCompare
+  Star,
+  Warehouse,
+  Check
 } from "lucide-react";
+import { useStore } from "@/lib/store";
+import { formatCurrency } from "@/lib/data";
 
 export default function LandingPage({ onGetStarted, onRegisterClick }) {
-  const shouldReduceMotion = useReducedMotion();
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const {
+    products,
+    cart,
+    addToCart,
+    updateCartQty,
+    clearCart,
+    currentUser,
+    warehouses
+  } = useStore();
 
-  // Monitor scroll for navbar styles
-  useEffect(() => {
-    const handleScroll = () => {
-      if (window.scrollY > 10) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
-      }
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  const [marketMode, setMarketMode] = useState("b2c"); // "b2c" = Retail, "b2b" = Wholesale
+  const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [categorySearch, setCategorySearch] = useState("");
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
+  const [selectedWarehouse, setSelectedWarehouse] = useState("All");
+  const [freeShippingOnly, setFreeShippingOnly] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
-  // Scroll Progress indicator
-  const { scrollYProgress } = useScroll();
-  const scaleX = useSpring(scrollYProgress, {
-    stiffness: 100,
-    damping: 30,
-    restDelta: 0.001
+  // Dynamic and Fallback Categories
+  const defaultCategories = ["Networking", "Storage", "Computer Accessories", "Monitors", "Power Backup", "Cables & Connectors"];
+  const dynamicCategories = [...new Set(products.map(p => p.category).filter(Boolean))];
+  
+  const allCategories = ["All", ...new Set([...defaultCategories, ...dynamicCategories].map(cat => {
+    if (!cat) return "";
+    return cat.trim().split(" ")
+              .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(" ");
+  }).filter(Boolean))];
+
+  const filteredCategories = allCategories.filter(cat => {
+    if (cat === "All") return true;
+    return cat.toLowerCase().includes(categorySearch.toLowerCase());
   });
 
-  // Stagger animation definitions
-  const containerVariants = {
-    hidden: {},
-    visible: {
-      transition: {
-        staggerChildren: 0.1
-      }
+  // Dynamic filter logic
+  const filteredProducts = products.filter(p => {
+    if (p.status !== "ACTIVE") return false;
+
+    // Search query
+    const matchSearch = p.product_name.toLowerCase().includes(search.toLowerCase()) || 
+                        (p.sku && p.sku.toLowerCase().includes(search.toLowerCase())) ||
+                        (p.brand && p.brand.toLowerCase().includes(search.toLowerCase()));
+
+    // Category match (case-insensitive & trimmed safety checks)
+    const matchCategory = selectedCategory === "All" || 
+                          (p.category && p.category.trim().toLowerCase() === selectedCategory.trim().toLowerCase());
+
+    // Price Range based on Retail or Wholesale Mode
+    const priceVal = marketMode === "b2c" ? p.prices.RETAIL : (p.prices.DISTRIBUTOR || p.prices.RETAIL);
+    const minVal = priceMin ? parseFloat(priceMin) : 0;
+    const maxVal = priceMax ? parseFloat(priceMax) : Infinity;
+    const matchPrice = priceVal >= minVal && priceVal <= maxVal;
+
+    // Warehouse availability
+    const matchWh = selectedWarehouse === "All" || (Array.isArray(p.inventory) && p.inventory.some(inv => inv.warehouse_id === selectedWarehouse && inv.quantity > 0));
+
+    // Free shipping
+    const matchesShipping = !freeShippingOnly || priceVal > 25000;
+
+    return matchSearch && matchCategory && matchPrice && matchWh && matchesShipping;
+  });
+
+  const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const cartTotal = cart.reduce((sum, item) => {
+    const priceVal = marketMode === "b2c" ? item.product.prices.RETAIL : (item.product.prices.DISTRIBUTOR || item.product.prices.RETAIL);
+    return sum + priceVal * item.qty;
+  }, 0);
+
+  // Validate Minimum Wholesale Qty (MOQ) for all items in the B2B cart
+  const b2bMinQtyError = marketMode === "b2b" && cart.some(item => item.qty < (item.product.min_wholesale_qty || 1));
+
+  const handleCheckout = () => {
+    if (b2bMinQtyError) {
+      alert("Please adjust quantities to meet the minimum wholesale requirements before checking out.");
+      return;
     }
+    // Redirection to Login
+    onGetStarted(marketMode === "b2b" ? "distributor" : "buyer");
   };
 
-  const itemVariants = shouldReduceMotion
-    ? { hidden: { opacity: 1, y: 0 }, visible: { opacity: 1, y: 0 } }
-    : {
-        hidden: { opacity: 0, y: 24 },
-        visible: {
-          opacity: 1,
-          y: 0,
-          transition: { type: "spring", stiffness: 100, damping: 15 }
-        }
-      };
+  const isGuest = !currentUser || currentUser.user_id === "guest";
 
   return (
-    <div className="min-h-screen bg-[#F8F9FC] text-[#0F172A] flex flex-col font-sans overflow-x-hidden relative selection:bg-[#4F46E5] selection:text-white">
+    <div className="min-h-screen bg-[#F4F5F8] text-[#0F172A] flex flex-col font-sans selection:bg-[#4F46E5] selection:text-white text-xs">
       
-      {/* Physics-based Scroll Progress Bar */}
-      <motion.div
-        className="fixed top-0 left-0 right-0 h-[3px] bg-[#4F46E5] z-[9999] origin-left"
-        style={{ scaleX }}
-      />
-
-      {/* Decorative background glows */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[85vw] h-[65vh] bg-gradient-to-b from-[#4F46E5]/5 via-[#38BDF8]/2 to-transparent rounded-full blur-[110px] pointer-events-none z-0" />
-
-      {/* Sticky Navigation Bar */}
-      <motion.header
-        initial={shouldReduceMotion ? { y: 0 } : { y: -100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className={`h-16 border-b border-[#E2E8F0] flex items-center justify-between px-6 sm:px-16 z-50 sticky top-0 transition-all ${
-          isScrolled ? "bg-white/85 backdrop-blur-md shadow-xs" : "bg-white/70 backdrop-blur-md"
-        }`}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 bg-[#4F46E5] rounded-xl flex items-center justify-center text-white font-extrabold text-xl shadow-[0_4px_12px_rgba(79,70,229,0.2)] shrink-0"
-            style={{ fontFamily: "Outfit, sans-serif" }}
-          >
-            IQ
+      {/* AliExpress-Style Premium Header in Indigo Theme */}
+      <header className="sticky top-0 z-40 bg-[#4F46E5] text-white shadow-md">
+        {/* Top Info Ribbon */}
+        <div className="bg-[#3730A3] text-[10px] px-6 py-1.5 flex justify-between items-center tracking-wider text-white/90">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1"><Globe size={11} /> Shipping to Pakistan (PKR)</span>
+            <span>Welcome to CommerceIQ B2B & Retail Hub</span>
           </div>
-          <div>
-            <div
-              className="text-[#0F172A] font-extrabold text-base tracking-tight leading-none"
-              style={{ fontFamily: "Outfit, sans-serif" }}
+          <div className="flex items-center gap-4">
+            <span className="cursor-pointer hover:underline">Help & Contact</span>
+            <span className="cursor-pointer hover:underline">Seller Channel</span>
+          </div>
+        </div>
+
+        {/* Main Header bar */}
+        <div className="h-16 px-6 sm:px-16 flex items-center justify-between gap-6">
+          {/* Logo */}
+          <div className="flex items-center gap-2 cursor-pointer shrink-0" onClick={() => { setSelectedCategory("All"); setSearch(""); }}>
+            <div className="w-9 h-9 bg-white text-[#4F46E5] rounded-lg flex items-center justify-center font-black text-lg shadow-md">
+              IQ
+            </div>
+            <div>
+              <div className="font-extrabold text-base tracking-tight leading-none">CommerceIQ</div>
+              <div className="text-[8px] text-white/80 font-bold tracking-widest uppercase mt-0.5">Wholesale & Retail</div>
+            </div>
+          </div>
+
+          {/* Centered Search Bar */}
+          <div className="flex-1 max-w-xl relative flex items-center">
+            <input
+              type="text"
+              placeholder="Search by product name, SKU code, or brand..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-4 pr-12 py-2 rounded-full border-0 bg-white text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-[#3730A3] shadow-md placeholder:text-slate-400"
+            />
+            <button className="absolute right-1 w-9 h-7 bg-[#222222] hover:bg-[#333] text-white rounded-full flex items-center justify-center transition-colors">
+              <Search size={14} />
+            </button>
+          </div>
+
+          {/* Actions & Account Dropdown */}
+          <div className="flex items-center gap-6 shrink-0">
+            {/* Market Mode Selector Tabs */}
+            <div className="bg-white/10 p-0.5 rounded-full flex gap-0.5 border border-white/20">
+              <button
+                onClick={() => { setMarketMode("b2c"); clearCart(); }}
+                className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase transition-all ${marketMode === "b2c" ? "bg-white text-[#4F46E5] shadow-sm" : "text-white hover:bg-white/10"}`}
+              >
+                🛒 Retail
+              </button>
+              <button
+                onClick={() => { setMarketMode("b2b"); clearCart(); }}
+                className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase transition-all ${marketMode === "b2b" ? "bg-white text-[#4F46E5] shadow-sm" : "text-white hover:bg-white/10"}`}
+              >
+                🏢 Wholesale
+              </button>
+            </div>
+
+            {/* Auth Indicator */}
+            <div className="flex items-center gap-2 cursor-pointer group" onClick={() => onGetStarted(marketMode === "b2b" ? "distributor" : "buyer")}>
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shadow-xs">
+                {isGuest ? <LogIn size={14} /> : <UserCheck size={14} />}
+              </div>
+              <div className="hidden sm:block text-left">
+                <div className="text-[10px] text-white/80 leading-none">Hello, {isGuest ? "Guest" : currentUser.first_name}</div>
+                <div className="font-bold text-[11px] leading-tight mt-0.5">{isGuest ? "Sign In / Register" : "Go to Portal"}</div>
+              </div>
+            </div>
+
+            {/* Shopping Cart Trigger */}
+            <button
+              onClick={() => setCartOpen(true)}
+              className="relative p-2 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors border-0 text-white cursor-pointer"
             >
-              CommerceIQ
-            </div>
-            <div className="text-[8px] text-[#4F46E5] font-extrabold tracking-widest uppercase mt-0.5">
-              Inventory & Orders
-            </div>
+              <ShoppingCart size={16} />
+              {cartCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 text-slate-900 rounded-full flex items-center justify-center font-bold text-[9px] shadow-sm animate-pulse">
+                  {cartCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
+      </header>
 
-        {/* Desktop Navigation Links */}
-        <div className="hidden md:flex items-center gap-6">
-          <button
-            onClick={onGetStarted}
-            className="text-xs font-semibold text-[#64748B] hover:text-[#0F172A] transition-colors bg-transparent border-0 cursor-pointer relative py-1 group"
-          >
-            Sign In
-            <span className="absolute bottom-0 left-0 w-full h-[2px] bg-[#4F46E5] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-200 origin-left" />
-          </button>
-          <motion.button
-            whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
-            whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
-            onClick={onRegisterClick}
-            className="px-5 py-2.5 bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold rounded-full transition-all duration-200 shadow-sm cursor-pointer border-0"
-          >
-            Apply B2B Account
-          </motion.button>
-        </div>
+      {/* AliExpress Layout Grid */}
+      <main className="max-w-[1400px] mx-auto px-6 py-6 flex-1 grid grid-cols-1 md:grid-cols-4 gap-6 w-full">
+        
+        {/* Left Filter Sidebar */}
+        <aside className="md:col-span-1 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-6">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <span className="font-bold text-sm tracking-tight flex items-center gap-1.5"><SlidersHorizontal size={14} /> Filters & Specs</span>
+            <button 
+              onClick={() => { setSelectedCategory("All"); setPriceMin(""); setPriceMax(""); setSelectedWarehouse("All"); setFreeShippingOnly(false); }}
+              className="text-[10px] text-slate-500 hover:text-[#4F46E5] hover:underline bg-transparent border-0 cursor-pointer"
+            >
+              Reset All
+            </button>
+          </div>
 
-        {/* Hamburger Menu Icon (Mobile) */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden p-2 text-[#64748B] hover:text-[#0F172A] transition-colors bg-transparent border-0 cursor-pointer"
-        >
-          {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </motion.header>
-
-      {/* Mobile Menu Drawer */}
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden flex justify-end">
-          <div className="fixed inset-0 bg-black/20 backdrop-blur-xs" onClick={() => setIsMobileMenuOpen(false)} />
-          <motion.div
-            initial={shouldReduceMotion ? { x: 0 } : { x: "100%" }}
-            animate={{ x: 0 }}
-            transition={{ type: "tween", duration: 0.3 }}
-            className="relative w-64 max-w-sm bg-white h-full shadow-xl flex flex-col p-6 gap-6 z-50 border-l border-[#E2E8F0]"
-          >
-            <div className="flex justify-end">
-              <button
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 text-[#64748B] hover:text-[#0F172A] transition-colors bg-transparent border-0 cursor-pointer"
-              >
-                <X size={20} />
-              </button>
+          {/* Category List */}
+          <div>
+            <h4 className="font-bold text-slate-800 mb-2 uppercase tracking-wider text-[10px]">Product Categories</h4>
+            
+            {/* Category Search Input */}
+            <div className="relative mb-2.5 flex items-center">
+              <input
+                type="text"
+                placeholder="Search category..."
+                value={categorySearch}
+                onChange={(e) => setCategorySearch(e.target.value)}
+                className="w-full pl-2.5 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-[10px] focus:outline-none focus:border-[#4F46E5]"
+              />
+              <span className="absolute right-2.5 text-slate-400">
+                <Search size={11} />
+              </span>
             </div>
-            <div className="flex flex-col gap-4 mt-4">
-              <button
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  onGetStarted();
-                }}
-                className="text-left py-3 px-4 text-sm font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8F9FC] rounded-xl transition-all border-0 bg-transparent cursor-pointer"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  onRegisterClick();
-                }}
-                className="w-full text-center py-3 px-4 bg-[#4F46E5] hover:bg-[#4338CA] text-white text-sm font-bold rounded-full transition-all border-0 cursor-pointer shadow-sm"
-              >
-                Apply B2B Account
-              </button>
+
+            <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto pr-1 select-none">
+              {filteredCategories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`w-full text-left px-3 py-2 rounded-lg font-medium transition-colors border-0 cursor-pointer text-xs flex justify-between items-center ${selectedCategory === cat ? "bg-indigo-50 text-[#4F46E5]" : "bg-transparent text-slate-600 hover:bg-slate-50"}`}
+                >
+                  <span>{cat}</span>
+                  <ChevronRight size={12} className={selectedCategory === cat ? "text-[#4F46E5]" : "text-slate-400"} />
+                </button>
+              ))}
             </div>
-          </motion.div>
-        </div>
-      )}
+          </div>
 
-      {/* Hero Section */}
-      <section className="relative z-10 pt-20 pb-16 px-6 text-center max-w-4xl mx-auto flex flex-col items-center gap-6 mt-4">
-        {/* Animated Badge */}
-        <motion.div
-          initial={shouldReduceMotion ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.92 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.45, delay: 0.1, ease: "easeOut" }}
-          className="inline-flex items-center gap-2 bg-[#EEF2FF] border border-[#C7D2FE] px-4 py-1.5 rounded-full text-[10px] font-semibold text-[#4F46E5] uppercase tracking-widest"
-        >
-          <motion.div
-            animate={shouldReduceMotion ? {} : { opacity: [1, 0.6, 1] }}
-            transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-            className="text-amber-500 font-bold"
-          >
-            ★
-          </motion.div>
-          <span>Multi-Warehouse Inventory & PKR Ledger System</span>
-        </motion.div>
-
-        {/* Staggered Headline */}
-        <h1
-          className="text-4xl sm:text-[56px] font-black text-[#0F172A] leading-tight tracking-tight mt-1 flex flex-col items-center"
-          style={{ fontFamily: "Outfit, sans-serif" }}
-        >
-          <motion.span
-            initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="block text-[#0F172A]"
-          >
-            Warehouse Stock for
-          </motion.span>
-          <motion.span
-            initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.35 }}
-            className="block bg-gradient-to-r from-[#4F46E5] via-[#38BDF8] to-[#06B6D4] bg-clip-text text-transparent mt-1"
-            style={{
-              backgroundSize: "200% auto",
-              backgroundImage: "linear-gradient(to right, #4F46E5 0%, #38BDF8 50%, #06B6D4 100%)"
-            }}
-          >
-            B2B Businesses
-          </motion.span>
-        </h1>
-
-        {/* Subtext Paragraph */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
-          className="text-sm sm:text-base text-[#64748B] max-w-2xl leading-relaxed mt-2"
-        >
-          CommerceIQ tracks product quantities across multiple warehouses, checks payment deadlines, and logs mobile wallet and bank transfer payments.
-        </motion.p>
-
-        {/* Action Buttons */}
-        <motion.div
-          initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.65 }}
-          className="flex flex-col sm:flex-row gap-4 mt-4"
-        >
-          {/* Primary CTA */}
-          <motion.button
-            whileHover={shouldReduceMotion ? {} : { scale: 1.03, y: -2 }}
-            whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
-            onClick={onGetStarted}
-            className="group flex items-center justify-center gap-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold text-xs px-6 py-3.5 rounded-full transition-all duration-200 shadow-md hover:shadow-lg cursor-pointer border-0"
-          >
-            Launch Interactive Demo
-            <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform duration-200" />
-          </motion.button>
-
-          {/* Secondary CTA */}
-          <motion.button
-            whileHover={shouldReduceMotion ? {} : { scale: 1.03, backgroundColor: "#EEF2FF" }}
-            whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
-            onClick={onRegisterClick}
-            className="bg-white border border-[#E2E8F0] text-[#4F46E5] font-bold text-xs px-6 py-3.5 rounded-full transition-all cursor-pointer shadow-sm hover:border-[#C7D2FE]"
-          >
-            Register B2B Account
-          </motion.button>
-        </motion.div>
-      </section>
-
-      {/* Feature Cards Strip */}
-      <motion.section
-        variants={containerVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-60px" }}
-        className="relative z-10 max-w-5xl mx-auto px-6 py-12 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 w-full"
-      >
-        {[
-          {
-            icon: <Database size={16} />,
-            title: "Multi-Warehouse",
-            desc: "Stock updates across all warehouses."
-          },
-          {
-            icon: <Landmark size={16} />,
-            title: "Mobile Wallet Payments",
-            desc: "Instant payment confirmations."
-          },
-          {
-            icon: <TrendingUp size={16} />,
-            title: "Multiple Price Tiers",
-            desc: "Retail, Distributor, VIP pricing structures."
-          },
-          {
-            icon: <Shield size={16} />,
-            title: "Security Logging",
-            desc: "Every action is logged for safety."
-          }
-        ].map((feat, idx) => (
-          <motion.div
-            key={idx}
-            variants={itemVariants}
-            whileHover={shouldReduceMotion ? {} : { y: -4, shadow: "md" }}
-            className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs flex flex-col gap-3 hover:border-[#C7D2FE] transition-all"
-          >
-            <div className="w-9 h-9 rounded-xl bg-[#EEF2FF] text-[#4F46E5] flex items-center justify-center font-bold">
-              {feat.icon}
+          {/* Price Range */}
+          <div>
+            <h4 className="font-bold text-slate-800 mb-2.5 uppercase tracking-wider text-[10px]">Price Filter (PKR)</h4>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                placeholder="Min"
+                value={priceMin}
+                onChange={(e) => setPriceMin(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5]"
+              />
+              <span className="text-slate-400 font-bold">-</span>
+              <input
+                type="number"
+                placeholder="Max"
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5]"
+              />
             </div>
-            <h3 className="text-[16px] font-bold text-[#0F172A] mt-1" style={{ fontFamily: "Outfit, sans-serif" }}>
-              {feat.title}
-            </h3>
-            <p className="text-[14px] text-[#64748B] leading-relaxed">
-              {feat.desc}
+          </div>
+
+          {/* Warehouse Availability Filter */}
+          <div>
+            <h4 className="font-bold text-slate-800 mb-2.5 uppercase tracking-wider text-[10px]">Depot / Warehouse Location</h4>
+            <select
+              value={selectedWarehouse}
+              onChange={(e) => setSelectedWarehouse(e.target.value)}
+              className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs cursor-pointer focus:outline-none focus:border-[#4F46E5]"
+            >
+              <option value="All">All Registered Warehouses</option>
+              {warehouses.map(wh => (
+                <option key={wh.warehouse_id} value={wh.warehouse_id}>{wh.warehouse_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Toggle Rule Toggles */}
+          <div className="flex flex-col gap-2 pt-2">
+            <label className="flex items-center gap-2.5 text-slate-600 font-medium cursor-pointer">
+              <input
+                type="checkbox"
+                checked={freeShippingOnly}
+                onChange={(e) => setFreeShippingOnly(e.target.checked)}
+                className="rounded border-slate-300 text-[#4F46E5] focus:ring-[#4F46E5] cursor-pointer"
+              />
+              <span>Free Shipping Offers</span>
+            </label>
+          </div>
+
+          {/* B2B Onboarding info card */}
+          <div className="mt-4 bg-slate-50 border border-slate-100 rounded-xl p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-1.5 text-[#4F46E5] font-bold">
+              <Sparkles size={14} />
+              <span className="tracking-tight">B2B Wholesale Channel</span>
+            </div>
+            <p className="text-[10px] text-slate-500 leading-normal">
+              Register as a partner distributor to unlock credit ledgers, dynamic price tiers, and seed stock across Islamabad, Lahore, and Karachi depots.
             </p>
-          </motion.div>
-        ))}
-      </motion.section>
+            <button
+              onClick={() => onRegisterClick("distributor")}
+              className="mt-2 w-full py-2 bg-[#4F46E5] text-white font-bold text-[10px] rounded-lg border-0 cursor-pointer shadow-xs hover:bg-[#4338CA] transition-colors"
+            >
+              Become a Partner
+            </button>
+          </div>
+        </aside>
 
-      {/* "Designed for B2B Wholesale Commerce" Section */}
-      <section className="bg-white border-t border-b border-[#E2E8F0] py-16">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-60px" }}
-          variants={containerVariants}
-          className="relative z-10 max-w-4xl mx-auto px-6 text-center flex flex-col items-center gap-6"
-        >
-          <motion.h2
-            variants={itemVariants}
-            className="text-2xl sm:text-[32px] font-extrabold text-[#0F172A] tracking-tight"
-            style={{ fontFamily: "Outfit, sans-serif" }}
-          >
-            Designed for B2B Wholesale Commerce
-          </motion.h2>
-          <motion.p
-            variants={itemVariants}
-            className="text-sm text-[#64748B] max-w-2xl leading-relaxed"
-          >
-            Track stock levels, payment due dates, and user roles. No setup required.
-          </motion.p>
+        {/* Right Catalog Feed */}
+        <section className="md:col-span-3 flex flex-col gap-6">
+          {/* Banner Hero */}
+          <div className="relative bg-gradient-to-r from-[#1E293B] to-[#0F172A] rounded-2xl overflow-hidden p-8 text-white min-h-[160px] flex flex-col justify-center gap-2 shadow-sm">
+            <div className="absolute top-0 right-0 w-1/3 h-full bg-[#4F46E5]/20 rounded-l-full blur-[60px]" />
+            <span className="bg-[#4F46E5] text-[9px] font-extrabold uppercase px-2.5 py-1 rounded-full tracking-widest self-start">
+              {marketMode === "b2c" ? "B2C Retail Super Deals" : "B2B Wholesale Hub"}
+            </span>
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight mt-1" style={{ fontFamily: "Outfit, sans-serif" }}>
+              {marketMode === "b2c" ? "Premium Electronics at Retail Rates" : "Direct Factory Distributor Ledgers"}
+            </h2>
+            <p className="text-slate-400 max-w-xl text-[10px] leading-relaxed">
+              {marketMode === "b2c" 
+                ? "Get single unit items delivered immediately to your doorstep with certified secure checkouts." 
+                : "Unlock special commercial rates, customized bulk payment terms, and direct inventory warehousing options."}
+            </p>
+          </div>
 
-          {/* Secondary Supporting Grid */}
-          <motion.div
-            variants={containerVariants}
-            className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full mt-6 text-left"
-          >
+          {/* Product Cards Grid */}
+          {filteredProducts.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center flex flex-col items-center justify-center gap-3">
+              <ShoppingBag size={48} className="text-slate-300" />
+              <h3 className="font-bold text-slate-800 text-sm">No Products Found</h3>
+              <p className="text-slate-500 text-[11px]">We couldn't find any products matching your search filters.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredProducts.map(p => {
+                const totalStock = Array.isArray(p.inventory) ? p.inventory.reduce((sum, inv) => sum + inv.quantity, 0) : 0;
+                const isOutOfStock = totalStock === 0;
+
+                // Price selection
+                const retailPrice = p.prices.RETAIL;
+                const wholesalePrice = p.prices.DISTRIBUTOR || retailPrice;
+
+                return (
+                  <motion.div
+                    key={p.product_id}
+                    layout
+                    whileHover={{ y: -4, shadow: "md" }}
+                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col shadow-xs group"
+                  >
+                    {/* Image Box */}
+                    <div className="h-44 bg-slate-100 relative flex items-center justify-center p-4 border-b border-slate-100 overflow-hidden">
+                      <img
+                        src={p.image_url || "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=500&fit=crop&q=60"}
+                        alt={p.product_name}
+                        className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition-transform duration-300"
+                      />
+                      {isOutOfStock && (
+                        <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center">
+                          <span className="bg-slate-900 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">
+                            Out of Stock
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card Content */}
+                    <div className="p-4 flex-1 flex flex-col gap-2.5">
+                      {/* Category & Brand */}
+                      <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        <span>{p.category}</span>
+                        <span>{p.brand}</span>
+                      </div>
+
+                      {/* Name */}
+                      <h3 className="font-extrabold text-slate-800 hover:text-[#4F46E5] transition-colors line-clamp-2 cursor-pointer" onClick={() => setSelectedProduct(p)}>
+                        {p.product_name}
+                      </h3>
+
+
+                      {/* Warehouse Stock listing (for B2B view only) */}
+                      {marketMode === "b2b" && Array.isArray(p.inventory) && (
+                        <div className="bg-slate-50 rounded-lg p-2 flex flex-col gap-1 border border-slate-100 text-[10px]">
+                          <span className="font-bold text-slate-500 flex items-center gap-1"><Warehouse size={11} /> Depot Stock:</span>
+                          <div className="grid grid-cols-2 gap-1 font-semibold text-slate-700">
+                            {p.inventory.map(inv => (
+                              <span key={inv.warehouse_id} className={inv.quantity === 0 ? "text-slate-400" : "text-slate-800"}>
+                                {inv.city}: <span className="font-extrabold">{inv.quantity}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Prices & Action Row */}
+                      <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                        <div>
+                          {marketMode === "b2c" ? (
+                            <div>
+                              <div className="text-[15px] font-black text-[#4F46E5]" style={{ fontFamily: "Outfit, sans-serif" }}>
+                                {formatCurrency(retailPrice)}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="text-[15px] font-black text-[#0F172A]" style={{ fontFamily: "Outfit, sans-serif" }}>
+                                {formatCurrency(wholesalePrice)} <span className="text-[9px] text-slate-500 font-bold uppercase">Wholesale</span>
+                              </div>
+                              {p.min_wholesale_qty && (
+                                <div className="text-[9px] text-slate-500 font-semibold flex items-center gap-1 mt-0.5">
+                                  <Info size={10} className="text-red-500" /> MOQ: {p.min_wholesale_qty} Units
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Cart Trigger */}
+                        <button
+                          onClick={() => {
+                            addToCart(p.product_id);
+                            // If in B2B Mode, set the quantity to match MOQ
+                            if (marketMode === "b2b" && p.min_wholesale_qty > 1) {
+                              setTimeout(() => {
+                                updateCartQty(p.product_id, p.min_wholesale_qty - 1);
+                              }, 50);
+                            }
+                          }}
+                          disabled={isOutOfStock}
+                          className="px-4 py-2 bg-[#4F46E5] hover:bg-[#4338CA] disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-extrabold text-[10px] uppercase rounded-full shadow-sm cursor-pointer border-0 transition-colors"
+                        >
+                          Add to Cart
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* Product Details Drawer */}
+      <AnimatePresence>
+        {selectedProduct && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedProduct(null)}
+              className="fixed inset-0 bg-black z-50 cursor-pointer"
+            />
+            {/* Drawer */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed top-0 right-0 bottom-0 w-full max-w-lg bg-white z-50 shadow-2xl flex flex-col"
+            >
+              {/* Header */}
+              <div className="h-16 px-6 border-b border-slate-100 flex items-center justify-between">
+                <span className="font-extrabold text-slate-800 text-sm">Product Specifications</span>
+                <button
+                  onClick={() => setSelectedProduct(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-800 rounded-lg hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 text-xs text-slate-600">
+                {/* Image */}
+                <div className="h-56 bg-slate-50 rounded-2xl flex items-center justify-center p-4 border border-slate-100">
+                  <img
+                    src={selectedProduct.image_url || "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=500&fit=crop&q=60"}
+                    alt={selectedProduct.product_name}
+                    className="max-h-full max-w-full object-contain mix-blend-multiply"
+                  />
+                </div>
+
+                {/* Info titles */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-[10px] text-[#4F46E5] font-bold uppercase tracking-wider bg-indigo-50 self-start px-2 py-0.5 rounded">
+                    {selectedProduct.category}
+                  </span>
+                  <h2 className="text-base font-black text-slate-800 mt-1" style={{ fontFamily: "Outfit, sans-serif" }}>
+                    {selectedProduct.product_name}
+                  </h2>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-1.5 uppercase tracking-wider text-[10px]">Short Description</h4>
+                  <p className="leading-relaxed text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    {selectedProduct.description || "No product description provided."}
+                  </p>
+                </div>
+
+                {/* Stock per Warehouse breakdown */}
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-2 uppercase tracking-wider text-[10px] flex items-center gap-1"><Warehouse size={11} /> Warehouse Availability</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Array.isArray(selectedProduct.inventory) && selectedProduct.inventory.map(inv => (
+                      <div key={inv.warehouse_id} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center">
+                        <div>
+                          <div className="font-bold text-slate-800">{inv.warehouse_name}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{inv.city}, {inv.country}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-extrabold text-sm text-slate-800">{inv.quantity}</div>
+                          <div className="text-[10px] text-slate-400">Units</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Specs List */}
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-2 uppercase tracking-wider text-[10px]">Specifications Detail</h4>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                    {[
+                      { label: "SKU Reference", value: selectedProduct.sku || "N/A" },
+                      { label: "UPC Barcode", value: selectedProduct.barcode || "N/A" },
+                      { label: "Brand Origin", value: selectedProduct.brand || "N/A" },
+                      { label: "Product Unit", value: selectedProduct.unit || "PCS" },
+                      { label: "Unit Weight", value: selectedProduct.weight ? `${selectedProduct.weight} kg` : "N/A" },
+                      { label: "Max Discount Allowed", value: selectedProduct.max_discount ? `${selectedProduct.max_discount}%` : "0%" },
+                      { label: "Min Wholesale MOQ", value: selectedProduct.min_wholesale_qty ? `${selectedProduct.min_wholesale_qty} Units` : "1 Unit" }
+                    ].map((spec, index) => (
+                      <div key={index} className="flex justify-between items-center px-4 py-2.5">
+                        <span className="font-semibold text-slate-400">{spec.label}</span>
+                        <span className="font-bold text-slate-700">{spec.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Drawer Footer Actions */}
+              <div className="p-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase font-semibold">Price Estimate</div>
+                  <div className="text-lg font-black text-[#4F46E5]" style={{ fontFamily: "Outfit, sans-serif" }}>
+                    {formatCurrency(marketMode === "b2c" ? selectedProduct.prices.RETAIL : (selectedProduct.prices.DISTRIBUTOR || selectedProduct.prices.RETAIL))}
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      addToCart(selectedProduct.product_id);
+                      if (marketMode === "b2b" && selectedProduct.min_wholesale_qty > 1) {
+                        setTimeout(() => {
+                          updateCartQty(selectedProduct.product_id, selectedProduct.min_wholesale_qty - 1);
+                        }, 50);
+                      }
+                      setSelectedProduct(null);
+                    }}
+                    className="px-6 py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-extrabold text-[11px] uppercase rounded-full shadow-md cursor-pointer border-0 transition-colors"
+                  >
+                    Add To Cart
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* AliExpress-Style Cart Drawer */}
+      <AnimatePresence>
+        {cartOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setCartOpen(false)}
+              className="fixed inset-0 bg-black z-50 cursor-pointer"
+            />
+            {/* Drawer */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-white z-50 shadow-2xl flex flex-col"
+            >
+              {/* Header */}
+              <div className="h-16 px-6 border-b border-slate-100 flex items-center justify-between">
+                <span className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5"><ShoppingCart size={15} /> Your Shopping Cart ({cartCount})</span>
+                <button
+                  onClick={() => setCartOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-800 rounded-lg hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Items List */}
+              <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+                {cart.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-400">
+                    <ShoppingCart size={40} className="text-slate-300" />
+                    <span>Your cart is empty.</span>
+                  </div>
+                ) : (
+                  cart.map(item => {
+                    const priceVal = marketMode === "b2c" ? item.product.prices.RETAIL : (item.product.prices.DISTRIBUTOR || item.product.prices.RETAIL);
+                    const moq = marketMode === "b2b" ? (item.product.min_wholesale_qty || 1) : 1;
+                    const belowMoq = item.qty < moq;
+
+                    return (
+                      <div key={item.product.product_id} className={`flex flex-col gap-2 p-3.5 border rounded-xl transition-colors ${belowMoq ? "bg-red-50 border-red-200" : "bg-white border-slate-200"}`}>
+                        <div className="flex gap-3">
+                          {/* Image Thumbnail */}
+                          <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-center shrink-0 p-1.5">
+                            <img src={item.product.image_url} alt={item.product.product_name} className="max-h-full max-w-full object-contain" />
+                          </div>
+                          {/* Product Details */}
+                          <div className="flex-1 flex flex-col gap-1 min-w-0">
+                            <h4 className="font-bold text-slate-800 line-clamp-1">{item.product.product_name}</h4>
+                            <span className="text-[10px] text-slate-400">SKU: {item.product.sku}</span>
+                            <div className="font-extrabold text-slate-800 mt-1">{formatCurrency(priceVal)}</div>
+                          </div>
+                        </div>
+
+                        {/* MOQ Validation Alerts */}
+                        {belowMoq && (
+                          <div className="flex items-center gap-1.5 text-red-600 font-bold text-[9px] bg-red-100/55 p-1.5 rounded-lg border border-red-200/50">
+                            <AlertTriangle size={11} />
+                            <span>Wholesale Minimum MOQ is {moq} units! (Current: {item.qty})</span>
+                          </div>
+                        )}
+
+                        {/* Qty Adjustment Row */}
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[10px] text-slate-400">Change Quantity:</span>
+                          <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                            <button
+                              onClick={() => updateCartQty(item.product.product_id, -1)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:bg-white transition-colors border-0 bg-transparent cursor-pointer"
+                            >
+                              <Minus size={10} />
+                            </button>
+                            <span className="w-8 text-center font-extrabold text-slate-800 text-[11px]">{item.qty}</span>
+                            <button
+                              onClick={() => updateCartQty(item.product.product_id, 1)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:bg-white transition-colors border-0 bg-transparent cursor-pointer"
+                            >
+                              <Plus size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Cart Drawer Footer */}
+              {cart.length > 0 && (
+                <div className="p-6 border-t border-slate-100 bg-slate-50 flex flex-col gap-4">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-500">Estimated Total:</span>
+                    <span className="text-base font-black text-[#4F46E5]" style={{ fontFamily: "Outfit, sans-serif" }}>
+                      {formatCurrency(cartTotal)}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleCheckout}
+                    disabled={b2bMinQtyError}
+                    className="w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-extrabold text-xs uppercase rounded-full shadow-md cursor-pointer border-0 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>Proceed to Checkout</span>
+                    <ArrowRight size={13} />
+                  </button>
+                  <button
+                    onClick={clearCart}
+                    className="w-full py-2 bg-transparent text-slate-400 hover:text-red-500 font-semibold text-[10px] uppercase cursor-pointer border-0 hover:underline"
+                  >
+                    Clear All Cart Items
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* AliExpress-Style Homepage Grid Sections */}
+      <section className="bg-white border-t border-b border-slate-200 py-12 px-6 mt-8">
+        <div className="max-w-[1200px] mx-auto text-center flex flex-col gap-8">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-800" style={{ fontFamily: "Outfit, sans-serif" }}>
+            Why Partner with CommerceIQ?
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
               {
-                icon: <GitCompare size={16} className="text-[#4F46E5]" />,
-                title: "Warehouse Sync",
-                desc: "Automatic sync across all warehouse locations."
+                icon: <Warehouse className="text-[#4F46E5]" size={20} />,
+                title: "Flexible Depot Network",
+                desc: "Real-time sync across Karachi, Lahore, and Islamabad terminal locations."
               },
               {
-                icon: <FileText size={16} className="text-[#4F46E5]" />,
-                title: "PKR Ledgers",
-                desc: "Tracks your balance and outstanding payments."
+                icon: <Tag className="text-[#4F46E5]" size={20} />,
+                title: "Multi-Tier B2B Pricing",
+                desc: "Get factory-direct distributor, wholesale, VIP, and customized dealer rates."
               },
               {
-                icon: <Users size={16} className="text-[#4F46E5]" />,
-                title: "Role Policies",
-                desc: "Access tiers for admins, buyers, and distributors."
+                icon: <ShieldCheck className="text-[#4F46E5]" size={20} />,
+                title: "Safe Credit Lines",
+                desc: "Certified B2B ledger balances with secure payment Allocations."
               }
-            ].map((item, idx) => (
-              <motion.div
-                key={idx}
-                variants={itemVariants}
-                className="bg-[#F8F9FC] border border-[#E2E8F0] rounded-xl p-5 flex flex-col gap-2 hover:border-[#C7D2FE] transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded bg-[#EEF2FF] flex items-center justify-center shrink-0">
-                    {item.icon}
-                  </div>
-                  <h4 className="text-xs font-bold text-[#0F172A]" style={{ fontFamily: "Outfit, sans-serif" }}>
-                    {item.title}
-                  </h4>
+            ].map((card, idx) => (
+              <div key={idx} className="bg-[#F8F9FC] border border-slate-200 rounded-2xl p-6 flex flex-col items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+                  {card.icon}
                 </div>
-                <p className="text-[11px] text-[#64748B] leading-relaxed">
-                  {item.desc}
-                </p>
-              </motion.div>
+                <h4 className="font-extrabold text-slate-800 text-sm mt-1">{card.title}</h4>
+                <p className="text-slate-500 text-[11px] leading-relaxed">{card.desc}</p>
+              </div>
             ))}
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       </section>
 
-      {/* Footer */}
-      <footer className="bg-[#F8F9FC] py-8 border-t border-[#E2E8F0]">
-        <div className="max-w-4xl mx-auto px-6 flex flex-col items-center gap-4">
-          {/* Footer Minimal Links */}
-          <div className="flex items-center gap-6 text-xs text-[#64748B]">
-            <a href="#" className="hover:text-[#0F172A] transition-colors font-medium">Products</a>
-            <a href="#" className="hover:text-[#0F172A] transition-colors font-medium">Company</a>
-            <a href="#" className="hover:text-[#0F172A] transition-colors font-medium">Legal</a>
+      {/* Minimal Footer */}
+      <footer className="bg-slate-900 text-slate-400 py-10 px-6 mt-auto">
+        <div className="max-w-[1200px] mx-auto flex flex-col items-center gap-4 text-center">
+          <div className="flex gap-6 text-[11px] font-semibold text-slate-300">
+            <a href="#" className="hover:text-white transition-colors">Products</a>
+            <a href="#" className="hover:text-white transition-colors">Company</a>
+            <a href="#" className="hover:text-white transition-colors">Legal Terms</a>
           </div>
-          {/* Copyright */}
-          <p className="text-[11px] text-[#64748B] text-center leading-normal">
-            © 2026 CommerceIQ. Created for B2B Inventory Management & Ledgers.
+          <p className="text-[10px] text-slate-500 leading-normal">
+            © 2026 CommerceIQ. Created for B2B Inventory Management & Ledgers. PKR.
           </p>
         </div>
       </footer>
 
-      {/* Embedded CSS for shimmer animation */}
-      <style>{`
-        @keyframes shimmer {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
-        }
-        .animate-shimmer {
-          animation: shimmer 5s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   );
 }

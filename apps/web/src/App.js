@@ -11,13 +11,18 @@ export default function App() {
   const [appState, setAppState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const page = params.get("page");
-    if (page) return page;
+    if (page) {
+      if (page === "admin") return "login";
+      return page;
+    }
     return localStorage.getItem("ciq_appState") || "landing";
   });
   const [portal, setPortal] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const port = params.get("portal");
+    const page = params.get("page");
     if (port) return port;
+    if (page === "admin") return "admin";
     return localStorage.getItem("ciq_portal") || "buyer";
   });
 
@@ -64,7 +69,7 @@ export default function App() {
       localStorage.setItem("ciq_appState", appState);
       const params = new URLSearchParams(window.location.search);
       params.set("page", appState);
-      if (appState === "portal") {
+      if (appState === "portal" || appState === "login" || appState === "register") {
         params.set("portal", portal);
       } else {
         params.delete("portal");
@@ -77,8 +82,12 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
-      const page = params.get("page") || "landing";
-      const port = params.get("portal") || "buyer";
+      let page = params.get("page") || "landing";
+      let port = params.get("portal") || "buyer";
+      if (page === "admin") {
+        page = "login";
+        port = "admin";
+      }
       setAppState(page);
       setPortal(port);
     };
@@ -100,14 +109,29 @@ export default function App() {
     appState === "landing" && /* @__PURE__ */ jsx(
       LandingPage,
       {
-        onGetStarted: () => setAppState("login"),
-        onRegisterClick: () => setAppState("register")
+        onGetStarted: (selectedPortal) => {
+          setPortal(selectedPortal);
+          setAppState("login");
+          const params = new URLSearchParams(window.location.search);
+          params.set("page", "login");
+          params.set("portal", selectedPortal);
+          window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+        },
+        onRegisterClick: (selectedPortal) => {
+          setPortal(selectedPortal);
+          setAppState("register");
+          const params = new URLSearchParams(window.location.search);
+          params.set("page", "register");
+          params.set("portal", selectedPortal);
+          window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+        }
       }
     ),
     appState === "login" && /* @__PURE__ */ jsx(
       LoginPage,
       {
         initialMode: "login",
+        portal,
         onLogin: handleLogin,
         onBackToLanding: () => setAppState("landing")
       }
@@ -116,6 +140,7 @@ export default function App() {
       LoginPage,
       {
         initialMode: "register",
+        portal,
         onLogin: handleLogin,
         onBackToLanding: () => setAppState("landing")
       }
