@@ -211,15 +211,16 @@ function mergeSpecsIntoArgs(args, specs) {
 async function handleLocalFallback(pool, message, attached_image, res) {
   const specs = extractSpecsFromMessage(message);
   
-  const hasStock = specs.stock !== undefined || specs.karachi_stock !== undefined || specs.lahore_stock !== undefined;
-  const hasPrice = specs.price !== undefined || specs.distributor_price !== undefined;
+  if (!specs.name) {
+    if (specs.brand && specs.sku) {
+      specs.name = `${specs.brand} ${specs.sku}`;
+    } else if (specs.sku) {
+      specs.name = specs.sku;
+    }
+  }
 
-  if (specs.name && specs.category && hasPrice && hasStock) {
+  if (specs.name) {
     const args = {
-      name: specs.name,
-      category: specs.category,
-      price: specs.price || 0,
-      stock: specs.stock || 0,
       ...specs
     };
 
@@ -232,7 +233,7 @@ async function handleLocalFallback(pool, message, attached_image, res) {
       return res.json({
         success: true,
         action_executed: 'createProduct',
-        ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}. *(Local fallback)*`,
+        ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}. *(Local fallback)*`,
         product: newProduct
       });
     } catch (err) {
@@ -248,6 +249,46 @@ async function handleLocalFallback(pool, message, attached_image, res) {
   });
 }
 
+async function handleAnalyticalQuery(pool, sqlQuery) {
+  const cleanQuery = sqlQuery.trim().toUpperCase();
+  
+  const forbiddenKeywords = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'TRUNCATE', 'CREATE', 'GRANT', 'REVOKE', 'SCHEMA', 'DATABASE', 'TABLE'];
+  const hasForbidden = forbiddenKeywords.some(keyword => {
+    const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+    return regex.test(cleanQuery);
+  });
+  
+  if (!cleanQuery.startsWith('SELECT') && !cleanQuery.startsWith('WITH')) {
+    return '❌ Security Access Denied: Query must be a read-only SELECT statement.';
+  }
+  
+  if (hasForbidden) {
+    return '❌ Security Access Denied: Modifying database keywords detected in query.';
+  }
+  
+  if (/\b(users|credentials|passwords|env|secrets)\b/i.test(cleanQuery)) {
+    return '❌ Security Access Denied: Access to sensitive system user information tables is strictly blocked.';
+  }
+  
+  const result = await pool.query(sqlQuery);
+  if (result.rows.length === 0) {
+    return 'No records found matching query criteria.';
+  }
+  
+  const headers = Object.keys(result.rows[0]);
+  const mdHeader = '| ' + headers.join(' | ') + ' |\n| ' + headers.map(() => '---').join(' | ') + ' |';
+  const mdRows = result.rows.map(row => {
+    return '| ' + headers.map(h => {
+      const val = row[h];
+      if (val instanceof Date) return val.toISOString();
+      if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+      return val !== null && val !== undefined ? String(val) : 'null';
+    }).join(' | ') + ' |';
+  }).join('\n');
+  
+  return `### 📊 Analytical Report\n\n${mdHeader}\n${mdRows}`;
+}
+
 function registerCopilotRoutes(app, pool) {
   app.post('/api/copilot/chat', async (req, res) => {
     const { message, history, attached_image } = req.body;
@@ -256,6 +297,25 @@ function registerCopilotRoutes(app, pool) {
     }
 
     const lowerMsg = message.toLowerCase().trim();
+
+    // 0. Sensitive environment/password queries guardrail
+    const SENSITIVE_KEYWORDS = [
+      'password', 'passwords', 'env', 'envs', 'secret', 'secrets', 'credential', 'credentials', 
+      'token', 'tokens', 'key', 'keys', 'database_url', 'connectionstring',
+      'port', 'ports', 'config', 'configs', 'process.env', 'leak', 'hack', 'exploit', 'bypass'
+    ];
+    const isSensitive = SENSITIVE_KEYWORDS.some(kw => {
+      const regex = new RegExp(`\\b${kw}\\b`, 'i');
+      return regex.test(lowerMsg);
+    });
+    if (isSensitive) {
+      return res.json({
+        success: true,
+        ai_message: `❌ Security Block: Access to environment variables, system passwords, or sensitive platform configurations is strictly prohibited.`
+      });
+    }
+
+
 
     // 1. Simple greetings
     const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/i.test(lowerMsg);
@@ -397,12 +457,12 @@ function registerCopilotRoutes(app, pool) {
                   parameters: {
                     type: 'object',
                     properties: {
-                      identifier: { type: 'string', description: 'Product Name or SKU to update' },
+                      identifier: { type: 'string', description: 'Product name or SKU to update. Strictly exclude any prices, numbers, or update keywords from this identifier (e.g. if the user says "update price of Samsung ssd 25000", the identifier is "Samsung ssd").' },
                       new_name: { type: 'string' },
                       new_category: { type: 'string' },
                       new_brand: { type: 'string' },
-                      new_price: { type: 'number', description: 'New buyer/retail price' },
-                      new_distributor_price: { type: 'number', description: 'New wholesale price' },
+                      new_price: { type: 'number', description: 'New retail / buyer price to set' },
+                      new_distributor_price: { type: 'number', description: 'New distributor, wholesale, or agent price to set (e.g. 25000 if user says "25000 for the distributor").' },
                       stock_adjustment: { type: 'integer', description: 'Amount to add/subtract from stock' }
                     },
                     required: ['identifier']
@@ -443,6 +503,20 @@ function registerCopilotRoutes(app, pool) {
                     required: ['action_type']
                   }
                 }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'runAnalyticalQuery',
+                  description: 'Executes a read-only database query to answer analytical questions, statistics, summaries, counts, and reports. Do NOT use this for updating, deleting, inserting, or modifying data.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      sql_query: { type: 'string', description: 'A valid read-only SELECT SQL statement. Only reference tables: products, orders, stock_movements, and audit_logs. Do NOT use modifying commands.' }
+                    },
+                    required: ['sql_query']
+                  }
+                }
               }
             ],
             tool_choice: 'auto'
@@ -467,7 +541,7 @@ function registerCopilotRoutes(app, pool) {
               return res.json({
                 success: true,
                 action_executed: 'createProduct',
-                ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}. *(Local Ollama Model: ${modelName})*`,
+                ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}. *(Local Ollama Model: ${modelName})*`,
                 product: newProduct
               });
             } else if (toolCall.function.name === 'deleteProduct') {
@@ -519,6 +593,23 @@ function registerCopilotRoutes(app, pool) {
               } catch (err) {
                 console.error("Error in readProductData:", err);
                 return res.json({ success: true, ai_message: `❌ Failed to read product data: ${err.message}` });
+              }
+            } else if (toolCall.function.name === 'runAnalyticalQuery') {
+              let args;
+              try {
+                args = JSON.parse(toolCall.function.arguments);
+              } catch (e) {
+                return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
+              }
+              try {
+                const reportMsg = await handleAnalyticalQuery(pool, args.sql_query);
+                return res.json({
+                  success: true,
+                  action_executed: 'runAnalyticalQuery',
+                  ai_message: reportMsg + `\n\n*(Local Ollama Model: ${modelName})*`
+                });
+              } catch (err) {
+                return res.json({ success: true, ai_message: `❌ Query execution error: ${err.message}` });
               }
             }
           }
@@ -625,7 +716,7 @@ function registerCopilotRoutes(app, pool) {
             return res.json({
               success: true,
               action_executed: 'createProduct',
-              ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}.`,
+              ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
               product: newProduct
             });
           }
@@ -726,7 +817,7 @@ function registerCopilotRoutes(app, pool) {
             return res.json({
               success: true,
               action_executed: 'createProduct',
-              ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}.`,
+              ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
               product: newProduct
             });
           }
@@ -807,7 +898,7 @@ function registerCopilotRoutes(app, pool) {
             return res.json({
               success: true,
               action_executed: 'createProduct',
-              ai_message: `✅ Created: **${args.name}** (${args.category}). Price: Rs ${args.price.toLocaleString()}, Stock: ${args.stock}. SKU: ${newProduct.sku}.`,
+              ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
               product: newProduct
             });
           }
