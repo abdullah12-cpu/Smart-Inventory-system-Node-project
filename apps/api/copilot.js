@@ -619,19 +619,44 @@ function formatOrdersTable(rows, title) {
 }
 
 async function handleManageOrders(pool, args, message) {
-  const action = args.action_type;
+  let action = args.action_type;
+  let identifier = args.identifier || '';
+  
   // Parse order type: B2C = buyer/retail, B2B = distributor/wholesale
-  const orderType = args.order_type || null;
+  let orderType = args.order_type || null;
+  if (!orderType && message) {
+    const lowerMsg = message.toLowerCase();
+    const isBuyer = /\b(buyer|b2c|retail|customer)\b/i.test(lowerMsg);
+    const isDistributor = /\b(distributor|b2b|wholesale)\b/i.test(lowerMsg);
+    if (isBuyer) orderType = 'B2C';
+    else if (isDistributor) orderType = 'B2B';
+  }
   const typeLabel = orderType === 'B2C' ? ' (Buyers / B2C)' : orderType === 'B2B' ? ' (Distributors / B2B)' : '';
+
+  // Intercept invalid 'find' tool calls and redirect to by_status if status keywords are detected in the query
+  if (action === 'find') {
+    const isBadId = !identifier || identifier.trim() === '' || identifier.toLowerCase() === 'undefined';
+    const statusMatch = message ? message.toLowerCase().match(/\b(pending|approved|rejected|shipped|cancelled|completed)\b/i) : null;
+    
+    if (isBadId || statusMatch) {
+      if (statusMatch) {
+        const matchedStatus = statusMatch[1].toUpperCase();
+        const rows = await getOrdersByStatusFromDb(pool, matchedStatus, orderType);
+        return formatOrdersTable(rows, `📊 ${matchedStatus} Orders${typeLabel}`);
+      } else if (isBadId) {
+        return `❌ Please specify a valid Order ID or Order Number to search.`;
+      }
+    }
+  }
 
   if (action === 'list') {
     const rows = await listOrdersFromDb(pool, args.limit || 20, orderType);
     return formatOrdersTable(rows, `📋 Recent Orders${typeLabel} (Last ${args.limit || 20})`);
   }
   if (action === 'find') {
-    const rows = await getOrderByIdFromDb(pool, args.identifier || '');
-    if (rows.length === 0) return `❌ No order found matching: "${args.identifier}"`;
-    return formatOrdersTable(rows, `🔍 Order Search: "${args.identifier}"`);
+    const rows = await getOrderByIdFromDb(pool, identifier);
+    if (rows.length === 0) return `❌ No order found matching: "${identifier}"`;
+    return formatOrdersTable(rows, `🔍 Order Search: "${identifier}"`);
   }
   if (action === 'by_status') {
     const rows = await getOrdersByStatusFromDb(pool, args.status || 'PENDING', orderType);

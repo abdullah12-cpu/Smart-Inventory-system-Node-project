@@ -374,6 +374,9 @@ async function listOrdersFromDb(pool, limit = 20, orderType = null) {
 }
 
 async function getOrderByIdFromDb(pool, identifier) {
+  if (!identifier || identifier.trim() === '' || identifier.toLowerCase() === 'undefined') {
+    return [];
+  }
   const res = await pool.query(
     `SELECT * FROM orders WHERE order_id ILIKE $1 OR order_number ILIKE $1 LIMIT 5`,
     [`%${identifier}%`]
@@ -391,6 +394,9 @@ async function getOrdersByStatusFromDb(pool, status, orderType = null) {
 }
 
 async function getOrdersByCustomerFromDb(pool, customer, orderType = null) {
+  if (!customer || customer.trim() === '' || customer.toLowerCase() === 'undefined') {
+    return [];
+  }
   const typeFilter = orderType ? `AND UPPER(order_type) = '${orderType.toUpperCase()}'` : '';
   const res = await pool.query(
     `SELECT * FROM orders WHERE customer_email ILIKE $1 ${typeFilter} ORDER BY id DESC LIMIT 20`,
@@ -500,6 +506,9 @@ async function getOverdueOrdersFromDb(pool, days = 3, orderType = null) {
 }
 
 async function getOrdersByProductFromDb(pool, productName) {
+  if (!productName || productName.trim() === '' || productName.toLowerCase() === 'undefined') {
+    return [];
+  }
   const res = await pool.query(
     `SELECT o.order_id, o.order_number, o.status, o.total_amount, o.customer_email, o.order_date
      FROM orders o
