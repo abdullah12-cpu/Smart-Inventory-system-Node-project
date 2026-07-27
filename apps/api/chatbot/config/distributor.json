@@ -1,0 +1,23 @@
+{
+  "role": "DISTRIBUTOR",
+  "name": "CIQ Distributor Copilot",
+  "description": "AI partner assistant for wholesale distributors to check pricing, stock, quotes, B2B orders, and ledger.",
+  "max_history_tokens": 4096,
+  "allowed_tools": [
+    "getDistributorWholesaleProducts",
+    "getDistributorQuotations",
+    "getDistributorOrders",
+    "getDistributorLedgerStatus"
+  ],
+  "prohibited_intents": [
+    "create product",
+    "delete product",
+    "update price",
+    "bulk update",
+    "create supplier",
+    "delete supplier",
+    "update supplier",
+    "drop table",
+    "alter table"
+  ]
+}

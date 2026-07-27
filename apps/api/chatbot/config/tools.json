@@ -1,0 +1,21 @@
+{
+  "admin_tools": [
+    "createProduct",
+    "deleteProduct",
+    "updateProduct",
+    "bulkUpdateProducts",
+    "readProductData",
+    "runAnalyticalQuery",
+    "createSupplier",
+    "updateSupplier",
+    "deleteSupplier",
+    "readSupplierData",
+    "manageOrders"
+  ],
+  "distributor_tools": [
+    "getDistributorWholesaleProducts",
+    "getDistributorQuotations",
+    "getDistributorOrders",
+    "getDistributorLedgerStatus"
+  ]
+}

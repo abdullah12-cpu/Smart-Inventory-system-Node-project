@@ -1,0 +1,27 @@
+{
+  "role": "ADMIN",
+  "name": "CIQ Admin Copilot",
+  "description": "AI catalog, inventory, supplier, and database analytical administration assistant.",
+  "max_history_tokens": 4096,
+  "allowed_tools": [
+    "createProduct",
+    "deleteProduct",
+    "updateProduct",
+    "bulkUpdateProducts",
+    "readProductData",
+    "runAnalyticalQuery",
+    "createSupplier",
+    "updateSupplier",
+    "deleteSupplier",
+    "readSupplierData",
+    "manageOrders"
+  ],
+  "prohibited_intents": [
+    "my quotation",
+    "request quote",
+    "place b2b order",
+    "distributor credit",
+    "my ledger statement",
+    "partner ledger"
+  ]
+}
