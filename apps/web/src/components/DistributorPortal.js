@@ -648,9 +648,12 @@ export default function DistributorPortal({ onLogout }) {
           "a",
           {
             href: "?tab=catalog",
-            target: "_blank",
-            rel: "noopener noreferrer",
-            onClick: () => setActiveTab("catalog"),
+            onClick: (e) => {
+              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab("catalog");
+              }
+            },
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "catalog" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
@@ -669,9 +672,12 @@ export default function DistributorPortal({ onLogout }) {
           "a",
           {
             href: "?tab=quotations",
-            target: "_blank",
-            rel: "noopener noreferrer",
-            onClick: () => setActiveTab("quotations"),
+            onClick: (e) => {
+              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab("quotations");
+              }
+            },
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "quotations" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
@@ -690,9 +696,12 @@ export default function DistributorPortal({ onLogout }) {
           "a",
           {
             href: "?tab=orders",
-            target: "_blank",
-            rel: "noopener noreferrer",
-            onClick: () => setActiveTab("orders"),
+            onClick: (e) => {
+              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab("orders");
+              }
+            },
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "orders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
@@ -712,9 +721,12 @@ export default function DistributorPortal({ onLogout }) {
           "a",
           {
             href: "?tab=ledger",
-            target: "_blank",
-            rel: "noopener noreferrer",
-            onClick: () => setActiveTab("ledger"),
+            onClick: (e) => {
+              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab("ledger");
+              }
+            },
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "ledger" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
@@ -733,9 +745,12 @@ export default function DistributorPortal({ onLogout }) {
           "a",
           {
             href: "?tab=reminders",
-            target: "_blank",
-            rel: "noopener noreferrer",
-            onClick: () => setActiveTab("reminders"),
+            onClick: (e) => {
+              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab("reminders");
+              }
+            },
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "reminders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
@@ -754,9 +769,12 @@ export default function DistributorPortal({ onLogout }) {
           "a",
           {
             href: "?tab=profile",
-            target: "_blank",
-            rel: "noopener noreferrer",
-            onClick: () => setActiveTab("profile"),
+            onClick: (e) => {
+              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab("profile");
+              }
+            },
             className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "profile" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [

@@ -64,10 +64,11 @@ function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldRed
     "a",
     {
       href: href,
-      target: "_blank",
-      rel: "noopener noreferrer",
       onClick: (e) => {
-        setActiveTab(id);
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+          e.preventDefault();
+          setActiveTab(id);
+        }
       },
       className: `sidebar-link w-full text-left border-0 bg-transparent relative flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold transition-colors duration-200 cursor-pointer overflow-hidden no-underline ${
         isActive ? "text-white" : "text-[#94A3B8] hover:text-white"
