@@ -1036,13 +1036,6 @@ export default function AdminPortal({ onLogout }) {
                             color: "text-[#4F46E5]"
                           },
                           {
-                            label: "High Reliability",
-                            val: suppliers.filter(
-                              (s) => s.reliability_score >= 85
-                            ).length,
-                            color: "text-emerald-600"
-                          },
-                          {
                             label: "Filtered",
                             val: filteredSuppliers.length,
                             color: "text-indigo-600 font-bold"
@@ -2789,43 +2782,67 @@ export default function AdminPortal({ onLogout }) {
                         ] }),
                         /* @__PURE__ */ jsxs("div", { children: [
                           /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-slate-800", children: "Welcome Saif! 👋" }),
-                          /* @__PURE__ */ jsx("p", { className: "text-[11px] text-slate-500 mt-1 max-w-[85%] mx-auto leading-relaxed", children: "I can help you create, update, and audit products in your catalog instantly. Let's do something amazing!" })
+                          /* @__PURE__ */ jsx("p", { className: "text-[11px] text-slate-500 mt-1 max-w-[85%] mx-auto leading-relaxed", children: "I can help you manage products and search, onboard, or query suppliers in your vendor directory instantly. Let's do something amazing!" })
                         ] }),
-                        /* @__PURE__ */ jsxs("div", { className: "w-full space-y-2 pt-2 text-left", children: [
+                        /* @__PURE__ */ jsxs("div", { className: "w-full space-y-2 pt-2 text-left max-h-52 overflow-y-auto pr-1", children: [
                           /* @__PURE__ */ jsx("p", { className: "text-[9px] uppercase font-extrabold tracking-wider text-slate-400 pl-1", children: "Quick Action Templates" }),
                           /* @__PURE__ */ jsxs("button", {
                             type: "button",
                             onClick: () => setChatInput("Add product: Wireless Router X, category: Networking, price: 5400, stock: 50"),
-                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
                             children: [
                               /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📦" }),
                               /* @__PURE__ */ jsxs("div", { children: [
-                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Add New Product" }),
-                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Create a catalog item with name, category, and pricing" })
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Add New Product" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Create a catalog item with name, category, and pricing" })
                               ] })
                             ]
                           }),
                           /* @__PURE__ */ jsxs("button", {
                             type: "button",
-                            onClick: () => setChatInput("Show all products in the Networking category"),
-                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            onClick: () => setChatInput("Onboard supplier company: Cisco Systems, contact: John Doe, email: john@cisco.com, city: Karachi"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "🏢" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Onboard New Supplier" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Register a new supplier with name, contact, email, and location" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Search supplier: Cisco Systems"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
                             children: [
                               /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "🔍" }),
                               /* @__PURE__ */ jsxs("div", { children: [
-                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Filter Category Records" }),
-                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Retrieve details of all products inside a given group" })
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Search Suppliers" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Look up a specific supplier details from directory" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("List all suppliers"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📋" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "List Suppliers Directory" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Retrieve and show all onboarded vendors" })
                               ] })
                             ]
                           }),
                           /* @__PURE__ */ jsxs("button", {
                             type: "button",
                             onClick: () => setChatInput("Find all products with low stock levels in database"),
-                            className: "w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            className: "w-full bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
                             children: [
                               /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "⚠️" }),
                               /* @__PURE__ */ jsxs("div", { children: [
-                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Query Low Stock Alerts" }),
-                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Identify inventory currently running below threshold levels" })
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Query Low Stock Alerts" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Identify inventory currently running below threshold levels" })
                               ] })
                             ]
                           })
