@@ -1464,7 +1464,7 @@ export default function AdminPortal({ onLogout }) {
                               /* @__PURE__ */ jsxs(
                                     "select",
                                     {
-                                      className: "input-field py-2 text-xs",
+                                      className: "input-field h-[38px] py-0 text-xs bg-white text-slate-800",
                                       value: sCountry,
                                       onChange: (e) => setSCountry(e.target.value),
                                       children: [
