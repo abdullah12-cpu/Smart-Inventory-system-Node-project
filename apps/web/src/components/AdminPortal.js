@@ -921,13 +921,7 @@ export default function AdminPortal({ onLogout }) {
               /* @__PURE__ */ jsxs("p", {
                   className: "text-xs text-[#64748B] mt-1", children: [
                     suppliers.length,
-                    " active vendor relationships \xB7 Avg lead time",
-                    " ",
-                    Math.round(
-                      suppliers.reduce((a, s) => a + s.lead_time_days, 0) / (suppliers.length || 1)
-                    ),
-                    " ",
-                    "days"
+                    " active vendor relationships"
                   ]
                 })
                 ]
@@ -1058,45 +1052,6 @@ export default function AdminPortal({ onLogout }) {
                       className: "flex items-center gap-4 flex-wrap pt-3 border-t border-[#F1F5F9] text-xs", children: [
                   /* @__PURE__ */ jsxs("div", {
                         className: "flex items-center gap-1.5", children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Reliability:" }),
-                    /* @__PURE__ */ jsxs(
-                          "select",
-                          {
-                            value: supplierReliabilityFilter,
-                            onChange: (e) => setSupplierReliabilityFilter(e.target.value),
-                            className: "px-2.5 py-1.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                            children: [
-                          /* @__PURE__ */ jsx("option", { value: "all", children: "All Tiers" }),
-                          /* @__PURE__ */ jsx("option", { value: "excellent", children: "Excellent (>=90%)" }),
-                          /* @__PURE__ */ jsx("option", { value: "good", children: "Good (80-89%)" }),
-                          /* @__PURE__ */ jsx("option", { value: "average", children: "Average (70-79%)" }),
-                          /* @__PURE__ */ jsx("option", { value: "poor", children: "Needs Attention (<70%)" })
-                            ]
-                          }
-                        )
-                        ]
-                      }),
-                  /* @__PURE__ */ jsxs("div", {
-                        className: "flex items-center gap-1.5", children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Lead Time:" }),
-                    /* @__PURE__ */ jsxs(
-                          "select",
-                          {
-                            value: supplierLeadTimeFilter,
-                            onChange: (e) => setSupplierLeadTimeFilter(e.target.value),
-                            className: "px-2.5 py-1.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-[#4F46E5] transition-colors",
-                            children: [
-                          /* @__PURE__ */ jsx("option", { value: "all", children: "All Lead Times" }),
-                          /* @__PURE__ */ jsx("option", { value: "short", children: "Fast (<= 5 days)" }),
-                          /* @__PURE__ */ jsx("option", { value: "medium", children: "Standard (6-10 days)" }),
-                          /* @__PURE__ */ jsx("option", { value: "long", children: "Long (> 10 days)" })
-                            ]
-                          }
-                        )
-                        ]
-                      }),
-                  /* @__PURE__ */ jsxs("div", {
-                        className: "flex items-center gap-1.5", children: [
                     /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Country:" }),
                     /* @__PURE__ */ jsxs(
                           "select",
@@ -1127,8 +1082,6 @@ export default function AdminPortal({ onLogout }) {
                   /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Contact Person" }),
                   /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Email & Phone" }),
                   /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Location" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Lead Time" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Reliability" }),
                   /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Actions" })
                             ]
                           })
@@ -1173,26 +1126,6 @@ export default function AdminPortal({ onLogout }) {
                                       s.country
                                     ]
                                   })
-                                }),
-                        /* @__PURE__ */ jsx("td", {
-                                  className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsxs(
-                                    "span",
-                                    {
-                                      className: `inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${s.lead_time_days <= 5 ? "bg-emerald-50 text-emerald-700" : s.lead_time_days <= 10 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`,
-                                      children: [
-                                        s.lead_time_days,
-                                        "d"
-                                      ]
-                                    }
-                                  )
-                                }),
-                        /* @__PURE__ */ jsx("td", {
-                                  className: "px-6 py-4", children: /* @__PURE__ */ jsx(
-                                    ReliabilityRating,
-                                    {
-                                      score: s.reliability_score
-                                    }
-                                  )
                                 }),
                         /* @__PURE__ */ jsx("td", {
                                   className: "px-6 py-4 text-center", children: deleteConfirmId === s.supplier_id ? /* @__PURE__ */ jsxs("div", {
