@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, MessageSquare, X, Send, ShoppingBag, Check, Camera, Trash2 } from "lucide-react";
+import { Sparkles, MessageSquare, X, Send, ShoppingBag, Check, Camera, Trash2, Package, Truck, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/data";
 
 const SUGGESTED_PROMPTS = [
+  "Show me all my orders",
+  "Show shipped orders",
+  "Show delivered orders",
+  "Show pending orders",
   "Compare Cisco Fiber Catalyst 9300 vs Corning Fiber Optic Spool",
   "Suggest products under 100,000 PKR",
-  "Recommend high performance networking hardware"
 ];
 
 function parseInline(text) {
@@ -129,6 +132,52 @@ function renderMessageText(text) {
 }
 
 
+const ORDER_STATUS_CONFIG = {
+  PENDING:    { icon: Clock,        color: 'text-amber-500',  bg: 'bg-amber-50  border-amber-200',  label: 'Pending'    },
+  CONFIRMED:  { icon: CheckCircle2, color: 'text-blue-500',   bg: 'bg-blue-50   border-blue-200',   label: 'Confirmed'  },
+  PROCESSING: { icon: Package,      color: 'text-purple-500', bg: 'bg-purple-50 border-purple-200', label: 'Processing' },
+  SHIPPED:    { icon: Truck,        color: 'text-indigo-500', bg: 'bg-indigo-50 border-indigo-200', label: 'Shipped'    },
+  DELIVERED:  { icon: CheckCircle2, color: 'text-emerald-500',bg: 'bg-emerald-50 border-emerald-200',label: 'Delivered' },
+  CANCELLED:  { icon: XCircle,      color: 'text-red-500',   bg: 'bg-red-50    border-red-200',    label: 'Cancelled'  },
+  RETURNED:   { icon: Package,      color: 'text-slate-500',  bg: 'bg-slate-50  border-slate-200',  label: 'Returned'   },
+};
+
+function OrderStatusCard({ order }) {
+  const status = (order.status || 'PENDING').toUpperCase();
+  const cfg = ORDER_STATUS_CONFIG[status] || ORDER_STATUS_CONFIG.PENDING;
+  const StatusIcon = cfg.icon;
+  let items = [];
+  try { items = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []); } catch { items = []; }
+
+  return (
+    <div className={`border rounded-xl p-3 mt-1 ${cfg.bg} shadow-xs`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Order</span>
+        <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color}`}>
+          <StatusIcon className="w-3 h-3" />
+          {cfg.label}
+        </span>
+      </div>
+      <p className="text-xs font-extrabold text-slate-900 mb-1">{order.order_number || order.order_id}</p>
+      {items.length > 0 && (
+        <div className="space-y-0.5 mb-2">
+          {items.slice(0, 3).map((item, i) => (
+            <div key={i} className="text-[10px] text-slate-600 flex justify-between">
+              <span className="truncate max-w-[140px]">{item.product_name || item.sku || 'Item'} × {item.quantity || 1}</span>
+              <span className="font-semibold">Rs {parseFloat(item.unit_price || item.price || 0).toLocaleString()}</span>
+            </div>
+          ))}
+          {items.length > 3 && <p className="text-[9px] text-slate-400">+{items.length - 3} more items</p>}
+        </div>
+      )}
+      <div className="flex justify-between items-center pt-1.5 border-t border-current/10">
+        <span className="text-[10px] text-slate-500">{order.order_date ? new Date(order.order_date).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+        <span className="text-xs font-extrabold text-slate-900">Rs {parseFloat(order.total_amount || 0).toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function BuyerChatbotWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [inputMsg, setInputMsg] = useState("");
@@ -196,7 +245,8 @@ export default function BuyerChatbotWidget() {
           {
             sender: "ai",
             text: data.ai_message,
-            products: data.products || []
+            products: data.products || [],
+            orders: data.orders || []
           }
         ]);
       } else {
@@ -255,7 +305,7 @@ export default function BuyerChatbotWidget() {
                     Shopping Assistant
                     <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-400/20 uppercase font-semibold">B2C Retail</span>
                   </h3>
-                  <p className="text-[10px] text-slate-300 mt-0.5">Ask questions about products, budget limits & specs</p>
+                   <p className="text-[10px] text-slate-300 mt-0.5">Products, orders, budget limits &amp; specs</p>
                 </div>
               </div>
               <button
@@ -302,6 +352,15 @@ export default function BuyerChatbotWidget() {
                     )}
                     {renderMessageText(msg.text)}
                   </div>
+
+                  {/* Render Order Cards if available */}
+                  {msg.orders && msg.orders.length > 0 && (
+                    <div className="mt-3 grid grid-cols-1 gap-2 w-full">
+                      {msg.orders.map((order, oi) => (
+                        <OrderStatusCard key={oi} order={order} />
+                      ))}
+                    </div>
+                  )}
 
                   {/* Render Product Cards if available */}
                   {msg.products && msg.products.length > 0 && (
@@ -411,7 +470,7 @@ export default function BuyerChatbotWidget() {
                   type="text"
                   value={inputMsg}
                   onChange={(e) => setInputMsg(e.target.value)}
-                  placeholder={pendingImage ? "Add a budget or details (optional)..." : "Ask about products, budget PKR, or specs..."}
+                  placeholder={pendingImage ? "Add a budget or details (optional)..." : "Track order, search products, compare specs..."}
                   className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-600 bg-slate-50/50"
                 />
                 <button

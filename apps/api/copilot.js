@@ -21,7 +21,7 @@ const {
   createDistributorQuotationInDb,
   createDistributorDirectOrderInDb
 } = require('./distributorOperations');
-const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb } = require('./buyerOperations');
+const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb, trackBuyerOrder, listBuyerOrdersByStatus } = require('./buyerOperations');
 
 const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline stating: "I can only assist with registered catalog inventory, supplier management, and order operations." Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.';
 const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
@@ -1457,10 +1457,43 @@ function registerCopilotRoutes(app, pool) {
       });
     }
 
-    // 1.5 BUYER Role direct handler (Visual Search, Comparison & Product Recommendations)
+    // 1.5 BUYER Role direct handler (Order Tracking, Visual Search, Comparison & Product Recommendations)
     if (role === 'BUYER') {
       try {
         const lowerMsg2 = message.toLowerCase();
+
+        // --- Live Order Tracking: track specific order by ID ---
+        const isOrderTrack = /\b(where is my order|track(\s+my)?\s+order|order\s+status|find\s+my\s+order)\b/i.test(message)
+          || /\b(ord[-_]?\d{4}[-_]?\d+)\b/i.test(message);
+        if (isOrderTrack && !attached_image) {
+          // Extract order number/id from message
+          const ordMatch = message.match(/\b(ORD[-_]?\d{4}[-_]?\w+|ord[-_]?\d{4}[-_]?\w+)/i);
+          const order_id_query = ordMatch ? ordMatch[1] : '';
+          const trackResult = await trackBuyerOrder(pool, { order_id_query });
+          return res.json({
+            success: true,
+            action_executed: 'trackBuyerOrder',
+            ai_message: trackResult.ai_message,
+            orders: trackResult.orders
+          });
+        }
+
+        // --- List Orders by Status ---
+        const isListOrders = /\b(show|list|get|display|view|all)\b.*\b(order|orders)\b/i.test(message)
+          || /\b(order|orders)\b.*\b(show|list|view|display|all)\b/i.test(message)
+          || /\b(my orders|order history|recent orders)\b/i.test(message);
+        if (isListOrders && !attached_image) {
+          const statusMatch = lowerMsg2.match(/\b(pending|confirmed|processing|shipped|delivered|cancelled|canceled|returned)\b/);
+          let status_filter = statusMatch ? statusMatch[1].toUpperCase() : null;
+          if (status_filter === 'CANCELED') status_filter = 'CANCELLED';
+          const listResult = await listBuyerOrdersByStatus(pool, { status_filter });
+          return res.json({
+            success: true,
+            action_executed: 'listBuyerOrders',
+            ai_message: listResult.ai_message,
+            orders: listResult.orders
+          });
+        }
 
         // --- Side-by-Side Spec & Price Comparison ---
         const isComparison = /\b(compare|comparison|versus|\bvs\b|difference between|which is better)\b/i.test(message);
