@@ -498,9 +498,6 @@ async function getOverdueOrdersFromDb(pool, days = 3, orderType = null) {
   );
   return res.rows.map(formatOrder);
 }
-  );
-  return res.rows.map(formatOrder);
-}
 
 async function getOrdersByProductFromDb(pool, productName) {
   const res = await pool.query(
