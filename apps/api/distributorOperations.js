@@ -26,6 +26,73 @@ async function getDistributorQuotationsFromDb(pool, customerEmail) {
   return res.rows;
 }
 
+async function getDistributorQuotationsByStatusFromDb(pool, status) {
+  const normStatus = status.toUpperCase().replace(/\s+/g, '_');
+  const res = await pool.query(
+    'SELECT * FROM quotations WHERE UPPER(status) = $1 ORDER BY created_at DESC LIMIT 30',
+    [normStatus]
+  );
+  return res.rows;
+}
+
+async function getDistributorQuotationByIdFromDb(pool, identifier) {
+  const res = await pool.query(
+    'SELECT * FROM quotations WHERE quotation_id ILIKE $1 OR quotation_number ILIKE $1 LIMIT 5',
+    [`%${identifier}%`]
+  );
+  return res.rows;
+}
+
+async function getDistributorQuotationsByAmountFromDb(pool, operator, amount) {
+  const op = operator === 'above' || operator === 'greater' ? '>' : '<';
+  const res = await pool.query(
+    `SELECT * FROM quotations WHERE total_amount ${op} $1 ORDER BY total_amount DESC LIMIT 30`,
+    [parseFloat(amount)]
+  );
+  return res.rows;
+}
+
+async function updateDistributorQuotationStatusInDb(pool, identifier, newStatus) {
+  const normStatus = newStatus.toUpperCase().replace(/\s+/g, '_');
+  const res = await pool.query(
+    'UPDATE quotations SET status = $1 WHERE quotation_id ILIKE $2 OR quotation_number ILIKE $2 RETURNING *',
+    [normStatus, `%${identifier}%`]
+  );
+  if (res.rows.length === 0) throw new Error(`Quotation not found matching: "${identifier}"`);
+  return res.rows[0];
+}
+
+async function getDistributorQuotationKpisFromDb(pool) {
+  const countRes = await pool.query('SELECT COUNT(*) as active_count, COALESCE(SUM(total_amount), 0) as total_value FROM quotations');
+  const pendingRes = await pool.query("SELECT COUNT(*) as pending_count FROM quotations WHERE UPPER(status) IN ('UNDER_REVIEW', 'NEGOTIATING', 'DRAFT')");
+  const statusRes = await pool.query('SELECT status, COUNT(*) as count, SUM(total_amount) as amount FROM quotations GROUP BY status ORDER BY count DESC');
+
+  return {
+    active_quotations: parseInt(countRes.rows[0]?.active_count || 0),
+    total_bid_value: parseFloat(countRes.rows[0]?.total_value || 0),
+    pending_acceptance: parseInt(pendingRes.rows[0]?.pending_count || 0),
+    by_status: statusRes.rows
+  };
+}
+
+async function getDistributorQuotationsByProductFromDb(pool, productName) {
+  const res = await pool.query(
+    'SELECT * FROM quotations WHERE item ILIKE $1 OR quotation_id ILIKE $1 ORDER BY created_at DESC LIMIT 20',
+    [`%${productName}%`]
+  );
+  return res.rows;
+}
+
+async function getExpiringDistributorQuotationsFromDb(pool, days = 7) {
+  const res = await pool.query(
+    `SELECT * FROM quotations 
+     WHERE valid_until IS NOT NULL 
+       AND CAST(valid_until AS DATE) <= CURRENT_DATE + INTERVAL '${parseInt(days)} days'
+     ORDER BY valid_until ASC LIMIT 20`
+  );
+  return res.rows;
+}
+
 async function getDistributorOrdersFromDb(pool, customerEmail) {
   let query = "SELECT * FROM orders WHERE order_type = 'B2B'";
   let params = [];
@@ -70,7 +137,7 @@ async function createDistributorQuotationInDb(pool, customerEmail, customerName,
   const email = customerEmail || 'asim@commerceiq.com';
   const name = customerName || 'Authorized Wholesale Partner';
   const qty = parseInt(quantity) || 10;
-  
+
   // Find product by name or SKU
   let product = null;
   if (productNameOrSku) {
@@ -85,7 +152,7 @@ async function createDistributorQuotationInDb(pool, customerEmail, customerName,
 
   const prodName = product ? product.product_name : (productNameOrSku || 'Wholesale Batch');
   const sku = product ? product.sku : 'SKU-WHOLESALE';
-  
+
   let unitPrice = 0;
   if (targetPrice && parseFloat(targetPrice) > 0) {
     unitPrice = parseFloat(targetPrice);
@@ -215,6 +282,13 @@ async function createDistributorDirectOrderInDb(pool, customerEmail, customerNam
 module.exports = {
   getDistributorWholesaleProductsFromDb,
   getDistributorQuotationsFromDb,
+  getDistributorQuotationsByStatusFromDb,
+  getDistributorQuotationByIdFromDb,
+  getDistributorQuotationsByAmountFromDb,
+  updateDistributorQuotationStatusInDb,
+  getDistributorQuotationKpisFromDb,
+  getDistributorQuotationsByProductFromDb,
+  getExpiringDistributorQuotationsFromDb,
   getDistributorOrdersFromDb,
   getDistributorLedgerStatusFromDb,
   createDistributorQuotationInDb,

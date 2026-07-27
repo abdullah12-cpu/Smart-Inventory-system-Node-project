@@ -6,7 +6,21 @@ const {
   getOrdersByAmountFilterFromDb, updateOrderStatusInDb, bulkApproveOrdersInDb, getOrderAnalyticsFromDb,
   getTopBuyersFromDb, getMostOrderedProductsFromDb, getOverdueOrdersFromDb, getOrdersByProductFromDb
 } = require('./adminOperations');
-const { getDistributorWholesaleProductsFromDb, getDistributorQuotationsFromDb, getDistributorOrdersFromDb, getDistributorLedgerStatusFromDb } = require('./distributorOperations');
+const { 
+  getDistributorWholesaleProductsFromDb, 
+  getDistributorQuotationsFromDb,
+  getDistributorQuotationsByStatusFromDb,
+  getDistributorQuotationByIdFromDb,
+  getDistributorQuotationsByAmountFromDb,
+  updateDistributorQuotationStatusInDb,
+  getDistributorQuotationKpisFromDb,
+  getDistributorQuotationsByProductFromDb,
+  getExpiringDistributorQuotationsFromDb,
+  getDistributorOrdersFromDb, 
+  getDistributorLedgerStatusFromDb,
+  createDistributorQuotationInDb,
+  createDistributorDirectOrderInDb
+} = require('./distributorOperations');
 
 const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline stating: "I can only assist with registered catalog inventory, supplier management, and order operations." Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.';
 const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
@@ -447,10 +461,32 @@ function getAdminTools(isGemini = false) {
     }
   };
 
+  const fnManageDistributorQuotations = {
+    name: 'manageDistributorQuotations',
+    description: 'Manages, queries, filters by status/date/amount, accepts, rejects, or analyzes partner quotations and bids.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        action_type: {
+          type: isGemini ? 'STRING' : 'string',
+          enum: ['list', 'find', 'by_status', 'by_amount', 'by_product', 'update_status', 'analytics', 'expiring'],
+          description: 'The quotation operation to perform.'
+        },
+        identifier: { type: isGemini ? 'STRING' : 'string', description: 'Quote ID or quote number (e.g. QUO-2026-69395).' },
+        status: { type: isGemini ? 'STRING' : 'string', description: 'Quotation status: UNDER_REVIEW, ACCEPTED, APPROVED, NEGOTIATING, REJECTED.' },
+        new_status: { type: isGemini ? 'STRING' : 'string', description: 'New status to apply (ACCEPTED, REJECTED, CANCELLED).' },
+        product_name: { type: isGemini ? 'STRING' : 'string', description: 'Product name to filter quotations.' },
+        amount: { type: isGemini ? 'NUMBER' : 'number', description: 'Amount threshold for by_amount filter.' },
+        amount_operator: { type: isGemini ? 'STRING' : 'string', enum: ['above', 'below'], description: 'Whether to filter above or below the amount.' }
+      },
+      required: ['action_type']
+    }
+  };
+
   const list = [
     fnCreateProduct, fnDeleteProduct, fnUpdateProduct, fnBulkUpdateProducts, fnReadProductData, fnRunAnalyticalQuery,
     fnCreateSupplier, fnUpdateSupplier, fnDeleteSupplier, fnReadSupplierData, fnManageOrders,
-    fnCreateDistributorQuotation, fnCreateDistributorDirectOrder
+    fnCreateDistributorQuotation, fnCreateDistributorDirectOrder, fnManageDistributorQuotations
   ];
 
   if (isGemini) {
@@ -608,6 +644,70 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
       action_executed: 'createDistributorDirectOrder',
       ai_message: `✅ **Direct B2B Wholesale Order Placed Successfully!**\n\n- **Order Number**: **${order.order_number}**\n- **Product**: **${order.product_name}** (${order.sku})\n- **Order Quantity**: ${order.quantity} units\n- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n- **Warehouse Depot**: ${order.warehouse_depot}\n- **Order Status**: \`${order.status}\` (Processing)`
     };
+  } else if (name === 'manageDistributorQuotations') {
+    const action = args.action_type;
+    const identifier = args.identifier || '';
+
+    if (action === 'by_status') {
+      const rows = await getDistributorQuotationsByStatusFromDb(pool, args.status || 'UNDER_REVIEW');
+      return {
+        action_executed: 'manageDistributorQuotations',
+        ai_message: formatQuotationsTable(rows, `📋 ${(args.status || 'UNDER_REVIEW').toUpperCase().replace('_',' ')} Quotations`)
+      };
+    }
+    if (action === 'find') {
+      const rows = await getDistributorQuotationByIdFromDb(pool, identifier);
+      return {
+        action_executed: 'manageDistributorQuotations',
+        ai_message: formatQuotationsTable(rows, `🔍 Quotation Search: "${identifier}"`)
+      };
+    }
+    if (action === 'by_amount') {
+      const rows = await getDistributorQuotationsByAmountFromDb(pool, args.amount_operator || 'above', args.amount || 0);
+      return {
+        action_executed: 'manageDistributorQuotations',
+        ai_message: formatQuotationsTable(rows, `💰 Quotations ${args.amount_operator || 'above'} Rs ${Number(args.amount || 0).toLocaleString()}`)
+      };
+    }
+    if (action === 'by_product') {
+      const rows = await getDistributorQuotationsByProductFromDb(pool, args.product_name || '');
+      return {
+        action_executed: 'manageDistributorQuotations',
+        ai_message: formatQuotationsTable(rows, `📦 Quotations for "${args.product_name || ''}"`)
+      };
+    }
+    if (action === 'update_status') {
+      const updated = await updateDistributorQuotationStatusInDb(pool, identifier, args.new_status || 'ACCEPTED');
+      return {
+        action_executed: 'manageDistributorQuotations',
+        ai_message: `✅ Quotation **${updated.quotation_number || updated.quotation_id}** status updated to \`${updated.status}\`!`
+      };
+    }
+    if (action === 'analytics') {
+      const kpi = await getDistributorQuotationKpisFromDb(pool);
+      let md = `### 📊 Distributor Quotations & Bids Summary\n\n`;
+      md += `- **Active Quotations**: **${kpi.active_quotations}**\n`;
+      md += `- **Total Bid Value**: **Rs ${Number(kpi.total_bid_value).toLocaleString()}**\n`;
+      md += `- **Pending Acceptance**: **${kpi.pending_acceptance}** (Action required)\n\n`;
+      if (kpi.by_status && kpi.by_status.length > 0) {
+        md += `**Status Breakdown:**\n\n| Status | Count | Total Amount |\n|---|---|---|\n`;
+        md += kpi.by_status.map(s => `| \`${s.status}\` | ${s.count} | Rs ${Number(s.amount || 0).toLocaleString()} |`).join('\n');
+      }
+      return { action_executed: 'manageDistributorQuotations', ai_message: md };
+    }
+    if (action === 'expiring') {
+      const rows = await getExpiringDistributorQuotationsFromDb(pool, 7);
+      return {
+        action_executed: 'manageDistributorQuotations',
+        ai_message: formatQuotationsTable(rows, `⏰ Quotations Expiring Soon (Next 7 Days)`)
+      };
+    }
+    // Default: list all
+    const rows = await getDistributorQuotationsFromDb(pool);
+    return {
+      action_executed: 'manageDistributorQuotations',
+      ai_message: formatQuotationsTable(rows, `📋 Partner Quotations & Bids`)
+    };
   }
   throw new Error(`Unknown tool name: ${name}`);
 }
@@ -616,6 +716,12 @@ function formatOrdersTable(rows, title) {
   if (rows.length === 0) return `ℹ️ No orders found.`;
   return `### ${title}\n\n| Order # | Status | Amount (PKR) | Customer | Date |\n|---|---|---|---|---|\n` +
     rows.map(r => `| ${r.order_number || r.order_id} | ${r.status} | Rs ${parseFloat(r.total_amount).toLocaleString()} | ${r.customer_email} | ${r.order_date ? new Date(r.order_date).toLocaleDateString() : 'N/A'} |`).join('\n');
+}
+
+function formatQuotationsTable(rows, title) {
+  if (!rows || rows.length === 0) return `ℹ️ No quotations found for this criteria.`;
+  return `### ${title}\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n` +
+    rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join('\n');
 }
 
 async function handleManageOrders(pool, args, message) {
@@ -772,13 +878,116 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
       }
     }
 
+
+
+    // Comprehensive Quotation Fallbacks
     if (/\b(quotation|quote|bid)\b/i.test(lowerMsg)) {
+      // 1. Accept / Reject / Cancel / Confirm Status Update
+      const statusUpdateMatch = message.match(/\b(accept|confirm|reject|cancel|approve)\s+(?:quote|quotation)?\s*([\w-]+)/i);
+      if (statusUpdateMatch) {
+        const verb = statusUpdateMatch[1].toLowerCase();
+        const statusMap = { accept: 'ACCEPTED', confirm: 'ACCEPTED', approve: 'APPROVED', reject: 'REJECTED', cancel: 'CANCELLED' };
+        const newStatus = statusMap[verb] || 'ACCEPTED';
+        const identifier = statusUpdateMatch[2];
+        try {
+          const updated = await updateDistributorQuotationStatusInDb(pool, identifier, newStatus);
+          return res.json({
+            success: true,
+            action_executed: "updateDistributorQuotationStatus",
+            ai_message: `✅ Quotation **${updated.quotation_number || updated.quotation_id}** status updated to \`${updated.status}\`!`
+          });
+        } catch (err) {
+          return res.json({ success: true, ai_message: `❌ ${err.message}` });
+        }
+      }
+
+      // 2. Quotation KPI & Financial Summary
+      if (/\b(summary|kpi|analytics|bid value|total bid|active quotes|how many quotes)\b/i.test(lowerMsg)) {
+        try {
+          const kpi = await getDistributorQuotationKpisFromDb(pool);
+          let md = `### 📊 Distributor Quotations & Bids Summary\n\n`;
+          md += `- **Active Quotations**: **${kpi.active_quotations}**\n`;
+          md += `- **Total Bid Value**: **Rs ${Number(kpi.total_bid_value).toLocaleString()}**\n`;
+          md += `- **Pending Acceptance**: **${kpi.pending_acceptance}** (Action required)\n\n`;
+          if (kpi.by_status && kpi.by_status.length > 0) {
+            md += `**Status Breakdown:**\n\n| Status | Count | Total Amount |\n|---|---|---|\n`;
+            md += kpi.by_status.map(s => `| \`${s.status}\` | ${s.count} | Rs ${Number(s.amount || 0).toLocaleString()} |`).join('\n');
+          }
+          return res.json({ success: true, action_executed: "getDistributorQuotationKpis", ai_message: md });
+        } catch (err) {
+          return res.json({ success: true, ai_message: `❌ Error fetching quotation summary: ${err.message}` });
+        }
+      }
+
+      // 3. Find specific quotation by Quote Number / ID
+      const findQuoteMatch = message.match(/(?:find|show|get|search|check)\s+(?:quote|quotation)\s+([\w-]+)/i);
+      if (findQuoteMatch) {
+        try {
+          const rows = await getDistributorQuotationByIdFromDb(pool, findQuoteMatch[1]);
+          return res.json({
+            success: true,
+            action_executed: "getDistributorQuotationById",
+            ai_message: formatQuotationsTable(rows, `🔍 Quotation Search: "${findQuoteMatch[1]}"`)
+          });
+        } catch (err) {
+          return res.json({ success: true, ai_message: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // 4. Status Filter: UNDER_REVIEW, ACCEPTED, APPROVED, NEGOTIATING, REJECTED
+      const statusFilterMatch = lowerMsg.match(/\b(under review|under_review|accepted|approved|negotiating|rejected|draft|pending acceptance)\b/);
+      if (statusFilterMatch) {
+        const rawStatus = statusFilterMatch[1] === 'pending acceptance' ? 'UNDER_REVIEW' : statusFilterMatch[1];
+        try {
+          const rows = await getDistributorQuotationsByStatusFromDb(pool, rawStatus);
+          return res.json({
+            success: true,
+            action_executed: "getDistributorQuotationsByStatus",
+            ai_message: formatQuotationsTable(rows, `📋 ${rawStatus.toUpperCase().replace('_',' ')} Quotations`)
+          });
+        } catch (err) {
+          return res.json({ success: true, ai_message: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // 5. Amount Filter: "quotations above 20000", "quotes under 15000"
+      const amountFilterMatch = message.match(/quotations?\s+(above|over|greater than|below|under|less than)\s+(?:rs\.?\s*)?(\d+)/i);
+      if (amountFilterMatch) {
+        const op = /above|over|greater/.test(amountFilterMatch[1]) ? 'above' : 'below';
+        try {
+          const rows = await getDistributorQuotationsByAmountFromDb(pool, op, parseFloat(amountFilterMatch[2]));
+          return res.json({
+            success: true,
+            action_executed: "getDistributorQuotationsByAmount",
+            ai_message: formatQuotationsTable(rows, `💰 Quotations ${op} Rs ${Number(amountFilterMatch[2]).toLocaleString()}`)
+          });
+        } catch (err) {
+          return res.json({ success: true, ai_message: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // 6. Expiring Quotations
+      if (/expiring\s+(?:quotes?|quotations?)|quotations?\s+expiring/i.test(lowerMsg)) {
+        try {
+          const rows = await getExpiringDistributorQuotationsFromDb(pool, 7);
+          return res.json({
+            success: true,
+            action_executed: "getExpiringDistributorQuotations",
+            ai_message: formatQuotationsTable(rows, `⏰ Quotations Expiring Soon (Next 7 Days)`)
+          });
+        } catch (err) {
+          return res.json({ success: true, ai_message: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // 7. General listing default
       try {
         const rows = await getDistributorQuotationsFromDb(pool);
-        if (rows.length === 0) return res.json({ success: true, ai_message: "ℹ️ No active partner quotations found in record." });
-        const md = "### 📋 Distributor Partner Quotations\n\n| Quote ID | Product / Item | Requested Price | Status |\n|---|---|---|---|\n" +
-          rows.map(r => `| ${r.quotation_id || r.id || 'QUO-9012'} | ${r.product_name || r.item || 'Wholesale Batch'} | Rs ${Number(r.requested_price || r.price || 0).toLocaleString()} | ${r.status || 'UNDER_REVIEW'} |`).join("\n");
-        return res.json({ success: true, action_executed: "getDistributorQuotations", ai_message: md });
+        return res.json({
+          success: true,
+          action_executed: "getDistributorQuotations",
+          ai_message: formatQuotationsTable(rows, `📋 Partner Quotations & Bids`)
+        });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ Error fetching quotations: ${err.message}` });
       }

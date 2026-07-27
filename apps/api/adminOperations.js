@@ -160,7 +160,7 @@ async function updateProductInDb(pool, identifier, updates) {
   const newName = updates.new_name || existing.product_name;
   const newCat = updates.new_category || existing.category;
   const newBrand = updates.new_brand || existing.brand;
-  
+
   let prices = typeof existing.prices === 'string' ? JSON.parse(existing.prices) : existing.prices;
   if (updates.new_price !== undefined) prices.RETAIL = parseFloat(updates.new_price);
   if (updates.new_distributor_price !== undefined) prices.DISTRIBUTOR = parseFloat(updates.new_distributor_price);
@@ -192,30 +192,30 @@ async function bulkUpdateProductsInDb(pool, categoryFilter, brandFilter, updates
   const getRes = await pool.query(`SELECT * FROM products ${whereClause}`, values);
 
   if (getRes.rows.length === 0) return 0;
-  
+
   let updatedCount = 0;
   for (const prod of getRes.rows) {
     let prices = typeof prod.prices === 'string' ? JSON.parse(prod.prices) : prod.prices;
     let modified = false;
 
     if (updates.price_percentage_change !== undefined) {
-       prices.RETAIL = Math.round(prices.RETAIL * (1 + parseFloat(updates.price_percentage_change) / 100));
-       modified = true;
+      prices.RETAIL = Math.round(prices.RETAIL * (1 + parseFloat(updates.price_percentage_change) / 100));
+      modified = true;
     }
     if (updates.distributor_price_percentage_change !== undefined) {
-       prices.DISTRIBUTOR = Math.round(prices.DISTRIBUTOR * (1 + parseFloat(updates.distributor_price_percentage_change) / 100));
-       modified = true;
+      prices.DISTRIBUTOR = Math.round(prices.DISTRIBUTOR * (1 + parseFloat(updates.distributor_price_percentage_change) / 100));
+      modified = true;
     }
 
     if (modified || updates.new_status !== undefined || updates.new_category !== undefined || updates.new_brand !== undefined) {
-       const status = updates.new_status || prod.status;
-       const category = updates.new_category || prod.category;
-       const brand = updates.new_brand || prod.brand;
-       await pool.query(
-         'UPDATE products SET prices = $1, status = $2, category = $3, brand = $4 WHERE product_id = $5',
-         [JSON.stringify(prices), status, category, brand, prod.product_id]
-       );
-       updatedCount++;
+      const status = updates.new_status || prod.status;
+      const category = updates.new_category || prod.category;
+      const brand = updates.new_brand || prod.brand;
+      await pool.query(
+        'UPDATE products SET prices = $1, status = $2, category = $3, brand = $4 WHERE product_id = $5',
+        [JSON.stringify(prices), status, category, brand, prod.product_id]
+      );
+      updatedCount++;
     }
   }
   return updatedCount;

@@ -18,6 +18,7 @@
     "getDistributorOrders",
     "getDistributorLedgerStatus",
     "createDistributorQuotation",
-    "createDistributorDirectOrder"
+    "createDistributorDirectOrder",
+    "manageDistributorQuotations"
   ]
 }
