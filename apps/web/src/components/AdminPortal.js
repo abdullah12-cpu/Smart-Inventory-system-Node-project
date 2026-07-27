@@ -2845,6 +2845,30 @@ export default function AdminPortal({ onLogout }) {
                                 /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Identify inventory currently running below threshold levels" })
                               ] })
                             ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Show all suppliers from Karachi"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📍" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Suppliers by City" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Filter all suppliers registered in a specific city" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Show all suppliers from Pakistan"),
+                            className: "w-full bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "🌍" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Suppliers by Country" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Filter all suppliers registered from a specific country" })
+                              ] })
+                            ]
                           })
                         ] })
                       ]

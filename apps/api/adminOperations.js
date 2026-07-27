@@ -321,10 +321,30 @@ async function deleteSupplierFromDb(pool, identifier) {
 
 async function searchSuppliersInDb(pool, identifier) {
   const getRes = await pool.query(
-    'SELECT * FROM suppliers WHERE company_name ILIKE $1 OR contact_person ILIKE $1 OR email ILIKE $1 OR city ILIKE $1 OR supplier_id = $1 LIMIT 10',
-    [`%${identifier}%`]
+    'SELECT * FROM suppliers WHERE company_name ILIKE $1 OR contact_person ILIKE $1 OR email ILIKE $1 OR city ILIKE $1 OR country ILIKE $1 OR CAST(supplier_id AS TEXT) = $2 LIMIT 20',
+    [`%${identifier}%`, identifier]
   );
   return getRes.rows;
+}
+
+async function filterSuppliersByLocationInDb(pool, city, country) {
+  const conditions = [];
+  const params = [];
+  if (city) {
+    params.push(`%${city}%`);
+    conditions.push(`city ILIKE $${params.length}`);
+  }
+  if (country) {
+    params.push(`%${country}%`);
+    conditions.push(`country ILIKE $${params.length}`);
+  }
+  if (conditions.length === 0) {
+    const res = await pool.query('SELECT * FROM suppliers LIMIT 20');
+    return res.rows;
+  }
+  const whereClause = conditions.join(' AND ');
+  const res = await pool.query(`SELECT * FROM suppliers WHERE ${whereClause} LIMIT 20`, params);
+  return res.rows;
 }
 
 module.exports = {
@@ -338,5 +358,6 @@ module.exports = {
   createSupplierInDb,
   updateSupplierInDb,
   deleteSupplierFromDb,
-  searchSuppliersInDb
+  searchSuppliersInDb,
+  filterSuppliersByLocationInDb
 };

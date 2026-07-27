@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { 
   createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb,
-  createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb
+  createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb, filterSuppliersByLocationInDb
 } = require('./adminOperations');
 const { getDistributorWholesaleProductsFromDb, getDistributorQuotationsFromDb, getDistributorOrdersFromDb, getDistributorLedgerStatusFromDb } = require('./distributorOperations');
 
@@ -259,8 +259,10 @@ function getAdminTools(isGemini = false) {
   };
 
   const readSupplierProps = {
-    action_type: { type: isGemini ? 'STRING' : 'string', enum: ['search', 'list_all'], description: 'Use "list_all" to view supplier registry, or "search" to look up specific suppliers.' },
-    identifier: { type: isGemini ? 'STRING' : 'string', description: 'Supplier name, email, contact, or city to search for.' }
+    action_type: { type: isGemini ? 'STRING' : 'string', enum: ['search', 'list_all', 'filter_by_location'], description: 'Use "list_all" to view all suppliers, "search" to look up specific suppliers, or "filter_by_location" to filter by city or country.' },
+    identifier: { type: isGemini ? 'STRING' : 'string', description: 'Supplier name, email, contact, city, or country to search for.' },
+    city: { type: isGemini ? 'STRING' : 'string', description: 'City name to filter suppliers by location (e.g. "Karachi").' },
+    country: { type: isGemini ? 'STRING' : 'string', description: 'Country name to filter suppliers by location (e.g. "Pakistan").' }
   };
 
   const fnCreateProduct = {
@@ -401,15 +403,25 @@ async function handleReadSupplierData(pool, args, message) {
   if (args.action_type === 'list_all') {
     const res = await pool.query('SELECT * FROM suppliers LIMIT 20');
     if (res.rows.length === 0) return 'ℹ️ No suppliers found in the vendor directory.';
-    return '### 🏢 Suppliers & Vendors Directory\n\n| Company Name | Contact Person | Email | Location |\n|---|---|---|---|\n' +
-      res.rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
+    return '### 🏢 Suppliers & Vendors Directory\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n' +
+      res.rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.phone || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
+  }
+
+  if (args.action_type === 'filter_by_location') {
+    const city = args.city || '';
+    const country = args.country || '';
+    const rows = await filterSuppliersByLocationInDb(pool, city, country);
+    const locationLabel = [city, country].filter(Boolean).join(', ');
+    if (rows.length === 0) return `❌ No suppliers found in location: "${locationLabel}"`;
+    return `### 📍 Suppliers in ${locationLabel}\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n` +
+      rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.phone || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
   }
 
   const searchVal = args.identifier || '';
   const rows = await searchSuppliersInDb(pool, searchVal);
   if (rows.length === 0) return `❌ Could not find supplier matching search key: "${searchVal}"`;
-  return '### 🔍 Searched Suppliers\n\n| Company Name | Contact Person | Email | Location |\n|---|---|---|---|\n' +
-    rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
+  return '### 🔍 Searched Suppliers\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n' +
+    rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.phone || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
 }
 
 function extractSupplierSpecsFromMessage(message) {
@@ -600,8 +612,35 @@ async function handleLocalFallback(pool, message, attached_image, res) {
     }
   }
 
+  // Location-based supplier filter: "suppliers from Karachi", "show suppliers in Pakistan"
+  const locationFromMatch = message.match(/(?:suppliers?|vendors?)\s+(?:from|in|based in|located in)\s+([\w\s]+?)(?:\s*$|[,?!])/i)
+    || message.match(/(?:from|in|based in|located in)\s+([\w\s]+?)\s+(?:suppliers?|vendors?)/i);
+  const countryOnlyMatch = message.match(/(?:show|list|find|get|display)\s+(?:all\s+)?(?:suppliers?|vendors?)\s+(?:from|in)\s+([\w\s]+)/i);
+  if (locationFromMatch || countryOnlyMatch) {
+    const locationRaw = (locationFromMatch ? locationFromMatch[1] : countryOnlyMatch[1]).trim();
+    // Determine if it sounds like a city or country (heuristic: use as both city and country)
+    const cityGuess = locationRaw;
+    const countryGuess = locationRaw;
+    try {
+      // Try city first, then country if no results
+      let rows = await filterSuppliersByLocationInDb(pool, cityGuess, null);
+      if (rows.length === 0) rows = await filterSuppliersByLocationInDb(pool, null, countryGuess);
+      const md = rows.length === 0
+        ? `❌ No suppliers found in location: "${locationRaw}"`
+        : `### 📍 Suppliers in ${locationRaw}\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n` +
+          rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.phone || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
+      return res.json({
+        success: true,
+        action_executed: 'readSupplierData',
+        ai_message: md + `\n\n*(Local fallback)*`
+      });
+    } catch (err) {
+      return res.json({ success: true, ai_message: `❌ Error filtering suppliers: ${err.message}` });
+    }
+  }
+
   if (/\b(search|find|list|show|check)\s+suppliers?\b/i.test(lowerMsg)) {
-    const match = message.match(/(?:search|find|show|check)\s+supplier\s+([^\n,:]+)/i);
+    const match = message.match(/(?:search|find|show|check)\s+supplier(?:s)?\s+([^\n,:]+)/i);
     const identifier = match ? match[1].trim() : '';
     try {
       const md = await handleReadSupplierData(pool, { action_type: identifier ? 'search' : 'list_all', identifier }, message);
