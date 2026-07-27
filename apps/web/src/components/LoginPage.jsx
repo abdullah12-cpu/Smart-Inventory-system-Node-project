@@ -369,9 +369,9 @@ export default function LoginPage({
                 )}
               </AnimatePresence>
 
-              <form onSubmit={handleSubmitLogin} className="flex flex-col gap-4">
+              <form onSubmit={handleSubmitLogin} autoComplete="off" className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Email Address</label>
+                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Console Admin Email</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Mail size={13} /></span>
                     <input
@@ -380,6 +380,7 @@ export default function LoginPage({
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       placeholder="admin@commerceiq.com"
+                      autoComplete="off"
                       className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5] transition-all"
                     />
                   </div>
@@ -395,6 +396,7 @@ export default function LoginPage({
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       placeholder="••••••••"
+                      autoComplete="new-password"
                       className="w-full pl-9 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5] transition-all"
                     />
                     <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 bg-transparent border-0 cursor-pointer">
@@ -915,7 +917,7 @@ export default function LoginPage({
               </AnimatePresence>
 
               {/* Login Form */}
-              <form onSubmit={handleSubmitLogin} className="flex flex-col gap-4">
+              <form onSubmit={handleSubmitLogin} autoComplete="off" className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Email Address</label>
                   <div className="relative">
@@ -926,6 +928,7 @@ export default function LoginPage({
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       placeholder="buyer@gmail.com"
+                      autoComplete="off"
                       className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5] transition-all"
                     />
                   </div>
@@ -943,6 +946,7 @@ export default function LoginPage({
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       placeholder="••••••••"
+                      autoComplete="new-password"
                       className="w-full pl-9 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5] transition-all"
                     />
                     <button
