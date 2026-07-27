@@ -15,12 +15,65 @@ import {
   Download,
   UploadCloud,
   CreditCard,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Send,
+  Paperclip,
+  Bot,
+  MessageSquare,
+  Trash2
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { useStore } from "@/lib/store";
 import { KpiCard, OrderStatusBadge, InvoiceStatusBadge, LatePaymentRiskBadge, Badge } from "@/components/ui";
 import Modal from "@/components/Modal";
 import { formatCurrency, formatDate } from "@/lib/data";
+
+function renderMessageText(text) {
+  if (!text) return null;
+  if (text.includes("|") && text.includes("---")) {
+    const lines = text.split("\n");
+    const tableLines = [];
+    const beforeTable = [];
+    const afterTable = [];
+    let inTable = false;
+    for (let line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+        inTable = true;
+        tableLines.push(trimmed);
+      } else {
+        if (inTable) {
+          afterTable.push(line);
+        } else {
+          beforeTable.push(line);
+        }
+      }
+    }
+    if (tableLines.length >= 3) {
+      const headerLine = tableLines[0];
+      const headers = headerLine.split("|").slice(1, -1).map(h => h.trim());
+      const rows = tableLines.slice(2).map(rowLine => {
+        return rowLine.split("|").slice(1, -1).map(c => c.trim());
+      });
+      return /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
+        beforeTable.length > 0 && /* @__PURE__ */ jsx("p", { className: "whitespace-pre-wrap text-left m-0", children: beforeTable.join("\n") }),
+        /* @__PURE__ */ jsx("div", { className: "overflow-x-auto my-2 border border-slate-200 rounded-lg shadow-sm bg-white", children: 
+          /* @__PURE__ */ jsxs("table", { className: "min-w-full divide-y divide-slate-200 text-[10px] text-left", children: [
+            /* @__PURE__ */ jsx("thead", { className: "bg-slate-50", children: 
+              /* @__PURE__ */ jsx("tr", { children: headers.map((h, idx) => /* @__PURE__ */ jsx("th", { className: "px-2 py-1.5 font-bold text-slate-500 uppercase tracking-wider", children: h }, idx)) })
+            }),
+            /* @__PURE__ */ jsx("tbody", { className: "bg-white divide-y divide-slate-100", children: 
+              rows.map((row, rIdx) => /* @__PURE__ */ jsx("tr", { className: "hover:bg-slate-50", children: row.map((cell, cIdx) => /* @__PURE__ */ jsx("td", { className: "px-2 py-1.5 text-slate-700 font-medium whitespace-nowrap", children: cell }, cIdx)) }, rIdx))
+            })
+          ] })
+        }),
+        afterTable.length > 0 && /* @__PURE__ */ jsx("p", { className: "whitespace-pre-wrap text-left m-0", children: afterTable.join("\n") })
+      ] });
+    }
+  }
+  return /* @__PURE__ */ jsx("p", { className: "whitespace-pre-wrap text-left m-0", children: text });
+}
 const MOCK_QUOTATIONS = [];
 const MOCK_LEDGER = [
   {
@@ -138,6 +191,78 @@ export default function DistributorPortal({ onLogout }) {
   const [paymentMethod, setPaymentMethod] = useState("BANK_TRANSFER");
   const [paymentRef, setPaymentRef] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState("");
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMinimized, setChatMinimized] = useState(false);
+  const [chatMessages, setChatMessages] = useState(() => {
+    const saved = localStorage.getItem("ciq_distributor_copilot_chat");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    const partnerName = currentUser ? `${currentUser.first_name}`.trim() : "Partner";
+    return [
+      {
+        sender: "ai",
+        text: `Hello ${partnerName}! I am your CIQ Distributor Copilot. I can help you check wholesale prices, check inventory stock, track orders, or view quotations.`
+      }
+    ];
+  });
+  const [chatInput, setChatInput] = useState("");
+  const [chatTyping, setChatTyping] = useState(false);
+  const [chatAttachedImage, setChatAttachedImage] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem("ciq_distributor_copilot_chat", JSON.stringify(chatMessages));
+  }, [chatMessages]);
+
+  const handleSendChat = async (e) => {
+    e?.preventDefault();
+    if (!chatInput.trim() && !chatAttachedImage) return;
+
+    const userText = chatInput.trim();
+    const attachedImg = chatAttachedImage;
+    setChatInput("");
+    setChatAttachedImage("");
+    setChatMessages((prev) => [...prev, { sender: "user", text: userText, image: attachedImg }]);
+    setChatTyping(true);
+
+    try {
+      const response = await fetch("/api/copilot/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userText,
+          history: chatMessages.slice(1),
+          attached_image: attachedImg,
+          portal_role: "DISTRIBUTOR",
+          user_name: currentUser?.first_name || "Partner",
+          user_id: currentUser?.id
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ai", text: data.ai_message || "Processed." }
+        ]);
+      } else {
+        const errText = await response.text();
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ai", text: `Error connecting to Copilot Service: ${errText}` }
+        ]);
+      }
+    } catch (err) {
+      console.error(err);
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "ai", text: `Connection error: Failed to reach Copilot agent gateway. Error: ${err.message}` }
+      ]);
+    }
+    setChatTyping(false);
+  };
 
   useEffect(() => {
     const openInvoices = invoices.filter((i) => i.status !== "PAID");
@@ -2015,7 +2140,238 @@ export default function DistributorPortal({ onLogout }) {
             ] })
           ] });
         })()
-      }
-    )
-  ] });
+      }),
+
+      /* Floating Distributor Copilot Wrapper */
+      /* @__PURE__ */ jsxs("div", {
+        className: "fixed bottom-6 right-6 z-[999] flex flex-col items-end gap-3 font-sans",
+        children: [
+          chatOpen && !chatMinimized && /* @__PURE__ */ jsxs(motion.div, {
+            initial: { opacity: 0, y: 20, scale: 0.95 },
+            animate: { opacity: 1, y: 0, scale: 1 },
+            exit: { opacity: 0, y: 20, scale: 0.95 },
+            transition: { duration: 0.2 },
+            className: "w-96 h-[540px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-6rem)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 flex flex-col overflow-hidden",
+            children: [
+              /* Chat Header */
+              /* @__PURE__ */ jsxs("div", {
+                className: "bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 text-white p-3.5 flex items-center justify-between shadow-md relative overflow-hidden",
+                children: [
+                  /* @__PURE__ */ jsx("div", { className: "absolute inset-0 bg-emerald-500/10 pointer-events-none" }),
+                  /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2.5 z-10", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+                      /* @__PURE__ */ jsx("div", { className: "w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-md", children:
+                        /* @__PURE__ */ jsx(Bot, { size: 18, className: "text-white" })
+                      }),
+                      /* @__PURE__ */ jsx("span", { className: "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900 animate-ping" }),
+                      /* @__PURE__ */ jsx("span", { className: "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900" })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "text-left", children: [
+                      /* @__PURE__ */ jsx("span", { className: "font-bold text-xs tracking-wide block", children: "CIQ Distributor Copilot" }),
+                      /* @__PURE__ */ jsx("span", { className: "text-[9px] text-emerald-400 font-semibold tracking-wider block", children: "DISTRIBUTOR PARTNER AGENT" })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5 z-10", children: [
+                    /* @__PURE__ */ jsx("button", {
+                      type: "button",
+                      onClick: () => setChatMinimized(true),
+                      className: "text-slate-400 hover:text-white border-0 bg-transparent cursor-pointer font-extrabold text-sm p-1 leading-none transition-colors",
+                      title: "Minimize Chat",
+                      children: "−"
+                    }),
+                    /* @__PURE__ */ jsx("button", {
+                      type: "button",
+                      onClick: () => {
+                        setChatOpen(false);
+                        setChatMinimized(false);
+                        const partnerName = currentUser ? `${currentUser.first_name}`.trim() : "Partner";
+                        setChatMessages([
+                          {
+                            sender: "ai",
+                            text: `Hello ${partnerName}! I am your CIQ Distributor Copilot. I can help you check wholesale prices, check inventory stock, track orders, or view quotations.`
+                          }
+                        ]);
+                      },
+                      className: "text-slate-400 hover:text-white border-0 bg-transparent cursor-pointer font-bold text-xs p-1 leading-none transition-colors",
+                      title: "Close Chat (Clear History)",
+                      children: "✕"
+                    })
+                  ] })
+                ]
+              }),
+
+              /* Chat Messages Stream */
+              /* @__PURE__ */ jsxs("div", {
+                className: "flex-1 p-4 overflow-y-auto space-y-3 bg-[#F8FAFC]",
+                children: [
+                  chatMessages.length === 1 && chatMessages[0].sender === "ai" ? (
+                    /* Initial Welcome Screen */
+                    /* @__PURE__ */ jsxs("div", {
+                      className: "flex flex-col items-center justify-center text-center py-2 space-y-4 animate-fade-up",
+                      children: [
+                        /* @__PURE__ */ jsxs("div", { className: "relative my-2", children: [
+                          /* @__PURE__ */ jsx("div", { className: "w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-lg relative z-10", children:
+                            /* @__PURE__ */ jsx(Sparkles, { size: 28, className: "text-white" })
+                          }),
+                          /* @__PURE__ */ jsx("div", { className: "absolute -inset-1.5 bg-emerald-500/30 rounded-2xl blur animate-pulse" })
+                        ] }),
+                        /* @__PURE__ */ jsxs("div", { children: [
+                          /* @__PURE__ */ jsxs("h3", { className: "text-sm font-bold text-slate-800", children: ["Welcome ", currentUser?.first_name || "Partner", "! 👋"] }),
+                          /* @__PURE__ */ jsx("p", { className: "text-[11px] text-slate-500 mt-1 max-w-[85%] mx-auto leading-relaxed", children: "I am your dedicated Partner Assistant. Ask me about wholesale rates, stock levels, quotation requests, or ledger details." })
+                        ] }),
+                        /* Quick Action Template Cards */
+                        /* @__PURE__ */ jsxs("div", { className: "w-full space-y-2 pt-2 text-left", children: [
+                          /* @__PURE__ */ jsx("p", { className: "text-[9px] uppercase font-extrabold tracking-wider text-slate-400 pl-1", children: "Suggested Partner Queries" }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Show wholesale catalog rates and stock availability"),
+                            className: "w-full bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📦" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Check Wholesale Rates" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Inquire about distributor pricing and available stock quantities" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("What is the current status of my recent quotations?"),
+                            className: "w-full bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📋" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Track Active Quotations" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Review pending quote negotiations and status updates" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("What is my current credit limit and available ledger balance?"),
+                            className: "w-full bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl p-3 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "💳" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10.5px] font-bold text-slate-700", children: "Credit & Ledger Status" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[9px] text-slate-400 mt-0.5", children: "Check approved credit limit, outstanding invoices, and balance" })
+                              ] })
+                            ]
+                          })
+                        ] })
+                      ]
+                    })
+                  ) : (
+                    chatMessages.slice(1).map((msg, i) => /* @__PURE__ */ jsx(motion.div, {
+                      key: i,
+                      initial: { opacity: 0, y: 12, scale: 0.97 },
+                      animate: { opacity: 1, y: 0, scale: 1 },
+                      transition: { duration: 0.2 },
+                      className: `flex flex-col gap-1 max-w-[85%] ${msg.sender === "user" ? "ml-auto" : "mr-auto"}`,
+                      children: /* @__PURE__ */ jsxs("div", {
+                        className: `p-3 rounded-xl text-xs leading-relaxed ${
+                          msg.sender === "user"
+                            ? "bg-gradient-to-tr from-emerald-600 to-teal-700 text-white rounded-br-none shadow-md"
+                            : "bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-sm"
+                        }`,
+                        children: [
+                          msg.image && /* @__PURE__ */ jsx("div", { className: "mb-2 rounded-lg overflow-hidden max-h-32 border border-[#FFFFFF]/25 bg-black/10", children:
+                            /* @__PURE__ */ jsx("img", { src: msg.image, alt: "Attached Preview", className: "w-full h-full object-cover" })
+                          }),
+                          renderMessageText(msg.text)
+                        ]
+                      })
+                    }))
+                  ),
+                  chatTyping && /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center gap-1.5 text-slate-500 text-[10px] bg-emerald-50/80 border border-emerald-200/60 px-3 py-2 rounded-lg w-max animate-pulse",
+                    children: [
+                      /* @__PURE__ */ jsx("span", { children: "Copilot is analyzing" }),
+                      /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-100", children: "." }),
+                      /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-200", children: "." }),
+                      /* @__PURE__ */ jsx("span", { className: "animate-bounce delay-300", children: "." })
+                    ]
+                  })
+                ]
+              }),
+
+              /* Chat Input Form */
+              /* @__PURE__ */ jsxs("form", {
+                onSubmit: handleSendChat,
+                className: "p-3 border-t border-slate-200 bg-white flex flex-col gap-2",
+                children: [
+                  chatAttachedImage && /* @__PURE__ */ jsxs("div", { className: "relative w-14 h-14 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 flex-shrink-0 mb-1 shadow-sm group", children: [
+                    /* @__PURE__ */ jsx("img", { src: chatAttachedImage, alt: "Attached Preview", className: "w-full h-full object-cover" }),
+                    /* @__PURE__ */ jsx("button", {
+                      type: "button",
+                      onClick: () => setChatAttachedImage(""),
+                      className: "absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center border-0 text-[8px] font-bold cursor-pointer shadow-sm",
+                      children: "✕"
+                    })
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+                    /* @__PURE__ */ jsxs("label", { className: "cursor-pointer text-slate-400 hover:text-emerald-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors flex items-center justify-center", title: "Attach Image", children: [
+                      /* @__PURE__ */ jsx(Paperclip, { size: 16 }),
+                      /* @__PURE__ */ jsx("input", {
+                        type: "file",
+                        accept: "image/*",
+                        className: "hidden",
+                        onChange: (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setChatAttachedImage(reader.result);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }
+                      })
+                    ] }),
+                    /* @__PURE__ */ jsx("input", {
+                      type: "text",
+                      value: chatInput,
+                      onChange: (e) => setChatInput(e.target.value),
+                      placeholder: "Ask Distributor Copilot...",
+                      className: "flex-1 text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                    }),
+                    /* @__PURE__ */ jsx("button", {
+                      type: "submit",
+                      disabled: !chatInput.trim() && !chatAttachedImage,
+                      className: "bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white p-2 rounded-xl border-0 cursor-pointer transition-all shadow-sm active:scale-95 flex items-center justify-center",
+                      title: "Send Message",
+                      children: /* @__PURE__ */ jsx(Send, { size: 14 })
+                    })
+                  ] })
+                ]
+              })
+            ]
+          }),
+
+          (!chatOpen || chatMinimized) && /* @__PURE__ */ jsxs(motion.button, {
+            type: "button",
+            initial: { scale: 0.8, opacity: 0 },
+            animate: { scale: 1, opacity: 1 },
+            whileHover: { scale: 1.05 },
+            whileTap: { scale: 0.95 },
+            onClick: () => {
+              setChatOpen(true);
+              setChatMinimized(false);
+            },
+            className: "bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-full px-4 py-3 shadow-xl hover:shadow-2xl flex items-center gap-3 border border-emerald-400/30 cursor-pointer group",
+            children: [
+              /* @__PURE__ */ jsxs("div", { className: "relative flex items-center justify-center", children: [
+                /* @__PURE__ */ jsx(Sparkles, { className: "w-5 h-5 text-white animate-pulse" }),
+                /* @__PURE__ */ jsx("span", { className: "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900 animate-ping" }),
+                /* @__PURE__ */ jsx("span", { className: "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900" })
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "text-left pr-1", children: [
+                /* @__PURE__ */ jsx("span", { className: "font-bold text-xs tracking-wide block leading-none", children: "CIQ Partner Copilot" }),
+                /* @__PURE__ */ jsx("span", { className: "text-[9px] text-emerald-200 font-medium block mt-0.5", children: "AI Partner Assistant" })
+              ] })
+            ]
+          })
+        ]
+      })
+    ] });
 }

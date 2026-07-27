@@ -298,7 +298,13 @@ export default function AdminPortal({ onLogout }) {
       const response = await fetch("/api/copilot/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText, history: chatMessages.slice(1), attached_image: attachedImg })
+        body: JSON.stringify({ 
+          message: userText, 
+          history: chatMessages.slice(1), 
+          attached_image: attachedImg,
+          portal_role: "ADMIN",
+          user_name: currentUser?.first_name || "Saif"
+        })
       });
       if (response.ok) {
         const data = await response.json();

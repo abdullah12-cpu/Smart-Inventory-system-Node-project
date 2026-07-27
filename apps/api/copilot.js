@@ -1,7 +1,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb } = require('./operations');
+const { createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb } = require('./adminOperations');
+const { getDistributorWholesaleProductsFromDb, getDistributorQuotationsFromDb, getDistributorOrdersFromDb, getDistributorLedgerStatusFromDb } = require('./distributorOperations');
 
 const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog assistant. You are strictly restricted to performing and discussing operations related to managing catalog inventory: creating products ("createProduct"), updating details/stocks ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), and reading, searching, or checking low stock alerts ("readProductData"). If the user asks generic questions, conversational prompts, or attempts tasks outside this catalog inventory scope, you MUST decline to answer, stating: "I can only assist with the registered operations: product catalog inventory management." Keep your conversational answers extremely short, direct, and focused strictly on inventory catalog records. Do not add conversational fluff. IMPORTANT: When creating a product, do NOT invent or fill in default values (like category, price, stock, brand, etc.) if they are not explicitly specified in the user prompt. Leave them empty/null.';
+
+const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, or altering system configurations. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify or delete baseline catalog products. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
 
 function filterProductsByMessage(rows, message) {
   const lower = message.toLowerCase();
@@ -291,10 +294,14 @@ async function handleAnalyticalQuery(pool, sqlQuery) {
 
 function registerCopilotRoutes(app, pool) {
   app.post('/api/copilot/chat', async (req, res) => {
-    const { message, history, attached_image } = req.body;
+    const { message, history, attached_image, portal_role, user_name } = req.body;
     if (!message) {
       return res.status(400).json({ success: false, message: 'Message payload is required.' });
     }
+
+    const role = (portal_role || 'ADMIN').toUpperCase();
+    const displayName = user_name || (role === 'DISTRIBUTOR' ? 'Partner' : 'Saif');
+    const effectiveSystemPrompt = role === 'DISTRIBUTOR' ? DISTRIBUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     const lowerMsg = message.toLowerCase().trim();
 
@@ -315,14 +322,23 @@ function registerCopilotRoutes(app, pool) {
       });
     }
 
-
+    // Role security check: Distributors cannot modify or delete catalog items
+    if (role === 'DISTRIBUTOR') {
+      const isAdminModification = /\b(delete|remove product|create product|add product|bulk update|alter catalog|drop table|truncate|update price|change price)\b/i.test(lowerMsg);
+      if (isAdminModification && !/\b(my order|quotation|quote|my cart)\b/i.test(lowerMsg)) {
+        return res.json({
+          success: true,
+          ai_message: `❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify or delete baseline catalog products. Admin permissions are required.`
+        });
+      }
+    }
 
     // 1. Simple greetings
     const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/i.test(lowerMsg);
     if (isGreeting && lowerMsg.split(/\s+/).length <= 3) {
       return res.json({
         success: true,
-        ai_message: `Hello Saif! How can I assist with your product catalog inventory today?`
+        ai_message: `Hello ${displayName}! I am your ${role === 'DISTRIBUTOR' ? 'CIQ Distributor Copilot' : 'CIQ Admin Copilot'}. How can I assist you today?`
       });
     }
 
@@ -383,7 +399,7 @@ function registerCopilotRoutes(app, pool) {
         const messages = [
           {
             role: 'system',
-            content: SYSTEM_PROMPT
+            content: effectiveSystemPrompt
           },
           ...(history || []).map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -635,7 +651,7 @@ function registerCopilotRoutes(app, pool) {
         const messages = [
           {
             role: 'system',
-            content: SYSTEM_PROMPT
+            content: effectiveSystemPrompt
           },
           ...(history || []).map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -738,7 +754,7 @@ function registerCopilotRoutes(app, pool) {
         const messages = [
           {
             role: 'system',
-            content: SYSTEM_PROMPT
+            content: effectiveSystemPrompt
           },
           ...(history || []).map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -839,7 +855,7 @@ function registerCopilotRoutes(app, pool) {
         const genAI = new GoogleGenerativeAI(geminiKey);
         const model = genAI.getGenerativeModel({
           model: 'gemini-2.5-flash',
-          systemInstruction: SYSTEM_PROMPT,
+          systemInstruction: effectiveSystemPrompt,
         });
 
         const createProductTool = {
