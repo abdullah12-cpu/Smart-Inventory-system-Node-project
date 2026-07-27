@@ -197,6 +197,12 @@ export default function AdminPortal({ onLogout }) {
       params.set("tab", activeTab);
       window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
     }
+    setChatMessages([
+      {
+        sender: "ai",
+        text: "Hello! I am CIQ Admin Copilot. I can assist you with product catalog inventory management, stock updates, creating products, or running analytical queries."
+      }
+    ]);
     setPageLoading(true);
     const timer = setTimeout(() => setPageLoading(false), 350);
     return () => clearTimeout(timer);

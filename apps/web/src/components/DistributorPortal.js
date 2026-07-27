@@ -167,6 +167,13 @@ export default function DistributorPortal({ onLogout }) {
       params.set("tab", activeTab);
       window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
     }
+    const partnerName = currentUser ? `${currentUser.first_name}`.trim() : "Partner";
+    setChatMessages([
+      {
+        sender: "ai",
+        text: `Hello ${partnerName}! I am your CIQ Distributor Copilot. I can help you check wholesale prices, check inventory stock, track orders, or view quotations.`
+      }
+    ]);
   }, [activeTab]);
 
   useEffect(() => {
@@ -195,12 +202,6 @@ export default function DistributorPortal({ onLogout }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMinimized, setChatMinimized] = useState(false);
   const [chatMessages, setChatMessages] = useState(() => {
-    const saved = localStorage.getItem("ciq_distributor_copilot_chat");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
     const partnerName = currentUser ? `${currentUser.first_name}`.trim() : "Partner";
     return [
       {
@@ -212,10 +213,6 @@ export default function DistributorPortal({ onLogout }) {
   const [chatInput, setChatInput] = useState("");
   const [chatTyping, setChatTyping] = useState(false);
   const [chatAttachedImage, setChatAttachedImage] = useState("");
-
-  useEffect(() => {
-    localStorage.setItem("ciq_distributor_copilot_chat", JSON.stringify(chatMessages));
-  }, [chatMessages]);
 
   const handleSendChat = async (e) => {
     e?.preventDefault();
@@ -229,7 +226,7 @@ export default function DistributorPortal({ onLogout }) {
     setChatTyping(true);
 
     try {
-      const response = await fetch("/api/copilot/chat", {
+      const response = await fetch("/api/copilot/distributor/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
