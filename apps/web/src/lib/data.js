@@ -87,6 +87,8 @@ export const INITIAL_PRODUCTS = [];
 // SUPPLIERS
 export const MOCK_SUPPLIERS = [];
 export const MOCK_ORDERS = [];
+export const MOCK_QUOTATIONS = [];
+export const MOCK_DISTRIBUTORS = [];
 export const MOCK_INVOICES = [];
 export const MOCK_PAYMENTS = [];
 export const INITIAL_NOTIFICATIONS = [];

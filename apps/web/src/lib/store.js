@@ -1,16 +1,5 @@
 import { jsx } from "react/jsx-runtime";
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import {
-  INITIAL_PRODUCTS,
-  MOCK_USERS,
-  MOCK_ORDERS,
-  MOCK_INVOICES,
-  MOCK_PAYMENTS,
-  MOCK_SUPPLIERS,
-  INITIAL_NOTIFICATIONS,
-  MOCK_STOCK_MOVEMENTS,
-  MOCK_AUDIT_LOGS
-} from "@/lib/data";
 const StoreContext = createContext(null);
 const GUEST_USER = {
   user_id: "guest",
