@@ -279,6 +279,112 @@ async function initDb() {
 // Invoke DB initialization
 initDb();
 
+// Explicit admin action: populate a useful analytics dataset in PostgreSQL.
+// It is idempotent, so pressing the button again will not duplicate records.
+app.post('/api/admin/seed-demo-data', async (_req, res) => {
+  const client = await pool.connect();
+  try {
+    const productsResult = await client.query('SELECT product_id, product_name, sku, prices FROM products ORDER BY id ASC');
+    if (productsResult.rows.length === 0) {
+      return res.status(409).json({ success: false, message: 'Add products before loading sample analytics data.' });
+    }
+
+    const products = productsResult.rows;
+    const customers = ['northstar', 'vertex', 'atlas', 'kite', 'bloom', 'lumen', 'orbit', 'summit'];
+    const statuses = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED'];
+    const quoteStatuses = ['DRAFT', 'NEGOTIATING', 'APPROVED', 'ACCEPTED', 'REJECTED'];
+    let orderCount = 0;
+    let quoteCount = 0;
+
+    await client.query('BEGIN');
+
+    for (let i = 1; i <= 50; i += 1) {
+      const product = products[(i - 1) % products.length];
+      const priceMap = typeof product.prices === 'string' ? JSON.parse(product.prices) : product.prices;
+      const unitPrice = Number(priceMap?.RETAIL || priceMap?.WHOLESALE || 10000);
+      const quantity = (i % 6) + 1;
+      const subtotal = unitPrice * quantity;
+      const tax = Math.round(subtotal * 0.18);
+      const total = subtotal + tax;
+      const date = new Date();
+      date.setDate(date.getDate() - ((i * 3) % 88));
+      const customer = customers[i % customers.length];
+      const inserted = await client.query(
+        `INSERT INTO orders (order_id, order_number, order_type, status, subtotal, discount_total, tax_total, total_amount, currency, order_date, items_summary, items, customer_email)
+         VALUES ($1, $2, $3, $4, $5, 0, $6, $7, 'PKR', $8, $9, $10, $11)
+         ON CONFLICT (order_id) DO NOTHING`,
+        [
+          `demo-order-${String(i).padStart(3, '0')}`,
+          `DEMO-SO-${String(i).padStart(4, '0')}`,
+          i % 3 === 0 ? 'B2B' : 'B2C',
+          statuses[i % statuses.length],
+          subtotal,
+          tax,
+          total,
+          date.toISOString(),
+          `${quantity} × ${product.product_name}`,
+          JSON.stringify([{ product_id: product.product_id, sku: product.sku, name: product.product_name, qty: quantity, quantity, price: unitPrice }]),
+          `${customer}@demo.com`
+        ]
+      );
+      orderCount += inserted.rowCount;
+
+      if (i <= 15) {
+        const quoteInserted = await client.query(
+          `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at, items)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (quotation_id) DO NOTHING`,
+          [
+            `demo-quote-${String(i).padStart(3, '0')}`,
+            `DEMO-QT-${String(i).padStart(4, '0')}`,
+            quoteStatuses[i % quoteStatuses.length],
+            total,
+            new Date(Date.now() + (i + 5) * 86400000).toISOString(),
+            date.toISOString(),
+            JSON.stringify([{ product_id: product.product_id, name: product.product_name, qty: quantity, price: unitPrice }])
+          ]
+        );
+        quoteCount += quoteInserted.rowCount;
+      }
+    }
+
+    const supplierRows = [
+      ['demo-sup-01', 'PakTech Supply Co.', 'Karachi', 'Pakistan', 94, 4],
+      ['demo-sup-02', 'Northern Components', 'Lahore', 'Pakistan', 89, 6],
+      ['demo-sup-03', 'Capital Network Systems', 'Islamabad', 'Pakistan', 91, 5],
+      ['demo-sup-04', 'Global Fiber Trading', 'Dubai', 'UAE', 84, 10],
+      ['demo-sup-05', 'EastLink Hardware', 'Shenzhen', 'China', 82, 14],
+      ['demo-sup-06', 'Metro Office Solutions', 'Karachi', 'Pakistan', 96, 3]
+    ];
+    for (const [supplierId, company, city, country, score, leadTime] of supplierRows) {
+      await client.query(
+        `INSERT INTO suppliers (supplier_id, company_name, contact_person, email, phone, city, country, reliability_score, lead_time_days)
+         VALUES ($1, $2, 'Demo Contact', $3, '+92 300 0000000', $4, $5, $6, $7)
+         ON CONFLICT (supplier_id) DO NOTHING`,
+        [supplierId, company, `${supplierId}@demo.com`, city, country, score, leadTime]
+      );
+    }
+
+    for (let i = 1; i <= 6; i += 1) {
+      await client.query(
+        `INSERT INTO users (email, password, role, status, contact_name, business_name, warehouse_region, city, country)
+         VALUES ($1, 'demopassword', 'distributor', $2, $3, $4, $5, $6, 'Pakistan')
+         ON CONFLICT (email) DO NOTHING`,
+        [`demo-distributor-${i}@demo.com`, i === 6 ? 'PENDING_APPROVAL' : 'ACTIVE', `Demo Distributor ${i}`, `Demo Distribution ${i}`, `wh-${((i - 1) % 3) + 1}`, ['Karachi', 'Lahore', 'Islamabad'][i % 3]]
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.json({ success: true, inserted: { orders: orderCount, quotations: quoteCount }, message: 'Sample analytics data is ready.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error seeding demo analytics data:', err);
+    return res.status(500).json({ success: false, message: 'Could not load sample analytics data.' });
+  } finally {
+    client.release();
+  }
+});
+
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, portal } = req.body;
