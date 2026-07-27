@@ -419,9 +419,38 @@ function getAdminTools(isGemini = false) {
     }
   };
 
+  const fnCreateDistributorQuotation = {
+    name: 'createDistributorQuotation',
+    description: 'Submits a new wholesale quotation request for a distributor partner.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        product_name: { type: isGemini ? 'STRING' : 'string', description: 'Product name or SKU code to request quotation for.' },
+        quantity: { type: isGemini ? 'INTEGER' : 'integer', description: 'Wholesale batch quantity requested.' },
+        target_price: { type: isGemini ? 'NUMBER' : 'number', description: 'Target wholesale unit price requested in PKR (optional).' }
+      },
+      required: ['product_name', 'quantity']
+    }
+  };
+
+  const fnCreateDistributorDirectOrder = {
+    name: 'createDistributorDirectOrder',
+    description: 'Places a direct B2B wholesale order for a distributor partner.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        product_name: { type: isGemini ? 'STRING' : 'string', description: 'Product name or SKU code to place direct order for.' },
+        quantity: { type: isGemini ? 'INTEGER' : 'integer', description: 'Order quantity.' },
+        warehouse_depot: { type: isGemini ? 'STRING' : 'string', description: 'Warehouse depot location (e.g. Karachi Central Depot, Lahore Terminal).' }
+      },
+      required: ['product_name', 'quantity']
+    }
+  };
+
   const list = [
     fnCreateProduct, fnDeleteProduct, fnUpdateProduct, fnBulkUpdateProducts, fnReadProductData, fnRunAnalyticalQuery,
-    fnCreateSupplier, fnUpdateSupplier, fnDeleteSupplier, fnReadSupplierData, fnManageOrders
+    fnCreateSupplier, fnUpdateSupplier, fnDeleteSupplier, fnReadSupplierData, fnManageOrders,
+    fnCreateDistributorQuotation, fnCreateDistributorDirectOrder
   ];
 
   if (isGemini) {
@@ -567,6 +596,18 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
       action_executed: 'manageOrders',
       ai_message: md
     };
+  } else if (name === 'createDistributorQuotation') {
+    const quote = await createDistributorQuotationInDb(pool, args.customer_email, args.customer_name, args.product_name, args.quantity, args.target_price);
+    return {
+      action_executed: 'createDistributorQuotation',
+      ai_message: `✅ **Quotation Request Submitted Successfully!**\n\n- **Quotation ID**: \`${quote.quotation_id}\`\n- **Quotation Number**: **${quote.quotation_number}**\n- **Product**: **${quote.product_name}** (${quote.sku})\n- **Quantity**: ${quote.quantity} units\n- **Target Unit Price**: Rs ${Number(quote.unit_price).toLocaleString()}\n- **Total Estimated Value**: Rs ${Number(quote.total_amount).toLocaleString()}\n- **Status**: \`${quote.status}\` (Under Review by Sales Team)`
+    };
+  } else if (name === 'createDistributorDirectOrder') {
+    const order = await createDistributorDirectOrderInDb(pool, args.customer_email, args.customer_name, args.product_name, args.quantity, args.warehouse_depot);
+    return {
+      action_executed: 'createDistributorDirectOrder',
+      ai_message: `✅ **Direct B2B Wholesale Order Placed Successfully!**\n\n- **Order Number**: **${order.order_number}**\n- **Product**: **${order.product_name}** (${order.sku})\n- **Order Quantity**: ${order.quantity} units\n- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n- **Warehouse Depot**: ${order.warehouse_depot}\n- **Order Status**: \`${order.status}\` (Processing)`
+    };
   }
   throw new Error(`Unknown tool name: ${name}`);
 }
@@ -666,6 +707,46 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
 
   // ── DISTRIBUTOR PARTNER FALLBACKS ──────────────────────────────────────────
   if (role === 'DISTRIBUTOR' || /\b(wholesale|distributor|quotation|quote|bid|order|po|ledger|credit limit)\b/i.test(lowerMsg)) {
+    // Prompt action 1: Request Quotation via Prompt
+    const isQuoteCreate = /\b(request|create|submit|add)\s+(?:a\s+)?(?:quote|quotation)\b/i.test(lowerMsg) ||
+      /\b(quote|quotation)\s+(?:for|request|requesting)\b/i.test(lowerMsg);
+    if (isQuoteCreate) {
+      const prodMatch = message.match(/(?:for|item|product)\s+["']?([^"'\n\d,]+?)["']?\s*(?:qty|quantity|amount|at|target|\d+|$)/i);
+      const qtyMatch = message.match(/\b(?:qty|quantity|units?)\s*[:=]?\s*(\d+)\b/i) || message.match(/\b(\d+)\s*(?:units?|pcs|pieces?|qty)\b/i);
+      const targetPriceMatch = message.match(/(?:price|rate|cost|target|at)\s*(?:rs\.?\s*)?(\d+)/i);
+      
+      const prodName = prodMatch ? prodMatch[1].trim() : 'laptop';
+      const qty = qtyMatch ? parseInt(qtyMatch[1]) : 10;
+      const targetPrice = targetPriceMatch ? parseFloat(targetPriceMatch[1]) : null;
+
+      try {
+        const quote = await createDistributorQuotationInDb(pool, 'asim@commerceiq.com', 'Saif Distributor', prodName, qty, targetPrice);
+        const md = `✅ **Quotation Request Submitted Successfully via Prompt!**\n\n- **Quotation ID**: \`${quote.quotation_id}\`\n- **Quotation Number**: **${quote.quotation_number}**\n- **Product**: **${quote.product_name}** (${quote.sku})\n- **Quantity**: ${quote.quantity} units\n- **Target Unit Price**: Rs ${Number(quote.unit_price).toLocaleString()}\n- **Total Estimated Value**: Rs ${Number(quote.total_amount).toLocaleString()}\n- **Status**: \`${quote.status}\` (Under Review by Sales Team)`;
+        return res.json({ success: true, action_executed: "createDistributorQuotation", ai_message: md });
+      } catch (err) {
+        return res.json({ success: true, ai_message: `❌ Error submitting quotation request: ${err.message}` });
+      }
+    }
+
+    // Prompt action 2: Place Direct B2B Order via Prompt
+    const isDirectOrder = /\b(place|create|buy|direct)\s+(?:a\s+)?(?:direct\s+)?order\b/i.test(lowerMsg) ||
+      /\border\s+(\d+)\s+(?:units?|pcs|pieces?)\s+of\b/i.test(lowerMsg);
+    if (isDirectOrder) {
+      const prodMatch = message.match(/(?:for|of|item|product)\s+["']?([^"'\n\d,]+?)["']?\s*(?:qty|quantity|amount|in|at|\d+|$)/i);
+      const qtyMatch = message.match(/\b(?:qty|quantity|units?)\s*[:=]?\s*(\d+)\b/i) || message.match(/\b(\d+)\s*(?:units?|pcs|pieces?|qty)\b/i);
+      
+      const prodName = prodMatch ? prodMatch[1].trim() : 'laptop';
+      const qty = qtyMatch ? parseInt(qtyMatch[1]) : 10;
+
+      try {
+        const order = await createDistributorDirectOrderInDb(pool, 'asim@commerceiq.com', 'Saif Distributor', prodName, qty, 'Karachi Central Depot');
+        const md = `✅ **Direct B2B Wholesale Order Placed Successfully via Prompt!**\n\n- **Order Number**: **${order.order_number}**\n- **Product**: **${order.product_name}** (${order.sku})\n- **Order Quantity**: ${order.quantity} units\n- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n- **Warehouse Depot**: ${order.warehouse_depot}\n- **Order Status**: \`${order.status}\` (Processing)`;
+        return res.json({ success: true, action_executed: "createDistributorDirectOrder", ai_message: md });
+      } catch (err) {
+        return res.json({ success: true, ai_message: `❌ Error placing direct order: ${err.message}` });
+      }
+    }
+
     if (/\b(quotation|quote|bid)\b/i.test(lowerMsg)) {
       try {
         const rows = await getDistributorQuotationsFromDb(pool);

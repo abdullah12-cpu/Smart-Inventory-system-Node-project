@@ -86,6 +86,20 @@ async function executeDistributorTool(pool, name, args) {
     const md = `### 💳 Distributor Financial Ledger & Credit Status\n\n- **Approved Credit Limit**: Rs ${Number(ledger.credit_limit || 2500000).toLocaleString()}\n- **Used Credit**: Rs ${Number(ledger.used_credit || 450000).toLocaleString()}\n- **Available Credit Balance**: Rs ${Number(ledger.remaining_credit || 2050000).toLocaleString()}\n- **Outstanding Invoices**: ${ledger.open_invoices || 1} open (${ledger.payment_terms || 'NET-30'} Terms)`;
     return { action_executed: name, ai_message: md };
   }
+  if (name === 'createDistributorQuotation') {
+    const quote = await distributorOps.createDistributorQuotationInDb(pool, args.customer_email, args.customer_name, args.product_name, args.quantity, args.target_price);
+    return {
+      action_executed: name,
+      ai_message: `✅ **Quotation Request Submitted Successfully!**\n\n- **Quotation ID**: \`${quote.quotation_id}\`\n- **Quotation Number**: **${quote.quotation_number}**\n- **Product**: **${quote.product_name}** (${quote.sku})\n- **Quantity**: ${quote.quantity} units\n- **Target Unit Price**: Rs ${Number(quote.unit_price).toLocaleString()}\n- **Total Estimated Value**: Rs ${Number(quote.total_amount).toLocaleString()}\n- **Status**: \`${quote.status}\` (Under Review by Sales Team)`
+    };
+  }
+  if (name === 'createDistributorDirectOrder') {
+    const order = await distributorOps.createDistributorDirectOrderInDb(pool, args.customer_email, args.customer_name, args.product_name, args.quantity, args.warehouse_depot);
+    return {
+      action_executed: name,
+      ai_message: `✅ **Direct B2B Wholesale Order Placed Successfully!**\n\n- **Order Number**: **${order.order_number}**\n- **Product**: **${order.product_name}** (${order.sku})\n- **Order Quantity**: ${order.quantity} units\n- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n- **Warehouse Depot**: ${order.warehouse_depot}\n- **Order Status**: \`${order.status}\` (Processing)`
+    };
+  }
   throw new Error(`Tool execution error: Unknown distributor tool ${name}`);
 }
 

@@ -16,6 +16,8 @@
     "getDistributorWholesaleProducts",
     "getDistributorQuotations",
     "getDistributorOrders",
-    "getDistributorLedgerStatus"
+    "getDistributorLedgerStatus",
+    "createDistributorQuotation",
+    "createDistributorDirectOrder"
   ]
 }
