@@ -1,10 +1,12 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb } = require('./adminOperations');
+const { 
+  createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb,
+  createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb
+} = require('./adminOperations');
 const { getDistributorWholesaleProductsFromDb, getDistributorQuotationsFromDb, getDistributorOrdersFromDb, getDistributorLedgerStatusFromDb } = require('./distributorOperations');
 
-const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog assistant. You are strictly restricted to performing and discussing operations related to managing catalog inventory: creating products ("createProduct"), updating details/stocks ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), and reading, searching, or checking low stock alerts ("readProductData"). If the user asks generic questions, conversational prompts, or attempts tasks outside this catalog inventory scope, you MUST decline to answer, stating: "I can only assist with the registered operations: product catalog inventory management." Keep your conversational answers extremely short, direct, and focused strictly on inventory catalog records. Do not add conversational fluff. IMPORTANT: When creating a product, do NOT invent or fill in default values (like category, price, stock, brand, etc.) if they are not explicitly specified in the user prompt. Leave them empty/null.';
-
-const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, or altering system configurations. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify or delete baseline catalog products. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
+const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog and vendor assistant. You are strictly restricted to performing and discussing operations related to managing catalog inventory and supplier directories: creating products ("createProduct"), updating details/stocks ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating supplier details ("updateSupplier"), deleting suppliers ("deleteSupplier"), and reading/searching supplier records ("readSupplierData"). If the user asks generic questions or attempts tasks outside this scope, you MUST decline to answer, stating: "I can only assist with registered catalog inventory and supplier management operations." Keep your answers extremely short and direct. IMPORTANT: For create operations, do NOT invent default details if they are not explicitly specified.';
+const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
 
 function filterProductsByMessage(rows, message) {
   const lower = message.toLowerCase();
@@ -211,7 +213,408 @@ function mergeSpecsIntoArgs(args, specs) {
   return args;
 }
 
+function getAdminTools(isGemini = false) {
+  const productProps = {
+    name: { type: isGemini ? 'STRING' : 'string', description: 'Product Name' },
+    category: { type: isGemini ? 'STRING' : 'string', description: 'Catalog Category' },
+    price: { type: isGemini ? 'NUMBER' : 'number', description: 'Selling price in PKR' },
+    stock: { type: isGemini ? 'INTEGER' : 'integer', description: 'Initial stock units' },
+    image_url: { type: isGemini ? 'STRING' : 'string', description: 'Product image URL (optional)' },
+    sku: { type: isGemini ? 'STRING' : 'string', description: 'Product Code / SKU' },
+    barcode: { type: isGemini ? 'STRING' : 'string', description: 'UPC Barcode' },
+    brand: { type: isGemini ? 'STRING' : 'string', description: 'Brand Name' },
+    description: { type: isGemini ? 'STRING' : 'string', description: 'Product short description' },
+    unit: { type: isGemini ? 'STRING' : 'string', description: 'Base unit of measure' },
+    weight: { type: isGemini ? 'NUMBER' : 'number', description: 'Weight of unit in kg' },
+    distributor_price: { type: isGemini ? 'NUMBER' : 'number', description: 'Wholesale / distributor rate in PKR' },
+    min_wholesale_qty: { type: isGemini ? 'INTEGER' : 'integer', description: 'Minimum wholesale quantity restriction' },
+    max_discount: { type: isGemini ? 'INTEGER' : 'integer', description: 'Maximum discount percent (0-100)' },
+    karachi_stock: { type: isGemini ? 'INTEGER' : 'integer', description: 'Karachi Central Depot stock level' },
+    lahore_stock: { type: isGemini ? 'INTEGER' : 'integer', description: 'Lahore North Terminal stock level' },
+    low_stock_threshold: { type: isGemini ? 'INTEGER' : 'integer', description: 'Low Stock trigger threshold limit' },
+    total_product_limit: { type: isGemini ? 'INTEGER' : 'integer', description: 'Maximum total product limit capacity' }
+  };
+
+  const supplierProps = {
+    company_name: { type: isGemini ? 'STRING' : 'string', description: 'Vendor company name (required)' },
+    contact_person: { type: isGemini ? 'STRING' : 'string', description: 'Contact person name' },
+    email: { type: isGemini ? 'STRING' : 'string', description: 'Contact email address' },
+    phone: { type: isGemini ? 'STRING' : 'string', description: 'Contact phone number' },
+    city: { type: isGemini ? 'STRING' : 'string', description: 'City location' },
+    country: { type: isGemini ? 'STRING' : 'string', description: 'Country location (default: Pakistan)' }
+  };
+
+  const updateSupplierProps = {
+    identifier: { type: isGemini ? 'STRING' : 'string', description: 'Vendor company name or supplier ID to update (required)' },
+    new_company_name: { type: isGemini ? 'STRING' : 'string', description: 'New company name' },
+    new_contact_person: { type: isGemini ? 'STRING' : 'string', description: 'New contact person name' },
+    new_email: { type: isGemini ? 'STRING' : 'string', description: 'New contact email address' },
+    new_phone: { type: isGemini ? 'STRING' : 'string', description: 'New contact phone number' },
+    new_city: { type: isGemini ? 'STRING' : 'string', description: 'New city location' },
+    new_country: { type: isGemini ? 'STRING' : 'string', description: 'New country location' }
+  };
+
+  const deleteSupplierProps = {
+    identifier: { type: isGemini ? 'STRING' : 'string', description: 'Vendor company name or supplier ID to delete (required)' }
+  };
+
+  const readSupplierProps = {
+    action_type: { type: isGemini ? 'STRING' : 'string', enum: ['search', 'list_all'], description: 'Use "list_all" to view supplier registry, or "search" to look up specific suppliers.' },
+    identifier: { type: isGemini ? 'STRING' : 'string', description: 'Supplier name, email, contact, or city to search for.' }
+  };
+
+  const fnCreateProduct = {
+    name: 'createProduct',
+    description: 'Creates a new SKU catalog product and registers it in database inventory.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: productProps,
+      required: ['name']
+    }
+  };
+
+  const fnDeleteProduct = {
+    name: 'deleteProduct',
+    description: 'Deletes a product by its name or SKU.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        identifier: { type: isGemini ? 'STRING' : 'string', description: 'Product Name or SKU to delete' }
+      },
+      required: ['identifier']
+    }
+  };
+
+  const fnUpdateProduct = {
+    name: 'updateProduct',
+    description: 'Updates specific fields of an existing individual product.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        identifier: { type: isGemini ? 'STRING' : 'string', description: 'Product name or SKU to update.' },
+        new_name: { type: isGemini ? 'STRING' : 'string' },
+        new_category: { type: isGemini ? 'STRING' : 'string' },
+        new_brand: { type: isGemini ? 'STRING' : 'string' },
+        new_price: { type: isGemini ? 'NUMBER' : 'number' },
+        new_distributor_price: { type: isGemini ? 'NUMBER' : 'number' },
+        stock_adjustment: { type: isGemini ? 'INTEGER' : 'integer' }
+      },
+      required: ['identifier']
+    }
+  };
+
+  const fnBulkUpdateProducts = {
+    name: 'bulkUpdateProducts',
+    description: 'Performs bulk updates on products matching a category or brand.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        category_filter: { type: isGemini ? 'STRING' : 'string' },
+        brand_filter: { type: isGemini ? 'STRING' : 'string' },
+        price_percentage_change: { type: isGemini ? 'NUMBER' : 'number' },
+        distributor_price_percentage_change: { type: isGemini ? 'NUMBER' : 'number' },
+        new_status: { type: isGemini ? 'STRING' : 'string' },
+        new_category: { type: isGemini ? 'STRING' : 'string' },
+        new_brand: { type: isGemini ? 'STRING' : 'string' }
+      }
+    }
+  };
+
+  const fnReadProductData = {
+    name: 'readProductData',
+    description: 'Searches the database to read, check stock, or list products.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        action_type: { type: isGemini ? 'STRING' : 'string', enum: ['search', 'browse_category', 'low_stock'] },
+        identifier: { type: isGemini ? 'STRING' : 'string' },
+        category: { type: isGemini ? 'STRING' : 'string' }
+      },
+      required: ['action_type']
+    }
+  };
+
+  const fnRunAnalyticalQuery = {
+    name: 'runAnalyticalQuery',
+    description: 'Executes a read-only database query to answer analytical questions, statistics, summaries, and reports.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        sql_query: { type: isGemini ? 'STRING' : 'string', description: 'A valid read-only SELECT SQL statement. Tables: products, orders, suppliers, stock_movements, and audit_logs.' }
+      },
+      required: ['sql_query']
+    }
+  };
+
+  const fnCreateSupplier = {
+    name: 'createSupplier',
+    description: 'Creates and onboards a new vendor supplier in the system database.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: supplierProps,
+      required: ['company_name']
+    }
+  };
+
+  const fnUpdateSupplier = {
+    name: 'updateSupplier',
+    description: 'Updates details of an existing vendor supplier.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: updateSupplierProps,
+      required: ['identifier']
+    }
+  };
+
+  const fnDeleteSupplier = {
+    name: 'deleteSupplier',
+    description: 'Deletes a supplier record from the vendor directory.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: deleteSupplierProps,
+      required: ['identifier']
+    }
+  };
+
+  const fnReadSupplierData = {
+    name: 'readSupplierData',
+    description: 'Reads, searches, or lists details of vendor suppliers from the database.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: readSupplierProps,
+      required: ['action_type']
+    }
+  };
+
+  const list = [
+    fnCreateProduct, fnDeleteProduct, fnUpdateProduct, fnBulkUpdateProducts, fnReadProductData, fnRunAnalyticalQuery,
+    fnCreateSupplier, fnUpdateSupplier, fnDeleteSupplier, fnReadSupplierData
+  ];
+
+  if (isGemini) {
+    return list;
+  }
+  return list.map(fn => ({ type: 'function', function: fn }));
+}
+
+async function handleReadSupplierData(pool, args, message) {
+  if (args.action_type === 'list_all') {
+    const res = await pool.query('SELECT * FROM suppliers LIMIT 20');
+    if (res.rows.length === 0) return 'ℹ️ No suppliers found in the vendor directory.';
+    return '### 🏢 Suppliers & Vendors Directory\n\n| Company Name | Contact Person | Email | Location |\n|---|---|---|---|\n' +
+      res.rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
+  }
+
+  const searchVal = args.identifier || '';
+  const rows = await searchSuppliersInDb(pool, searchVal);
+  if (rows.length === 0) return `❌ Could not find supplier matching search key: "${searchVal}"`;
+  return '### 🔍 Searched Suppliers\n\n| Company Name | Contact Person | Email | Location |\n|---|---|---|---|\n' +
+    rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
+}
+
+function extractSupplierSpecsFromMessage(message) {
+  const lower = message.toLowerCase();
+  const specs = {};
+
+  const labelLookahead = '(?=\\s*(?:company name|company|contact person|contact|email address|email|phone number|phone|city|country)(?:\\s*\\([^)]+\\))?:|$)';
+
+  const nameMatch = message.match(new RegExp(`(?:company name|company):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const contactMatch = message.match(new RegExp(`(?:contact person|contact):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const emailMatch = message.match(new RegExp(`(?:email address|email):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const phoneMatch = message.match(new RegExp(`(?:phone number|phone):\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const cityMatch = message.match(new RegExp(`city:\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+  const countryMatch = message.match(new RegExp(`country:\\s*([^\\n,]*?)${labelLookahead}`, 'i'));
+
+  if (nameMatch) specs.company_name = nameMatch[1].trim();
+  if (contactMatch) specs.contact_person = contactMatch[1].trim();
+  if (emailMatch) specs.email = emailMatch[1].trim();
+  if (phoneMatch) specs.phone = phoneMatch[1].trim();
+  if (cityMatch) specs.city = cityMatch[1].trim();
+  if (countryMatch) specs.country = countryMatch[1].trim();
+
+  return specs;
+}
+
+async function executeCopilotTool(pool, name, args, message, attached_image) {
+  if (name === 'createProduct') {
+    if (attached_image) {
+      args.image_url = attached_image;
+    }
+    const specs = extractSpecsFromMessage(message);
+    mergeSpecsIntoArgs(args, specs);
+    const newProduct = await createProductInDb(pool, args);
+    return {
+      action_executed: 'createProduct',
+      ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
+      product: newProduct
+    };
+  } else if (name === 'deleteProduct') {
+    const deleted = await deleteProductFromDb(pool, args.identifier);
+    return {
+      action_executed: 'deleteProduct',
+      ai_message: `✅ Deleted product: **${deleted.product_name}** (SKU: ${deleted.sku}).`
+    };
+  } else if (name === 'updateProduct') {
+    const updated = await updateProductInDb(pool, args.identifier, args);
+    return {
+      action_executed: 'updateProduct',
+      ai_message: `✅ Updated product: **${updated.product_name}**. (Edits applied successfully)`
+    };
+  } else if (name === 'bulkUpdateProducts') {
+    const count = await bulkUpdateProductsInDb(pool, args.category_filter, args.brand_filter, args);
+    return {
+      action_executed: 'bulkUpdateProducts',
+      ai_message: `✅ Bulk operation completed: Successfully modified **${count}** products matching your criteria.`
+    };
+  } else if (name === 'readProductData') {
+    const markdownMsg = await handleReadProductData(pool, args, message);
+    return {
+      action_executed: 'readProductData',
+      ai_message: markdownMsg
+    };
+  } else if (name === 'runAnalyticalQuery') {
+    const reportMsg = await handleAnalyticalQuery(pool, args.sql_query);
+    return {
+      action_executed: 'runAnalyticalQuery',
+      ai_message: reportMsg
+    };
+  } else if (name === 'createSupplier') {
+    const specs = extractSupplierSpecsFromMessage(message);
+    const merged = { ...args, ...specs };
+    if (!merged.company_name) {
+      throw new Error('Company name is required to onboard a supplier.');
+    }
+    const newSup = await createSupplierInDb(pool, merged);
+    return {
+      action_executed: 'createSupplier',
+      ai_message: `✅ Onboarded Supplier: **${newSup.company_name}** (${newSup.city || 'N/A'}, ${newSup.country || 'N/A'}). Contact Person: ${newSup.contact_person || 'N/A'}. Email: ${newSup.email || 'N/A'}. Phone: ${newSup.phone || 'N/A'}.`,
+      supplier: newSup
+    };
+  } else if (name === 'updateSupplier') {
+    const specs = extractSupplierSpecsFromMessage(message);
+    const mappedSpecs = {};
+    if (specs.company_name) mappedSpecs.new_company_name = specs.company_name;
+    if (specs.contact_person) mappedSpecs.new_contact_person = specs.contact_person;
+    if (specs.email) mappedSpecs.new_email = specs.email;
+    if (specs.phone) mappedSpecs.new_phone = specs.phone;
+    if (specs.city) mappedSpecs.new_city = specs.city;
+    if (specs.country) mappedSpecs.new_country = specs.country;
+
+    const merged = { ...args, ...mappedSpecs };
+    const updatedSup = await updateSupplierInDb(pool, args.identifier, merged);
+    return {
+      action_executed: 'updateSupplier',
+      ai_message: `✅ Updated Supplier profile: **${updatedSup.company_name}**. (Edits applied successfully)`
+    };
+  } else if (name === 'deleteSupplier') {
+    const deletedSup = await deleteSupplierFromDb(pool, args.identifier);
+    return {
+      action_executed: 'deleteSupplier',
+      ai_message: `✅ Deleted Supplier: **${deletedSup.company_name}** (ID: ${deletedSup.supplier_id}).`
+    };
+  } else if (name === 'readSupplierData') {
+    const markdownMsg = await handleReadSupplierData(pool, args, message);
+    return {
+      action_executed: 'readSupplierData',
+      ai_message: markdownMsg
+    };
+  }
+  throw new Error(`Unknown tool name: ${name}`);
+}
+
 async function handleLocalFallback(pool, message, attached_image, res) {
+  const lowerMsg = message.toLowerCase();
+  
+  if (/\b(add|create|onboard|register)\s+supplier\b/i.test(lowerMsg)) {
+    const specs = extractSupplierSpecsFromMessage(message);
+    if (!specs.company_name) {
+      return res.json({
+        success: true,
+        ai_message: `❌ Please specify the supplier name. Pattern: "Add supplier company: [Name], contact: [Person], email: [Email], city: [City]"`
+      });
+    }
+    try {
+      const newSup = await createSupplierInDb(pool, specs);
+      return res.json({
+        success: true,
+        action_executed: 'createSupplier',
+        ai_message: `✅ Onboarded Supplier: **${newSup.company_name}** (${newSup.city || 'N/A'}, ${newSup.country || 'N/A'}). Contact Person: ${newSup.contact_person || 'N/A'}. *(Local fallback)*`,
+        supplier: newSup
+      });
+    } catch (err) {
+      return res.json({ success: true, ai_message: `❌ Failed to create supplier: ${err.message}` });
+    }
+  }
+
+  if (/\b(update|edit|change)\s+supplier\b/i.test(lowerMsg)) {
+    const specs = extractSupplierSpecsFromMessage(message);
+    const match = message.match(/(?:update|edit|change)\s+supplier\s+([^\n,:]+)/i);
+    let identifier = match ? match[1].trim() : '';
+    if (!identifier && specs.company_name) {
+      identifier = specs.company_name;
+    }
+    if (!identifier) {
+      return res.json({
+        success: true,
+        ai_message: `❌ Please specify which supplier to update. Pattern: "Update supplier [Company Name] contact: [New Person]"`
+      });
+    }
+    const mapped = {};
+    if (specs.company_name) mapped.new_company_name = specs.company_name;
+    if (specs.contact_person) mapped.new_contact_person = specs.contact_person;
+    if (specs.email) mapped.new_email = specs.email;
+    if (specs.phone) mapped.new_phone = specs.phone;
+    if (specs.city) mapped.new_city = specs.city;
+    if (specs.country) mapped.new_country = specs.country;
+
+    try {
+      const updated = await updateSupplierInDb(pool, identifier, mapped);
+      return res.json({
+        success: true,
+        action_executed: 'updateSupplier',
+        ai_message: `✅ Updated Supplier profile: **${updated.company_name}** (Edits applied successfully). *(Local fallback)*`
+      });
+    } catch (err) {
+      return res.json({ success: true, ai_message: `❌ Could not find or update supplier: ${err.message}` });
+    }
+  }
+
+  if (/\b(delete|remove)\s+supplier\b/i.test(lowerMsg)) {
+    const match = message.match(/(?:delete|remove)\s+supplier\s+([^\n,:]+)/i);
+    const identifier = match ? match[1].trim() : '';
+    if (!identifier) {
+      return res.json({
+        success: true,
+        ai_message: `❌ Please specify which supplier to delete. Pattern: "Delete supplier [Company Name]"`
+      });
+    }
+    try {
+      const deleted = await deleteSupplierFromDb(pool, identifier);
+      return res.json({
+        success: true,
+        action_executed: 'deleteSupplier',
+        ai_message: `✅ Deleted Supplier: **${deleted.company_name}** (ID: ${deleted.supplier_id}). *(Local fallback)*`
+      });
+    } catch (err) {
+      return res.json({ success: true, ai_message: `❌ Could not delete supplier: ${err.message}` });
+    }
+  }
+
+  if (/\b(search|find|list|show|check)\s+suppliers?\b/i.test(lowerMsg)) {
+    const match = message.match(/(?:search|find|show|check)\s+supplier\s+([^\n,:]+)/i);
+    const identifier = match ? match[1].trim() : '';
+    try {
+      const md = await handleReadSupplierData(pool, { action_type: identifier ? 'search' : 'list_all', identifier }, message);
+      return res.json({
+        success: true,
+        action_executed: 'readSupplierData',
+        ai_message: md + `\n\n*(Local fallback)*`
+      });
+    } catch (err) {
+      return res.json({ success: true, ai_message: `❌ Error reading suppliers: ${err.message}` });
+    }
+  }
+
   const specs = extractSpecsFromMessage(message);
   
   if (!specs.name) {
@@ -248,7 +651,7 @@ async function handleLocalFallback(pool, message, attached_image, res) {
 
   return res.json({
     success: true,
-    ai_message: `Please set MISTRAL_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY environment variables to use live AI. Or type: "Add product: [Name], category: [Cat], price: [Rs], stock: [Qty]"`
+    ai_message: `Please set MISTRAL_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY environment variables to use live AI. Or type: "Add supplier company: [Name], contact: [Person]"`
   });
 }
 
@@ -419,122 +822,7 @@ function registerCopilotRoutes(app, pool) {
           body: JSON.stringify({
             model: modelName,
             messages: messages,
-            tools: [
-              {
-                type: 'function',
-                function: {
-                  name: 'createProduct',
-                  description: 'Creates a new SKU catalog product and registers it in database inventory.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string', description: 'Product Name' },
-                      category: { type: 'string', description: 'Catalog Category' },
-                      price: { type: 'number', description: 'Selling price in PKR' },
-                      stock: { type: 'integer', description: 'Initial stock units' },
-                      image_url: { type: 'string', description: 'Product image URL (optional)' },
-                      sku: { type: 'string', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
-                      barcode: { type: 'string', description: 'UPC Barcode (e.g. 889728248741)' },
-                      brand: { type: 'string', description: 'Brand Name (e.g. Cisco)' },
-                      description: { type: 'string', description: 'Product short description' },
-                      unit: { type: 'string', description: 'Base unit of measure (e.g. PCS, units)' },
-                      weight: { type: 'number', description: 'Weight of unit in kg' },
-                      distributor_price: { type: 'number', description: 'Wholesale / distributor rate in PKR' },
-                      min_wholesale_qty: { type: 'integer', description: 'Minimum wholesale quantity restriction' },
-                      max_discount: { type: 'integer', description: 'Maximum discount percent (0-100)' },
-                      karachi_stock: { type: 'integer', description: 'Karachi Central Depot stock level' },
-                      lahore_stock: { type: 'integer', description: 'Lahore North Terminal stock level' },
-                      low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
-                      total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
-                    },
-                    required: ['name']
-                  }
-                }
-              },
-              {
-                type: 'function',
-                function: {
-                  name: 'deleteProduct',
-                  description: 'Deletes a product by its name or SKU.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      identifier: { type: 'string', description: 'Product Name or SKU to delete' }
-                    },
-                    required: ['identifier']
-                  }
-                }
-              },
-              {
-                type: 'function',
-                function: {
-                  name: 'updateProduct',
-                  description: 'Updates specific fields of an existing individual product. Do NOT use this to rename an entire category.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      identifier: { type: 'string', description: 'Product name or SKU to update. Strictly exclude any prices, numbers, or update keywords from this identifier (e.g. if the user says "update price of Samsung ssd 25000", the identifier is "Samsung ssd").' },
-                      new_name: { type: 'string' },
-                      new_category: { type: 'string' },
-                      new_brand: { type: 'string' },
-                      new_price: { type: 'number', description: 'New retail / buyer price to set' },
-                      new_distributor_price: { type: 'number', description: 'New distributor, wholesale, or agent price to set (e.g. 25000 if user says "25000 for the distributor").' },
-                      stock_adjustment: { type: 'integer', description: 'Amount to add/subtract from stock' }
-                    },
-                    required: ['identifier']
-                  }
-                }
-              },
-              {
-                type: 'function',
-                function: {
-                  name: 'bulkUpdateProducts',
-                  description: 'Performs bulk updates on products matching a category or brand. Use this to explicitly rename an entire category or brand.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      category_filter: { type: 'string', description: 'Category to target (e.g. Networking)' },
-                      brand_filter: { type: 'string', description: 'Brand to target' },
-                      price_percentage_change: { type: 'number', description: 'Percentage to change retail prices (e.g., 5 for +5%)' },
-                      distributor_price_percentage_change: { type: 'number', description: 'Percentage to change distributor prices' },
-                      new_status: { type: 'string', description: 'New status for all matched products' },
-                      new_category: { type: 'string', description: 'New category for all matched products' },
-                      new_brand: { type: 'string', description: 'New brand for all matched products' }
-                    }
-                  }
-                }
-              },
-              {
-                type: 'function',
-                function: {
-                  name: 'readProductData',
-                  description: 'Searches the database to read, check stock, or list products. Use this BEFORE updating/deleting if you are unsure.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      action_type: { type: 'string', enum: ['search', 'browse_category', 'low_stock'], description: 'Use "search" for specific products (even if asking for stock), "browse_category" for a whole category, and "low_stock" ONLY to list all globally low items.' },
-                      identifier: { type: 'string', description: 'Product Name or SKU to search for (if action_type is search)' },
-                      category: { type: 'string', description: 'Category to browse (if action_type is browse_category)' }
-                    },
-                    required: ['action_type']
-                  }
-                }
-              },
-              {
-                type: 'function',
-                function: {
-                  name: 'runAnalyticalQuery',
-                  description: 'Executes a read-only database query to answer analytical questions, statistics, summaries, counts, and reports. Do NOT use this for updating, deleting, inserting, or modifying data.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      sql_query: { type: 'string', description: 'A valid read-only SELECT SQL statement. Only reference tables: products, orders, stock_movements, and audit_logs. Do NOT use modifying commands.' }
-                    },
-                    required: ['sql_query']
-                  }
-                }
-              }
-            ],
+            tools: getAdminTools(false),
             tool_choice: 'auto'
           })
         });
@@ -546,87 +834,22 @@ function registerCopilotRoutes(app, pool) {
 
           if (toolCalls && toolCalls.length > 0) {
             const toolCall = toolCalls[0];
-            if (toolCall.function.name === 'createProduct') {
-              const args = JSON.parse(toolCall.function.arguments);
-              if (attached_image) {
-                args.image_url = attached_image;
-              }
-              const specs = extractSpecsFromMessage(message);
-              mergeSpecsIntoArgs(args, specs);
-              const newProduct = await createProductInDb(pool, args);
+            const functionName = toolCall.function.name;
+            let args;
+            try {
+              args = JSON.parse(toolCall.function.arguments);
+            } catch (e) {
+              return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
+            }
+            try {
+              const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
               return res.json({
                 success: true,
-                action_executed: 'createProduct',
-                ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}. *(Local Ollama Model: ${modelName})*`,
-                product: newProduct
+                ...executionResult,
+                ai_message: executionResult.ai_message + `\n\n*(Local Ollama Model: ${modelName})*`
               });
-            } else if (toolCall.function.name === 'deleteProduct') {
-              const args = JSON.parse(toolCall.function.arguments);
-              try {
-                const deleted = await deleteProductFromDb(pool, args.identifier);
-                return res.json({
-                  success: true,
-                  action_executed: 'deleteProduct',
-                  ai_message: `✅ Deleted product: **${deleted.product_name}** (SKU: ${deleted.sku}). *(Local Ollama Model: ${modelName})*`
-                });
-              } catch (err) {
-                return res.json({ success: true, ai_message: `❌ Could not find or delete product matching: "${args.identifier}"` });
-              }
-            } else if (toolCall.function.name === 'updateProduct') {
-              const args = JSON.parse(toolCall.function.arguments);
-              try {
-                const updated = await updateProductInDb(pool, args.identifier, args);
-                return res.json({
-                  success: true,
-                  action_executed: 'updateProduct',
-                  ai_message: `✅ Updated product: **${updated.product_name}**. (Edits applied successfully) *(Local Ollama Model: ${modelName})*`
-                });
-              } catch (err) {
-                return res.json({ success: true, ai_message: `❌ Could not update product matching: "${args.identifier}"` });
-              }
-            } else if (toolCall.function.name === 'bulkUpdateProducts') {
-              const args = JSON.parse(toolCall.function.arguments);
-              try {
-                const count = await bulkUpdateProductsInDb(pool, args.category_filter, args.brand_filter, args);
-                return res.json({
-                  success: true,
-                  action_executed: 'bulkUpdateProducts',
-                  ai_message: `✅ Bulk operation completed: Successfully modified **${count}** products matching your criteria. *(Local Ollama Model: ${modelName})*`
-                });
-              } catch (err) {
-                return res.json({ success: true, ai_message: `❌ Failed to execute bulk update.` });
-              }
-            } else if (toolCall.function.name === 'readProductData') {
-              let args;
-              try {
-                args = JSON.parse(toolCall.function.arguments);
-              } catch (e) {
-                return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
-              }
-              try {
-                const markdownMsg = await handleReadProductData(pool, args, message);
-                return res.json({ success: true, action_executed: 'readProductData', ai_message: markdownMsg + `\n\n*(Local Ollama Model: ${modelName})*` });
-              } catch (err) {
-                console.error("Error in readProductData:", err);
-                return res.json({ success: true, ai_message: `❌ Failed to read product data: ${err.message}` });
-              }
-            } else if (toolCall.function.name === 'runAnalyticalQuery') {
-              let args;
-              try {
-                args = JSON.parse(toolCall.function.arguments);
-              } catch (e) {
-                return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
-              }
-              try {
-                const reportMsg = await handleAnalyticalQuery(pool, args.sql_query);
-                return res.json({
-                  success: true,
-                  action_executed: 'runAnalyticalQuery',
-                  ai_message: reportMsg + `\n\n*(Local Ollama Model: ${modelName})*`
-                });
-              } catch (err) {
-                return res.json({ success: true, ai_message: `❌ Query execution error: ${err.message}` });
-              }
+            } catch (err) {
+              return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
             }
           }
 
@@ -673,39 +896,7 @@ function registerCopilotRoutes(app, pool) {
           body: JSON.stringify({
             model: 'mistral-large-latest',
             messages: messages,
-            tools: [
-              {
-                type: 'function',
-                function: {
-                  name: 'createProduct',
-                  description: 'Creates a new SKU catalog product and registers it in database inventory.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string', description: 'Product Name' },
-                      category: { type: 'string', description: 'Catalog Category' },
-                      price: { type: 'number', description: 'Selling price in PKR' },
-                      stock: { type: 'integer', description: 'Initial stock units' },
-                      image_url: { type: 'string', description: 'Product image URL (optional)' },
-                      sku: { type: 'string', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
-                      barcode: { type: 'string', description: 'UPC Barcode (e.g. 889728248741)' },
-                      brand: { type: 'string', description: 'Brand Name (e.g. Cisco)' },
-                      description: { type: 'string', description: 'Product short description' },
-                      unit: { type: 'string', description: 'Base unit of measure (e.g. PCS, units)' },
-                      weight: { type: 'number', description: 'Weight of unit in kg' },
-                      distributor_price: { type: 'number', description: 'Wholesale / distributor rate in PKR' },
-                      min_wholesale_qty: { type: 'integer', description: 'Minimum wholesale quantity restriction' },
-                      max_discount: { type: 'integer', description: 'Maximum discount percent (0-100)' },
-                      karachi_stock: { type: 'integer', description: 'Karachi Central Depot stock level' },
-                      lahore_stock: { type: 'integer', description: 'Lahore North Terminal stock level' },
-                      low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
-                      total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
-                    },
-                    required: ['name']
-                  }
-                }
-              }
-            ],
+            tools: getAdminTools(false),
             tool_choice: 'auto'
           })
         });
@@ -721,20 +912,21 @@ function registerCopilotRoutes(app, pool) {
 
         if (toolCalls && toolCalls.length > 0) {
           const toolCall = toolCalls[0];
-          if (toolCall.function.name === 'createProduct') {
-            const args = JSON.parse(toolCall.function.arguments);
-            if (attached_image) {
-              args.image_url = attached_image;
-            }
-            const specs = extractSpecsFromMessage(message);
-            mergeSpecsIntoArgs(args, specs);
-            const newProduct = await createProductInDb(pool, args);
+          const functionName = toolCall.function.name;
+          let args;
+          try {
+            args = JSON.parse(toolCall.function.arguments);
+          } catch (e) {
+            args = toolCall.function.arguments;
+          }
+          try {
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
             return res.json({
               success: true,
-              action_executed: 'createProduct',
-              ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
-              product: newProduct
+              ...executionResult
             });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
           }
         }
 
@@ -775,39 +967,7 @@ function registerCopilotRoutes(app, pool) {
           body: JSON.stringify({
             model: 'gpt-4o-mini',
             messages: messages,
-            tools: [
-              {
-                type: 'function',
-                function: {
-                  name: 'createProduct',
-                  description: 'Creates a new SKU catalog product and registers it in database inventory.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string', description: 'Product Name' },
-                      category: { type: 'string', description: 'Catalog Category' },
-                      price: { type: 'number', description: 'Selling price in PKR' },
-                      stock: { type: 'integer', description: 'Initial stock units' },
-                      image_url: { type: 'string', description: 'Product image URL (optional)' },
-                      sku: { type: 'string', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
-                      barcode: { type: 'string', description: 'UPC Barcode (e.g. 889728248741)' },
-                      brand: { type: 'string', description: 'Brand Name (e.g. Cisco)' },
-                      description: { type: 'string', description: 'Product short description' },
-                      unit: { type: 'string', description: 'Base unit of measure (e.g. PCS, units)' },
-                      weight: { type: 'number', description: 'Weight of unit in kg' },
-                      distributor_price: { type: 'number', description: 'Wholesale / distributor rate in PKR' },
-                      min_wholesale_qty: { type: 'integer', description: 'Minimum wholesale quantity restriction' },
-                      max_discount: { type: 'integer', description: 'Maximum discount percent (0-100)' },
-                      karachi_stock: { type: 'integer', description: 'Karachi Central Depot stock level' },
-                      lahore_stock: { type: 'integer', description: 'Lahore North Terminal stock level' },
-                      low_stock_threshold: { type: 'integer', description: 'Low Stock trigger threshold limit' },
-                      total_product_limit: { type: 'integer', description: 'Maximum total product limit capacity' }
-                    },
-                    required: ['name']
-                  }
-                }
-              }
-            ]
+            tools: getAdminTools(false)
           })
         });
 
@@ -822,20 +982,21 @@ function registerCopilotRoutes(app, pool) {
 
         if (toolCalls && toolCalls.length > 0) {
           const toolCall = toolCalls[0];
-          if (toolCall.function.name === 'createProduct') {
-            const args = JSON.parse(toolCall.function.arguments);
-            if (attached_image) {
-              args.image_url = attached_image;
-            }
-            const specs = extractSpecsFromMessage(message);
-            mergeSpecsIntoArgs(args, specs);
-            const newProduct = await createProductInDb(pool, args);
+          const functionName = toolCall.function.name;
+          let args;
+          try {
+            args = JSON.parse(toolCall.function.arguments);
+          } catch (e) {
+            args = toolCall.function.arguments;
+          }
+          try {
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
             return res.json({
               success: true,
-              action_executed: 'createProduct',
-              ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
-              product: newProduct
+              ...executionResult
             });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
           }
         }
 
@@ -858,35 +1019,6 @@ function registerCopilotRoutes(app, pool) {
           systemInstruction: effectiveSystemPrompt,
         });
 
-        const createProductTool = {
-          name: 'createProduct',
-          description: 'Creates a new SKU catalog product and registers it in database inventory.',
-          parameters: {
-            type: 'OBJECT',
-            properties: {
-              name: { type: 'STRING', description: 'Product Name' },
-              category: { type: 'STRING', description: 'Catalog Category' },
-              price: { type: 'NUMBER', description: 'Selling price in PKR' },
-              stock: { type: 'INTEGER', description: 'Initial stock units' },
-              image_url: { type: 'STRING', description: 'Product image URL (optional)' },
-              sku: { type: 'STRING', description: 'Product Code / SKU (e.g. C9200L-24T-4G)' },
-              barcode: { type: 'STRING', description: 'UPC Barcode (e.g. 889728248741)' },
-              brand: { type: 'STRING', description: 'Brand Name (e.g. Cisco)' },
-              description: { type: 'STRING', description: 'Product short description' },
-              unit: { type: 'STRING', description: 'Base unit of measure (e.g. PCS, units)' },
-              weight: { type: 'NUMBER', description: 'Weight of unit in kg' },
-              distributor_price: { type: 'NUMBER', description: 'Wholesale / distributor rate in PKR' },
-              min_wholesale_qty: { type: 'INTEGER', description: 'Minimum wholesale quantity restriction' },
-              max_discount: { type: 'INTEGER', description: 'Maximum discount percent (0-100)' },
-              karachi_stock: { type: 'INTEGER', description: 'Karachi Central Depot stock level' },
-              lahore_stock: { type: 'INTEGER', description: 'Lahore North Terminal stock level' },
-              low_stock_threshold: { type: 'INTEGER', description: 'Low Stock trigger threshold limit' },
-              total_product_limit: { type: 'INTEGER', description: 'Maximum total product limit capacity' }
-            },
-            required: ['name']
-          }
-        };
-
         const chatHistory = (history || []).map(msg => ({
           role: msg.sender === 'user' ? 'user' : 'model',
           parts: [{ text: msg.text }]
@@ -894,7 +1026,7 @@ function registerCopilotRoutes(app, pool) {
 
         const chat = model.startChat({
           history: chatHistory,
-          tools: [{ functionDeclarations: [createProductTool] }]
+          tools: [{ functionDeclarations: getAdminTools(true) }]
         });
 
         const result = await chat.sendMessage(message);
@@ -903,20 +1035,16 @@ function registerCopilotRoutes(app, pool) {
         const calls = response.functionCalls;
         if (calls && calls.length > 0) {
           const call = calls[0];
-          if (call.name === 'createProduct') {
-            const args = call.args;
-            if (attached_image) {
-              args.image_url = attached_image;
-            }
-            const specs = extractSpecsFromMessage(message);
-            mergeSpecsIntoArgs(args, specs);
-            const newProduct = await createProductInDb(pool, args);
+          const functionName = call.name;
+          const args = call.args;
+          try {
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
             return res.json({
               success: true,
-              action_executed: 'createProduct',
-              ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
-              product: newProduct
+              ...executionResult
             });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
           }
         }
 

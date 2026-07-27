@@ -259,6 +259,74 @@ async function deleteProductFromDb(pool, identifier) {
   return prod;
 }
 
+async function createSupplierInDb(pool, data) {
+  const companyName = data.company_name;
+  const contactPerson = data.contact_person || null;
+  const email = data.email || null;
+  const phone = data.phone || null;
+  const city = data.city || null;
+  const country = data.country || 'Pakistan';
+  const reliability = data.reliability_score !== undefined ? parseInt(data.reliability_score) : 80;
+  const leadTime = data.lead_time_days !== undefined ? parseInt(data.lead_time_days) : 7;
+  const supplierId = data.supplier_id || `sup-${Date.now()}`;
+
+  const res = await pool.query(
+    `INSERT INTO suppliers (supplier_id, company_name, contact_person, email, phone, city, country, reliability_score, lead_time_days)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING *`,
+    [supplierId, companyName, contactPerson, email, phone, city, country, reliability, leadTime]
+  );
+  return res.rows[0];
+}
+
+async function updateSupplierInDb(pool, identifier, updates) {
+  const getRes = await pool.query(
+    'SELECT * FROM suppliers WHERE company_name ILIKE $1 OR supplier_id = $1 LIMIT 1',
+    [identifier]
+  );
+  if (getRes.rows.length === 0) {
+    throw new Error('Supplier not found');
+  }
+  const sup = getRes.rows[0];
+
+  const companyName = updates.new_company_name !== undefined ? updates.new_company_name : sup.company_name;
+  const contactPerson = updates.new_contact_person !== undefined ? updates.new_contact_person : sup.contact_person;
+  const email = updates.new_email !== undefined ? updates.new_email : sup.email;
+  const phone = updates.new_phone !== undefined ? updates.new_phone : sup.phone;
+  const city = updates.new_city !== undefined ? updates.new_city : sup.city;
+  const country = updates.new_country !== undefined ? updates.new_country : sup.country;
+
+  const res = await pool.query(
+    `UPDATE suppliers 
+     SET company_name = $1, contact_person = $2, email = $3, phone = $4, city = $5, country = $6
+     WHERE supplier_id = $7
+     RETURNING *`,
+    [companyName, contactPerson, email, phone, city, country, sup.supplier_id]
+  );
+  return res.rows[0];
+}
+
+async function deleteSupplierFromDb(pool, identifier) {
+  const getRes = await pool.query(
+    'SELECT * FROM suppliers WHERE company_name ILIKE $1 OR supplier_id = $1 LIMIT 1',
+    [identifier]
+  );
+  if (getRes.rows.length === 0) {
+    throw new Error('Supplier not found');
+  }
+  const sup = getRes.rows[0];
+  await pool.query('DELETE FROM suppliers WHERE supplier_id = $1', [sup.supplier_id]);
+  return sup;
+}
+
+async function searchSuppliersInDb(pool, identifier) {
+  const getRes = await pool.query(
+    'SELECT * FROM suppliers WHERE company_name ILIKE $1 OR contact_person ILIKE $1 OR email ILIKE $1 OR city ILIKE $1 OR supplier_id = $1 LIMIT 10',
+    [`%${identifier}%`]
+  );
+  return getRes.rows;
+}
+
 module.exports = {
   createProductInDb,
   updateProductInDb,
@@ -266,5 +334,9 @@ module.exports = {
   searchProductsInDb,
   getCategoryProductsFromDb,
   getLowStockProductsFromDb,
-  deleteProductFromDb
+  deleteProductFromDb,
+  createSupplierInDb,
+  updateSupplierInDb,
+  deleteSupplierFromDb,
+  searchSuppliersInDb
 };
