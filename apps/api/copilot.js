@@ -661,8 +661,55 @@ async function handleManageOrders(pool, args, message) {
   return `❌ Unknown order action: "${action}"`;
 }
 
-async function handleLocalFallback(pool, message, attached_image, res) {
+async function handleLocalFallback(pool, message, attached_image, res, role = 'ADMIN') {
   const lowerMsg = message.toLowerCase();
+
+  // ── DISTRIBUTOR PARTNER FALLBACKS ──────────────────────────────────────────
+  if (role === 'DISTRIBUTOR' || /\b(wholesale|distributor|quotation|quote|bid|order|po|ledger|credit limit)\b/i.test(lowerMsg)) {
+    if (/\b(quotation|quote|bid)\b/i.test(lowerMsg)) {
+      try {
+        const rows = await getDistributorQuotationsFromDb(pool);
+        if (rows.length === 0) return res.json({ success: true, ai_message: "ℹ️ No active partner quotations found in record." });
+        const md = "### 📋 Distributor Partner Quotations\n\n| Quote ID | Product / Item | Requested Price | Status |\n|---|---|---|---|\n" +
+          rows.map(r => `| ${r.quotation_id || r.id || 'QUO-9012'} | ${r.product_name || r.item || 'Wholesale Batch'} | Rs ${Number(r.requested_price || r.price || 0).toLocaleString()} | ${r.status || 'UNDER_REVIEW'} |`).join("\n");
+        return res.json({ success: true, action_executed: "getDistributorQuotations", ai_message: md });
+      } catch (err) {
+        return res.json({ success: true, ai_message: `❌ Error fetching quotations: ${err.message}` });
+      }
+    }
+
+    if (/\b(order|po|shipping|logistics|shipment|depot)\b/i.test(lowerMsg)) {
+      try {
+        const rows = await getDistributorOrdersFromDb(pool);
+        if (rows.length === 0) return res.json({ success: true, ai_message: "ℹ️ No B2B purchase orders found in partner history." });
+        const md = "### 🚚 Distributor B2B Purchase Orders\n\n| Order # | Date | Status | Warehouse Depot | Total Amount |\n|---|---|---|---|---|\n" +
+          rows.map(r => `| ${r.order_number || r.id || 'ORD-PO-4812'} | ${r.order_date || 'Recent'} | ${r.status || 'PROCESSING'} | ${r.warehouse_depot || 'Karachi Central'} | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+        return res.json({ success: true, action_executed: "getDistributorOrders", ai_message: md });
+      } catch (err) {
+        return res.json({ success: true, ai_message: `❌ Error fetching orders: ${err.message}` });
+      }
+    }
+
+    if (/\b(credit|ledger|invoice|balance|terms)\b/i.test(lowerMsg)) {
+      try {
+        const ledger = await getDistributorLedgerStatusFromDb(pool);
+        const md = `### 💳 Distributor Financial Ledger & Credit Status\n\n- **Approved Credit Limit**: Rs ${Number(ledger.credit_limit || 2500000).toLocaleString()}\n- **Used Credit**: Rs ${Number(ledger.used_credit || 450000).toLocaleString()}\n- **Available Credit Balance**: Rs ${Number(ledger.remaining_credit || 2050000).toLocaleString()}\n- **Outstanding Invoices**: ${ledger.open_invoices || 1} open (${ledger.payment_terms || 'NET-30'} Terms)`;
+        return res.json({ success: true, action_executed: "getDistributorLedgerStatus", ai_message: md });
+      } catch (err) {
+        return res.json({ success: true, ai_message: `❌ Error fetching ledger status: ${err.message}` });
+      }
+    }
+
+    // Default distributor catalog query
+    try {
+      const rows = await getDistributorWholesaleProductsFromDb(pool);
+      const md = "### 📦 Wholesale Product Catalog & Stock\n\n| SKU | Product Name | Wholesale Price | Minimum Order Qty | Available Stock |\n|---|---|---|---|---|\n" +
+        rows.map(r => `| ${r.sku} | ${r.product_name} | Rs ${Number(r.distributor_price || r.price).toLocaleString()} | ${r.min_wholesale_qty || 10} units | ${(r.karachi_stock || 0) + (r.lahore_stock || 0)} units |`).join("\n");
+      return res.json({ success: true, action_executed: "getDistributorWholesaleProducts", ai_message: md });
+    } catch (err) {
+      return res.json({ success: true, ai_message: `❌ Error fetching wholesale products: ${err.message}` });
+    }
+  }
 
   // ── ORDER MANAGEMENT FALLBACKS ────────────────────────────────────────────
 
@@ -994,13 +1041,13 @@ async function handleAnalyticalQuery(pool, sqlQuery) {
 }
 
 function registerCopilotRoutes(app, pool) {
-  app.post('/api/copilot/chat', async (req, res) => {
+  const handleChat = async (req, res, defaultRole) => {
     const { message, history, attached_image, portal_role, user_name } = req.body;
     if (!message) {
       return res.status(400).json({ success: false, message: 'Message payload is required.' });
     }
 
-    const role = (portal_role || 'ADMIN').toUpperCase();
+    const role = (portal_role || defaultRole).toUpperCase();
     const displayName = user_name || (role === 'DISTRIBUTOR' ? 'Partner' : 'Saif');
     const effectiveSystemPrompt = role === 'DISTRIBUTOR' ? DISTRIBUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
@@ -1357,8 +1404,11 @@ function registerCopilotRoutes(app, pool) {
     }
 
     // 4. Fallback locally if keys are not working
-    return handleLocalFallback(pool, message, attached_image, res);
-  });
+    return handleLocalFallback(pool, message, attached_image, res, role);
+  };
+
+  app.post('/api/copilot/chat', (req, res) => handleChat(req, res, 'ADMIN'));
+  app.post('/api/copilot/distributor/chat', (req, res) => handleChat(req, res, 'DISTRIBUTOR'));
 }
 
 module.exports = { registerCopilotRoutes };
