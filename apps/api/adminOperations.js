@@ -365,9 +365,10 @@ function formatOrder(r) {
   };
 }
 
-async function listOrdersFromDb(pool, limit = 20) {
+async function listOrdersFromDb(pool, limit = 20, orderType = null) {
+  const typeFilter = orderType ? `AND UPPER(order_type) = '${orderType.toUpperCase()}'` : '';
   const res = await pool.query(
-    'SELECT * FROM orders ORDER BY id DESC LIMIT $1', [limit]
+    `SELECT * FROM orders WHERE 1=1 ${typeFilter} ORDER BY id DESC LIMIT $1`, [limit]
   );
   return res.rows.map(formatOrder);
 }
@@ -380,34 +381,38 @@ async function getOrderByIdFromDb(pool, identifier) {
   return res.rows.map(formatOrder);
 }
 
-async function getOrdersByStatusFromDb(pool, status) {
+async function getOrdersByStatusFromDb(pool, status, orderType = null) {
+  const typeFilter = orderType ? `AND UPPER(order_type) = '${orderType.toUpperCase()}'` : '';
   const res = await pool.query(
-    `SELECT * FROM orders WHERE UPPER(status) = $1 ORDER BY id DESC LIMIT 30`,
+    `SELECT * FROM orders WHERE UPPER(status) = $1 ${typeFilter} ORDER BY id DESC LIMIT 30`,
     [status.toUpperCase()]
   );
   return res.rows.map(formatOrder);
 }
 
-async function getOrdersByCustomerFromDb(pool, customer) {
+async function getOrdersByCustomerFromDb(pool, customer, orderType = null) {
+  const typeFilter = orderType ? `AND UPPER(order_type) = '${orderType.toUpperCase()}'` : '';
   const res = await pool.query(
-    `SELECT * FROM orders WHERE customer_email ILIKE $1 ORDER BY id DESC LIMIT 20`,
+    `SELECT * FROM orders WHERE customer_email ILIKE $1 ${typeFilter} ORDER BY id DESC LIMIT 20`,
     [`%${customer}%`]
   );
   return res.rows.map(formatOrder);
 }
 
-async function getOrdersByDateRangeFromDb(pool, dateFrom, dateTo) {
+async function getOrdersByDateRangeFromDb(pool, dateFrom, dateTo, orderType = null) {
+  const typeFilter = orderType ? `AND UPPER(order_type) = '${orderType.toUpperCase()}'` : '';
   const res = await pool.query(
-    `SELECT * FROM orders WHERE created_at >= $1 AND created_at <= $2 ORDER BY id DESC LIMIT 50`,
+    `SELECT * FROM orders WHERE created_at >= $1 AND created_at <= $2 ${typeFilter} ORDER BY id DESC LIMIT 50`,
     [dateFrom, dateTo]
   );
   return res.rows.map(formatOrder);
 }
 
-async function getOrdersByAmountFilterFromDb(pool, operator, amount) {
+async function getOrdersByAmountFilterFromDb(pool, operator, amount, orderType = null) {
   const op = operator === 'above' ? '>' : '<';
+  const typeFilter = orderType ? `AND UPPER(order_type) = '${orderType.toUpperCase()}'` : '';
   const res = await pool.query(
-    `SELECT * FROM orders WHERE total_amount ${op} $1 ORDER BY total_amount DESC LIMIT 30`,
+    `SELECT * FROM orders WHERE total_amount ${op} $1 ${typeFilter} ORDER BY total_amount DESC LIMIT 30`,
     [parseFloat(amount)]
   );
   return res.rows.map(formatOrder);
@@ -482,12 +487,17 @@ async function getMostOrderedProductsFromDb(pool, limit = 10) {
   return res.rows;
 }
 
-async function getOverdueOrdersFromDb(pool, days = 3) {
+async function getOverdueOrdersFromDb(pool, days = 3, orderType = null) {
+  const typeFilter = orderType ? `AND UPPER(order_type) = '${orderType.toUpperCase()}'` : '';
   const res = await pool.query(
     `SELECT * FROM orders
      WHERE UPPER(status) = 'PENDING'
        AND created_at <= NOW() - INTERVAL '${parseInt(days)} days'
+       ${typeFilter}
      ORDER BY created_at ASC LIMIT 20`
+  );
+  return res.rows.map(formatOrder);
+}
   );
   return res.rows.map(formatOrder);
 }

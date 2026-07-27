@@ -412,7 +412,8 @@ function getAdminTools(isGemini = false) {
         limit: { type: isGemini ? 'INTEGER' : 'integer', description: 'Max number of results to return.' },
         period: { type: isGemini ? 'STRING' : 'string', enum: ['today', 'week', 'month', 'all'], description: 'Time period for analytics.' },
         date_from: { type: isGemini ? 'STRING' : 'string', description: 'Start date (ISO format) for date range filter.' },
-        date_to: { type: isGemini ? 'STRING' : 'string', description: 'End date (ISO format) for date range filter.' }
+        date_to: { type: isGemini ? 'STRING' : 'string', description: 'End date (ISO format) for date range filter.' },
+        order_type: { type: isGemini ? 'STRING' : 'string', enum: ['B2C', 'B2B'], description: 'Filter by order type: B2C for retail buyers, B2B for distributors. Use when user says "buyer orders", "distributor orders", "retail orders" etc.' }
       },
       required: ['action_type']
     }
@@ -578,10 +579,13 @@ function formatOrdersTable(rows, title) {
 
 async function handleManageOrders(pool, args, message) {
   const action = args.action_type;
+  // Parse order type: B2C = buyer/retail, B2B = distributor/wholesale
+  const orderType = args.order_type || null;
+  const typeLabel = orderType === 'B2C' ? ' (Buyers / B2C)' : orderType === 'B2B' ? ' (Distributors / B2B)' : '';
 
   if (action === 'list') {
-    const rows = await listOrdersFromDb(pool, args.limit || 20);
-    return formatOrdersTable(rows, `📋 Recent Orders (Last ${args.limit || 20})`);
+    const rows = await listOrdersFromDb(pool, args.limit || 20, orderType);
+    return formatOrdersTable(rows, `📋 Recent Orders${typeLabel} (Last ${args.limit || 20})`);
   }
   if (action === 'find') {
     const rows = await getOrderByIdFromDb(pool, args.identifier || '');
@@ -589,21 +593,21 @@ async function handleManageOrders(pool, args, message) {
     return formatOrdersTable(rows, `🔍 Order Search: "${args.identifier}"`);
   }
   if (action === 'by_status') {
-    const rows = await getOrdersByStatusFromDb(pool, args.status || 'PENDING');
-    return formatOrdersTable(rows, `📊 ${(args.status || 'PENDING').toUpperCase()} Orders`);
+    const rows = await getOrdersByStatusFromDb(pool, args.status || 'PENDING', orderType);
+    return formatOrdersTable(rows, `📊 ${(args.status || 'PENDING').toUpperCase()} Orders${typeLabel}`);
   }
   if (action === 'by_customer') {
-    const rows = await getOrdersByCustomerFromDb(pool, args.identifier || '');
-    return formatOrdersTable(rows, `👤 Orders for Customer: "${args.identifier}"`);
+    const rows = await getOrdersByCustomerFromDb(pool, args.identifier || '', orderType);
+    return formatOrdersTable(rows, `👤 Orders for Customer: "${args.identifier}"${typeLabel}`);
   }
   if (action === 'by_date_range') {
-    const rows = await getOrdersByDateRangeFromDb(pool, args.date_from, args.date_to);
-    return formatOrdersTable(rows, `📅 Orders from ${args.date_from} to ${args.date_to}`);
+    const rows = await getOrdersByDateRangeFromDb(pool, args.date_from, args.date_to, orderType);
+    return formatOrdersTable(rows, `📅 Orders from ${args.date_from} to ${args.date_to}${typeLabel}`);
   }
   if (action === 'by_amount') {
     const op = args.amount_operator || 'above';
-    const rows = await getOrdersByAmountFilterFromDb(pool, op, args.amount || 0);
-    return formatOrdersTable(rows, `💰 Orders ${op} Rs ${(args.amount || 0).toLocaleString()}`);
+    const rows = await getOrdersByAmountFilterFromDb(pool, op, args.amount || 0, orderType);
+    return formatOrdersTable(rows, `💰 Orders ${op} Rs ${(args.amount || 0).toLocaleString()}${typeLabel}`);
   }
   if (action === 'by_product') {
     const rows = await getOrdersByProductFromDb(pool, args.product_name || '');
@@ -625,7 +629,7 @@ async function handleManageOrders(pool, args, message) {
     const data = await getOrderAnalyticsFromDb(pool, period);
     const t = data.totals;
     const periodLabel = { today: 'Today', week: 'This Week', month: 'This Month', all: 'All Time' }[period] || period;
-    let md = `### 📊 Order Analytics — ${periodLabel}\n\n`;
+    let md = `### 📊 Order Analytics — ${periodLabel}${typeLabel}\n\n`;
     md += `| Metric | Value |\n|---|---|\n`;
     md += `| Total Orders | **${t.total_orders}** |\n`;
     md += `| Total Revenue | **Rs ${parseFloat(t.total_revenue).toLocaleString('en-PK', {maximumFractionDigits:0})}** |\n`;
@@ -650,9 +654,9 @@ async function handleManageOrders(pool, args, message) {
   }
   if (action === 'overdue') {
     const days = args.days || 3;
-    const rows = await getOverdueOrdersFromDb(pool, days);
-    if (rows.length === 0) return `✅ No overdue pending orders (threshold: ${days} days).`;
-    return formatOrdersTable(rows, `⚠️ Overdue Orders (Pending > ${days} days)`);
+    const rows = await getOverdueOrdersFromDb(pool, days, orderType);
+    if (rows.length === 0) return `✅ No overdue pending orders (threshold: ${days} days)${typeLabel}.`;
+    return formatOrdersTable(rows, `⚠️ Overdue Orders (Pending > ${days} days)${typeLabel}`);
   }
   return `❌ Unknown order action: "${action}"`;
 }
@@ -692,11 +696,18 @@ async function handleLocalFallback(pool, message, attached_image, res) {
     } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
   }
 
-  // Orders by status: "show pending orders", "list approved orders"
-  const statusFilterMatch = lowerMsg.match(/\b(pending|approved|rejected|shipped|cancelled|completed)\s+orders?\b/);
+  // Orders by status with optional buyer/distributor filter
+  // Examples: "show rejected orders of buyer", "pending distributor orders", "approved B2C orders"
+  const statusFilterMatch = lowerMsg.match(/\b(pending|approved|rejected|shipped|cancelled|completed)\s+orders?(?:\s+of)?(?:\s+(?:buyer|b2c|retail|customer|distributor|b2b|wholesale))?\b/) ||
+    lowerMsg.match(/(?:buyer|b2c|retail|distributor|b2b|wholesale)\s+(?:pending|approved|rejected|shipped|cancelled|completed)\s+orders?/);
   if (statusFilterMatch) {
+    const statusWord = lowerMsg.match(/\b(pending|approved|rejected|shipped|cancelled|completed)\b/)?.[1] || 'pending';
+    // Detect buyer vs distributor
+    const isBuyer = /\b(buyer|b2c|retail|customer)\b/i.test(lowerMsg);
+    const isDistributor = /\b(distributor|b2b|wholesale)\b/i.test(lowerMsg);
+    const orderType = isBuyer ? 'B2C' : isDistributor ? 'B2B' : null;
     try {
-      const md = await handleManageOrders(pool, { action_type: 'by_status', status: statusFilterMatch[1] }, message);
+      const md = await handleManageOrders(pool, { action_type: 'by_status', status: statusWord, order_type: orderType }, message);
       return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
     } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
   }
