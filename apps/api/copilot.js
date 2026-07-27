@@ -1,11 +1,14 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { 
   createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb,
-  createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb, filterSuppliersByLocationInDb
+  createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb, filterSuppliersByLocationInDb,
+  listOrdersFromDb, getOrderByIdFromDb, getOrdersByStatusFromDb, getOrdersByCustomerFromDb, getOrdersByDateRangeFromDb,
+  getOrdersByAmountFilterFromDb, updateOrderStatusInDb, bulkApproveOrdersInDb, getOrderAnalyticsFromDb,
+  getTopBuyersFromDb, getMostOrderedProductsFromDb, getOverdueOrdersFromDb, getOrdersByProductFromDb
 } = require('./adminOperations');
 const { getDistributorWholesaleProductsFromDb, getDistributorQuotationsFromDb, getDistributorOrdersFromDb, getDistributorLedgerStatusFromDb } = require('./distributorOperations');
 
-const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog and vendor assistant. You are strictly restricted to performing and discussing operations related to managing catalog inventory and supplier directories: creating products ("createProduct"), updating details/stocks ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating supplier details ("updateSupplier"), deleting suppliers ("deleteSupplier"), and reading/searching supplier records ("readSupplierData"). If the user asks generic questions or attempts tasks outside this scope, you MUST decline to answer, stating: "I can only assist with registered catalog inventory and supplier management operations." Keep your answers extremely short and direct. IMPORTANT: For create operations, do NOT invent default details if they are not explicitly specified.';
+const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline stating: "I can only assist with registered catalog inventory, supplier management, and order operations." Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.';
 const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
 
 function filterProductsByMessage(rows, message) {
@@ -388,9 +391,36 @@ function getAdminTools(isGemini = false) {
     }
   };
 
+  const fnManageOrders = {
+    name: 'manageOrders',
+    description: 'Manages, queries, filters, approves, rejects, ships, or analyzes orders in the system. Use this for any order-related request.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        action_type: {
+          type: isGemini ? 'STRING' : 'string',
+          enum: ['list', 'find', 'by_status', 'by_customer', 'by_date_range', 'by_amount', 'by_product', 'update_status', 'bulk_approve', 'analytics', 'top_buyers', 'top_products', 'overdue'],
+          description: 'The order operation to perform.'
+        },
+        identifier: { type: isGemini ? 'STRING' : 'string', description: 'Order ID, order number, or customer email.' },
+        status: { type: isGemini ? 'STRING' : 'string', description: 'Order status: PENDING, APPROVED, REJECTED, SHIPPED, CANCELLED, COMPLETED.' },
+        new_status: { type: isGemini ? 'STRING' : 'string', description: 'New status to set on the order (for update_status action).' },
+        product_name: { type: isGemini ? 'STRING' : 'string', description: 'Product name to filter orders by.' },
+        amount: { type: isGemini ? 'NUMBER' : 'number', description: 'Amount threshold for by_amount filter.' },
+        amount_operator: { type: isGemini ? 'STRING' : 'string', enum: ['above', 'below'], description: 'Whether to filter above or below the amount.' },
+        days: { type: isGemini ? 'INTEGER' : 'integer', description: 'Number of days for overdue threshold (default: 3).' },
+        limit: { type: isGemini ? 'INTEGER' : 'integer', description: 'Max number of results to return.' },
+        period: { type: isGemini ? 'STRING' : 'string', enum: ['today', 'week', 'month', 'all'], description: 'Time period for analytics.' },
+        date_from: { type: isGemini ? 'STRING' : 'string', description: 'Start date (ISO format) for date range filter.' },
+        date_to: { type: isGemini ? 'STRING' : 'string', description: 'End date (ISO format) for date range filter.' }
+      },
+      required: ['action_type']
+    }
+  };
+
   const list = [
     fnCreateProduct, fnDeleteProduct, fnUpdateProduct, fnBulkUpdateProducts, fnReadProductData, fnRunAnalyticalQuery,
-    fnCreateSupplier, fnUpdateSupplier, fnDeleteSupplier, fnReadSupplierData
+    fnCreateSupplier, fnUpdateSupplier, fnDeleteSupplier, fnReadSupplierData, fnManageOrders
   ];
 
   if (isGemini) {
@@ -530,13 +560,231 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
       action_executed: 'readSupplierData',
       ai_message: markdownMsg
     };
+  } else if (name === 'manageOrders') {
+    const md = await handleManageOrders(pool, args, message);
+    return {
+      action_executed: 'manageOrders',
+      ai_message: md
+    };
   }
   throw new Error(`Unknown tool name: ${name}`);
 }
 
+function formatOrdersTable(rows, title) {
+  if (rows.length === 0) return `ℹ️ No orders found.`;
+  return `### ${title}\n\n| Order # | Status | Amount (PKR) | Customer | Date |\n|---|---|---|---|---|\n` +
+    rows.map(r => `| ${r.order_number || r.order_id} | ${r.status} | Rs ${parseFloat(r.total_amount).toLocaleString()} | ${r.customer_email} | ${r.order_date ? new Date(r.order_date).toLocaleDateString() : 'N/A'} |`).join('\n');
+}
+
+async function handleManageOrders(pool, args, message) {
+  const action = args.action_type;
+
+  if (action === 'list') {
+    const rows = await listOrdersFromDb(pool, args.limit || 20);
+    return formatOrdersTable(rows, `📋 Recent Orders (Last ${args.limit || 20})`);
+  }
+  if (action === 'find') {
+    const rows = await getOrderByIdFromDb(pool, args.identifier || '');
+    if (rows.length === 0) return `❌ No order found matching: "${args.identifier}"`;
+    return formatOrdersTable(rows, `🔍 Order Search: "${args.identifier}"`);
+  }
+  if (action === 'by_status') {
+    const rows = await getOrdersByStatusFromDb(pool, args.status || 'PENDING');
+    return formatOrdersTable(rows, `📊 ${(args.status || 'PENDING').toUpperCase()} Orders`);
+  }
+  if (action === 'by_customer') {
+    const rows = await getOrdersByCustomerFromDb(pool, args.identifier || '');
+    return formatOrdersTable(rows, `👤 Orders for Customer: "${args.identifier}"`);
+  }
+  if (action === 'by_date_range') {
+    const rows = await getOrdersByDateRangeFromDb(pool, args.date_from, args.date_to);
+    return formatOrdersTable(rows, `📅 Orders from ${args.date_from} to ${args.date_to}`);
+  }
+  if (action === 'by_amount') {
+    const op = args.amount_operator || 'above';
+    const rows = await getOrdersByAmountFilterFromDb(pool, op, args.amount || 0);
+    return formatOrdersTable(rows, `💰 Orders ${op} Rs ${(args.amount || 0).toLocaleString()}`);
+  }
+  if (action === 'by_product') {
+    const rows = await getOrdersByProductFromDb(pool, args.product_name || '');
+    if (rows.length === 0) return `❌ No orders found containing product: "${args.product_name}"`;
+    return formatOrdersTable(rows, `📦 Orders Containing: "${args.product_name}"`);
+  }
+  if (action === 'update_status') {
+    const updated = await updateOrderStatusInDb(pool, args.identifier, args.new_status || args.status);
+    return `✅ Order **${updated.order_number}** status updated to **${updated.status}**.`;
+  }
+  if (action === 'bulk_approve') {
+    const rows = await bulkApproveOrdersInDb(pool);
+    if (rows.length === 0) return `ℹ️ No pending orders to approve.`;
+    return `✅ Bulk Approved **${rows.length}** pending order(s):\n\n` +
+      rows.map(r => `- ${r.order_number} (${r.customer_email})`).join('\n');
+  }
+  if (action === 'analytics') {
+    const period = args.period || 'month';
+    const data = await getOrderAnalyticsFromDb(pool, period);
+    const t = data.totals;
+    const periodLabel = { today: 'Today', week: 'This Week', month: 'This Month', all: 'All Time' }[period] || period;
+    let md = `### 📊 Order Analytics — ${periodLabel}\n\n`;
+    md += `| Metric | Value |\n|---|---|\n`;
+    md += `| Total Orders | **${t.total_orders}** |\n`;
+    md += `| Total Revenue | **Rs ${parseFloat(t.total_revenue).toLocaleString('en-PK', {maximumFractionDigits:0})}** |\n`;
+    md += `| Avg Order Value | **Rs ${parseFloat(t.avg_order_value).toLocaleString('en-PK', {maximumFractionDigits:0})}** |\n\n`;
+    if (data.by_status.length > 0) {
+      md += `**By Status:**\n\n| Status | Count |\n|---|---|\n`;
+      md += data.by_status.map(s => `| ${s.status} | ${s.count} |`).join('\n');
+    }
+    return md;
+  }
+  if (action === 'top_buyers') {
+    const rows = await getTopBuyersFromDb(pool, args.limit || 5);
+    if (rows.length === 0) return `ℹ️ No order data found.`;
+    return `### 🏆 Top ${args.limit || 5} Buyers by Order Value\n\n| Rank | Customer | Orders | Total Spent |\n|---|---|---|---|\n` +
+      rows.map((r, i) => `| ${i+1} | ${r.customer_email} | ${r.order_count} | Rs ${parseFloat(r.total_spent).toLocaleString('en-PK', {maximumFractionDigits:0})} |`).join('\n');
+  }
+  if (action === 'top_products') {
+    const rows = await getMostOrderedProductsFromDb(pool, args.limit || 10);
+    if (rows.length === 0) return `ℹ️ No order product data found.`;
+    return `### 🔥 Most Ordered Products\n\n| Rank | Product | Total Qty | Orders |\n|---|---|---|---|\n` +
+      rows.map((r, i) => `| ${i+1} | ${r.product_name || 'N/A'} | ${r.total_qty || 0} | ${r.order_count} |`).join('\n');
+  }
+  if (action === 'overdue') {
+    const days = args.days || 3;
+    const rows = await getOverdueOrdersFromDb(pool, days);
+    if (rows.length === 0) return `✅ No overdue pending orders (threshold: ${days} days).`;
+    return formatOrdersTable(rows, `⚠️ Overdue Orders (Pending > ${days} days)`);
+  }
+  return `❌ Unknown order action: "${action}"`;
+}
+
 async function handleLocalFallback(pool, message, attached_image, res) {
   const lowerMsg = message.toLowerCase();
-  
+
+  // ── ORDER MANAGEMENT FALLBACKS ────────────────────────────────────────────
+
+  // Bulk approve all pending orders
+  if (/bulk\s+approve\s+(?:all\s+)?(?:pending\s+)?orders?/i.test(lowerMsg) ||
+      /approve\s+all\s+(?:pending\s+)?orders?/i.test(lowerMsg)) {
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'bulk_approve' }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Approve / Reject / Ship a specific order
+  const statusUpdateMatch = message.match(/\b(approve|reject|ship|cancel|complete)\s+order\s+([\w-]+)/i);
+  if (statusUpdateMatch) {
+    const verb = statusUpdateMatch[1].toLowerCase();
+    const statusMap = { approve: 'APPROVED', reject: 'REJECTED', ship: 'SHIPPED', cancel: 'CANCELLED', complete: 'COMPLETED' };
+    const identifier = statusUpdateMatch[2];
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'update_status', identifier, new_status: statusMap[verb] }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ ${err.message}` }); }
+  }
+
+  // Find a specific order by ID/number
+  const findOrderMatch = message.match(/(?:find|show|get|check|search)\s+order\s+([\w-]+)/i);
+  if (findOrderMatch) {
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'find', identifier: findOrderMatch[1] }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Orders by status: "show pending orders", "list approved orders"
+  const statusFilterMatch = lowerMsg.match(/\b(pending|approved|rejected|shipped|cancelled|completed)\s+orders?\b/);
+  if (statusFilterMatch) {
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'by_status', status: statusFilterMatch[1] }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Overdue orders: "orders pending more than 3 days", "overdue orders"
+  const overdueMatch = lowerMsg.match(/overdue\s+orders?/) ||
+    lowerMsg.match(/orders?\s+pending\s+(?:for\s+)?(?:more than|over|greater than)\s+(\d+)\s+days?/);
+  if (overdueMatch) {
+    const days = overdueMatch[1] ? parseInt(overdueMatch[1]) : 3;
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'overdue', days }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // High value / by amount: "orders above 50000", "orders below 10000"
+  const amountFilterMatch = message.match(/orders?\s+(above|over|greater than|below|under|less than)\s+(?:rs\.?\s*)?(\d+)/i);
+  if (amountFilterMatch) {
+    const op = /above|over|greater/.test(amountFilterMatch[1]) ? 'above' : 'below';
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'by_amount', amount_operator: op, amount: parseFloat(amountFilterMatch[2]) }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Top buyers: "top buyers", "top 5 buyers"
+  if (/top\s+(?:\d+\s+)?buyers?|best\s+customers?/i.test(lowerMsg)) {
+    const limitMatch = lowerMsg.match(/top\s+(\d+)\s+buyers?/i);
+    const limit = limitMatch ? parseInt(limitMatch[1]) : 5;
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'top_buyers', limit }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Most ordered / top products: "most ordered products", "top products"
+  if (/(?:most\s+ordered|top\s+products?|best[\s-]selling\s+products?)/i.test(lowerMsg)) {
+    const limitMatch = lowerMsg.match(/top\s+(\d+)\s+products?/i);
+    const limit = limitMatch ? parseInt(limitMatch[1]) : 10;
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'top_products', limit }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Analytics / Revenue: "revenue this month", "order analytics", "total revenue"
+  if (/(?:revenue|order\s+analytics?|total\s+(?:revenue|sales)|how\s+many\s+orders?)/i.test(lowerMsg)) {
+    let period = 'month';
+    if (/today/i.test(lowerMsg)) period = 'today';
+    else if (/this\s+week|last\s+7\s+days?/i.test(lowerMsg)) period = 'week';
+    else if (/all\s+time|ever|total/i.test(lowerMsg)) period = 'all';
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'analytics', period }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Orders containing a specific product
+  const byProductMatch = message.match(/orders?\s+(?:containing|with|for|of)\s+(?:product\s+)?["']?([^"'\n,]+?)["']?\s*(?:$|[?.!])/i);
+  if (byProductMatch) {
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'by_product', product_name: byProductMatch[1].trim() }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // Orders by customer email
+  const byCustomerMatch = message.match(/orders?\s+(?:from|by|for)\s+(?:customer\s+)?(\S+@\S+)/i);
+  if (byCustomerMatch) {
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'by_customer', identifier: byCustomerMatch[1] }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // List all orders (general)
+  if (/\b(?:list|show|get|display)\s+(?:all\s+)?orders?\b/i.test(lowerMsg) ||
+      /\ball\s+orders?\b/i.test(lowerMsg)) {
+    const limitMatch = lowerMsg.match(/(?:last|recent)\s+(\d+)\s+orders?/i);
+    const limit = limitMatch ? parseInt(limitMatch[1]) : 20;
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'list', limit }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md + '\n\n*(Local fallback)*' });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // ── END ORDER FALLBACKS ───────────────────────────────────────────────────
+
   if (/\b(add|create|onboard|register)\s+supplier\b/i.test(lowerMsg)) {
     const specs = extractSupplierSpecsFromMessage(message);
     if (!specs.company_name) {

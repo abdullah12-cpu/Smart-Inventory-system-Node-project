@@ -2869,6 +2869,129 @@ export default function AdminPortal({ onLogout }) {
                                 /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Filter all suppliers registered from a specific country" })
                               ] })
                             ]
+                          }),
+                          /* @__PURE__ */ jsx("div", { className: "pt-1 pb-0.5", children:
+                            /* @__PURE__ */ jsx("p", { className: "text-[9px] uppercase font-extrabold tracking-wider text-indigo-400 pl-1 flex items-center gap-1", children: "📦 Order Management" })
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("List all orders"),
+                            className: "w-full bg-white hover:bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📋" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "List All Orders" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "View all recent orders across the system" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Show all pending orders"),
+                            className: "w-full bg-white hover:bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "⏳" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Pending Orders" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Filter orders that are awaiting approval" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Approve order ORD-2026-001"),
+                            className: "w-full bg-white hover:bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "✅" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Approve an Order" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Approve a specific order by its order number" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Reject order ORD-2026-001"),
+                            className: "w-full bg-white hover:bg-red-50 border border-red-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "❌" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Reject an Order" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Reject a specific order by its order number" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Approve all pending orders"),
+                            className: "w-full bg-white hover:bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "🚀" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Bulk Approve All Pending" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Approve every pending order in the system at once" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("What is the total revenue this month?"),
+                            className: "w-full bg-white hover:bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "📊" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Revenue This Month" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Get total revenue, order counts, and status breakdown" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Who are the top 5 buyers by order volume?"),
+                            className: "w-full bg-white hover:bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "🏆" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Top Buyers" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Rank customers by total spend and order count" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Which products are ordered the most?"),
+                            className: "w-full bg-white hover:bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "🔥" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Most Ordered Products" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "See which SKUs are driving the most sales volume" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Show orders pending for more than 3 days"),
+                            className: "w-full bg-white hover:bg-amber-50 border border-amber-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "⚠️" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "Overdue Orders" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Find orders stuck in pending for more than 3 days" })
+                              ] })
+                            ]
+                          }),
+                          /* @__PURE__ */ jsxs("button", {
+                            type: "button",
+                            onClick: () => setChatInput("Show orders above 50000"),
+                            className: "w-full bg-white hover:bg-amber-50 border border-amber-100 rounded-xl p-2.5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-sm flex items-start gap-3",
+                            children: [
+                              /* @__PURE__ */ jsx("span", { className: "text-lg mt-0.5", children: "💰" }),
+                              /* @__PURE__ */ jsxs("div", { children: [
+                                /* @__PURE__ */ jsx("div", { className: "text-[10px] font-bold text-slate-700", children: "High Value Orders" }),
+                                /* @__PURE__ */ jsx("div", { className: "text-[8.5px] text-slate-400 mt-0.5", children: "Filter orders above a specific amount threshold" })
+                              ] })
+                            ]
                           })
                         ] })
                       ]
