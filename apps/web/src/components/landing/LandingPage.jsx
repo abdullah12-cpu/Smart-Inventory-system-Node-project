@@ -21,10 +21,12 @@ import {
   X,
   Star,
   Warehouse,
-  Check
+  Check,
+  CheckCircle
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/data";
+import Modal from "@/components/Modal";
 
 export default function LandingPage({ onGetStarted, onRegisterClick }) {
   const {
@@ -47,6 +49,143 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
   const [freeShippingOnly, setFreeShippingOnly] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+
+  // B2B Wholesale guest states
+  const [activeProductForQuote, setActiveProductForQuote] = useState(null);
+  const [quoteQuantity, setQuoteQuantity] = useState(1);
+  const [customProposedPrice, setCustomProposedPrice] = useState("");
+  const [activeProductForDirectOrder, setActiveProductForDirectOrder] = useState(null);
+  const [directOrderQuantity, setDirectOrderQuantity] = useState(1);
+  const [toastMessage, setToastMessage] = useState("");
+
+  const handleAddToQuote = (product) => {
+    const minQty = product.min_wholesale_qty || 1;
+    const availableQty = (product.inventory || []).reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+    
+    if (availableQty <= 0) {
+      alert("This product is currently out of stock.");
+      return;
+    }
+    
+    if (minQty > availableQty) {
+      alert(`Warning: The minimum wholesale quantity (${minQty}) is greater than the total available warehouse stock (${availableQty}).`);
+      return;
+    }
+
+    setActiveProductForQuote(product);
+    setQuoteQuantity(minQty);
+    setCustomProposedPrice((product.prices.DISTRIBUTOR || product.prices.RETAIL).toString());
+  };
+
+  const handleConfirmAddToQuote = () => {
+    if (!activeProductForQuote) return;
+
+    const minQty = activeProductForQuote.min_wholesale_qty || 1;
+    const availableQty = (activeProductForQuote.inventory || []).reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+    const qty = parseInt(quoteQuantity);
+
+    if (isNaN(qty) || qty < minQty) {
+      alert(`Minimum wholesale requirement is ${minQty} units.`);
+      return;
+    }
+    if (qty > availableQty) {
+      alert(`Only ${availableQty} units available in stock.`);
+      return;
+    }
+
+    const currentPrice = activeProductForQuote.prices.DISTRIBUTOR || activeProductForQuote.prices.RETAIL;
+    const maxDiscPercent = activeProductForQuote.max_discount !== undefined ? activeProductForQuote.max_discount : 10;
+    const proposed = parseFloat(customProposedPrice);
+    if (isNaN(proposed) || proposed <= 0) {
+      alert("Please enter a valid proposed unit price.");
+      return;
+    }
+
+    if (proposed > currentPrice) {
+      alert(`Proposed price cannot be higher than the current Distributor Rate (Rs ${currentPrice.toLocaleString()}).`);
+      return;
+    }
+
+    const minAllowedPrice = currentPrice * (1 - maxDiscPercent / 100);
+    if (proposed < minAllowedPrice) {
+      alert("Proposed price exceeds the maximum allowed discount limit. Please enter a price above Rs " + minAllowedPrice.toLocaleString());
+      return;
+    }
+
+    const savedDraftStr = localStorage.getItem("ciq_b2b_draft_items");
+    let currentDraft = [];
+    try {
+      currentDraft = savedDraftStr ? JSON.parse(savedDraftStr) : [];
+      if (!Array.isArray(currentDraft)) currentDraft = [];
+    } catch(e) {
+      currentDraft = [];
+    }
+
+    const existingIdx = currentDraft.findIndex(item => item.product_id === activeProductForQuote.product_id);
+    if (existingIdx > -1) {
+      const newQty = Math.min(currentDraft[existingIdx].qty + qty, availableQty);
+      currentDraft[existingIdx] = { ...currentDraft[existingIdx], qty: newQty, price: proposed };
+    } else {
+      currentDraft.push({
+        product_id: activeProductForQuote.product_id,
+        name: activeProductForQuote.product_name,
+        price: proposed,
+        qty: qty,
+        min_wholesale_qty: minQty,
+        available_qty: availableQty
+      });
+    }
+
+    localStorage.setItem("ciq_b2b_draft_items", JSON.stringify(currentDraft));
+
+    setToastMessage(`Added ${activeProductForQuote.product_name} to B2B draft. Sign in to submit!`);
+    setTimeout(() => setToastMessage(""), 4000);
+    setActiveProductForQuote(null);
+  };
+
+  const handleDirectOrder = (product) => {
+    const minQty = product.min_wholesale_qty || 1;
+    const availableQty = (product.inventory || []).reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+    
+    if (availableQty <= 0) {
+      alert("This product is currently out of stock.");
+      return;
+    }
+    
+    if (minQty > availableQty) {
+      alert(`Warning: The minimum wholesale quantity (${minQty}) is greater than the total available warehouse stock (${availableQty}).`);
+      return;
+    }
+
+    setActiveProductForDirectOrder(product);
+    setDirectOrderQuantity(minQty);
+  };
+
+  const handleConfirmDirectOrder = () => {
+    if (!activeProductForDirectOrder) return;
+
+    const minQty = activeProductForDirectOrder.min_wholesale_qty || 1;
+    const availableQty = (activeProductForDirectOrder.inventory || []).reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+    const qty = parseInt(directOrderQuantity);
+
+    if (isNaN(qty) || qty < minQty) {
+      alert(`Minimum wholesale requirement is ${minQty} units.`);
+      return;
+    }
+    if (qty > availableQty) {
+      alert(`Only ${availableQty} units available in stock.`);
+      return;
+    }
+
+    const intent = {
+      product_id: activeProductForDirectOrder.product_id,
+      qty: qty
+    };
+    localStorage.setItem("ciq_b2b_pending_direct_order", JSON.stringify(intent));
+    
+    setActiveProductForDirectOrder(null);
+    onGetStarted("distributor");
+  };
 
   // Dynamic and Fallback Categories
   const defaultCategories = ["Networking", "Storage", "Computer Accessories", "Monitors", "Power Backup", "Cables & Connectors"];
@@ -425,22 +564,35 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
                           )}
                         </div>
 
-                        {/* Cart Trigger */}
-                        <button
-                          onClick={() => {
-                            addToCart(p.product_id);
-                            // If in B2B Mode, set the quantity to match MOQ
-                            if (marketMode === "b2b" && p.min_wholesale_qty > 1) {
-                              setTimeout(() => {
-                                updateCartQty(p.product_id, p.min_wholesale_qty - 1);
-                              }, 50);
-                            }
-                          }}
-                          disabled={isOutOfStock}
-                          className="px-4 py-2 bg-[#4F46E5] hover:bg-[#4338CA] disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-extrabold text-[10px] uppercase rounded-full shadow-sm cursor-pointer border-0 transition-colors"
-                        >
-                          Add to Cart
-                        </button>
+                        {/* Cart Trigger / B2B Actions */}
+                        {marketMode === "b2c" ? (
+                          <button
+                            onClick={() => {
+                              addToCart(p.product_id);
+                            }}
+                            disabled={isOutOfStock}
+                            className="px-4 py-2 bg-[#4F46E5] hover:bg-[#4338CA] disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-extrabold text-[10px] uppercase rounded-full shadow-sm cursor-pointer border-0 transition-colors"
+                          >
+                            Add to Cart
+                          </button>
+                        ) : (
+                          <div className="flex gap-2 w-full max-w-[220px]">
+                            <button
+                              onClick={() => handleAddToQuote(p)}
+                              disabled={isOutOfStock}
+                              className="flex-1 py-2 bg-slate-50 border border-[#E2E8F0] text-blue-600 rounded-lg text-[10px] font-extrabold hover:bg-blue-50 hover:border-blue-200 transition-colors cursor-pointer active:scale-[0.98] text-center"
+                            >
+                              Request Quote
+                            </button>
+                            <button
+                              onClick={() => handleDirectOrder(p)}
+                              disabled={isOutOfStock}
+                              className="flex-1 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-[10px] font-extrabold hover:bg-emerald-100 hover:border-emerald-300 transition-colors cursor-pointer active:scale-[0.98] text-center"
+                            >
+                              Direct Order
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -754,6 +906,263 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
         </div>
       </footer>
 
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 bg-[#0F172A] text-white px-5 py-3 rounded-lg shadow-2xl animate-fade-down z-[100] flex items-center gap-3">
+          <CheckCircle size={16} className="text-emerald-400" />
+          <span className="font-medium text-xs tracking-wide">{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Request Quote Modal */}
+      <Modal
+        open={activeProductForQuote !== null}
+        onClose={() => setActiveProductForQuote(null)}
+        title="Configure Quote Request Item"
+      >
+        {activeProductForQuote && (() => {
+          const minQty = activeProductForQuote.min_wholesale_qty || 1;
+          const availableQty = (activeProductForQuote.inventory || []).reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+          const unitPrice = activeProductForQuote.prices.DISTRIBUTOR || activeProductForQuote.prices.RETAIL;
+          
+          return (
+            <div className="flex flex-col gap-6 text-xs text-[#64748B]">
+              <div className="flex gap-4 items-center bg-slate-50 p-4 rounded-xl border border-[#E2E8F0]">
+                <div className="w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#CBD5E1] flex-shrink-0 flex items-center justify-center">
+                  <img
+                    src={activeProductForQuote.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop"}
+                    alt={activeProductForQuote.product_name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider">
+                    {activeProductForQuote.category}
+                  </span>
+                  <h4 className="font-bold text-[#0F172A] mt-1.5 text-sm truncate">{activeProductForQuote.product_name}</h4>
+                  <div className="text-[10px] text-[#64748B] font-mono mt-0.5">
+                    Product Code: {activeProductForQuote.sku}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div className="bg-[#F0FDF4] p-3 rounded-lg border border-emerald-100">
+                  <p className="text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1">Distributor Rate</p>
+                  <p className="text-base font-extrabold text-[#16A34A]">{formatCurrency(unitPrice)}</p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-lg border border-[#E2E8F0]">
+                  <p className="text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1">Available Stock</p>
+                  <p className="text-base font-extrabold text-[#0F172A]">
+                    {availableQty.toLocaleString()} {activeProductForQuote.unit || "PCS"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-bold text-[#0F172A] text-xs">Wholesale Quantity</p>
+                    <p className="text-[10px] text-[#64748B] mt-0.5">
+                      Required MOQ: {minQty} {activeProductForQuote.unit || "PCS"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setQuoteQuantity(prev => Math.max(minQty, prev - 1))}
+                      disabled={quoteQuantity <= minQty}
+                      className="w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      className="w-16 h-8 text-center font-mono font-bold text-xs border border-[#CBD5E1] rounded-lg bg-white focus:outline-none focus:border-blue-500"
+                      value={quoteQuantity}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val)) setQuoteQuantity(val);
+                        else setQuoteQuantity("");
+                      }}
+                      onBlur={() => {
+                        const val = parseInt(quoteQuantity);
+                        if (isNaN(val) || val < minQty) setQuoteQuantity(minQty);
+                        else if (val > availableQty) setQuoteQuantity(availableQty);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setQuoteQuantity(prev => Math.min(availableQty, prev + 1))}
+                      disabled={quoteQuantity >= availableQty}
+                      className="w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center border-t border-blue-100/50 pt-2.5 mt-1 text-[10px] text-[#64748B]">
+                  <span>Subtotal Value</span>
+                  <span className="font-mono font-extrabold text-[#0F172A] text-sm">
+                    {formatCurrency((parseFloat(customProposedPrice) || unitPrice) * (quoteQuantity || 0))}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-4 bg-amber-50/50 border border-amber-100 rounded-xl flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <p className="font-bold text-[#0F172A] text-xs">Propose Custom Unit Price</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono font-bold text-[#64748B]">Rs</span>
+                    <input
+                      type="number"
+                      className="w-28 h-8 px-2 text-right font-mono font-bold text-xs border border-[#CBD5E1] rounded-lg bg-white focus:outline-none focus:border-blue-500"
+                      value={customProposedPrice}
+                      onChange={(e) => setCustomProposedPrice(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2 border-t border-[#F1F5F9]">
+                <button
+                  type="button"
+                  onClick={() => setActiveProductForQuote(null)}
+                  className="px-4 py-2 bg-white border border-[#E2E8F0] text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAddToQuote}
+                  className="px-5 py-2 bg-[#4F46E5] border-0 text-white rounded-lg text-xs font-bold hover:bg-[#4338CA] transition-colors cursor-pointer shadow-sm active:scale-95"
+                >
+                  Confirm & Add
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Direct Order Modal */}
+      <Modal
+        open={activeProductForDirectOrder !== null}
+        onClose={() => setActiveProductForDirectOrder(null)}
+        title="Place Direct Purchase Order"
+      >
+        {activeProductForDirectOrder && (() => {
+          const availableQty = (activeProductForDirectOrder.inventory || []).reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+          const minQty = activeProductForDirectOrder.min_wholesale_qty || 1;
+          const unitPrice = activeProductForDirectOrder.prices.DISTRIBUTOR || activeProductForDirectOrder.prices.RETAIL;
+          
+          return (
+            <div className="flex flex-col gap-5 text-xs text-[#64748B]">
+              <p className="text-slate-500">
+                Skip the quotation request and buy this product directly at the current pre-approved distributor rate.
+              </p>
+              <div className="flex gap-4 items-center bg-slate-50 p-4 rounded-xl border border-[#E2E8F0]">
+                <div className="w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#CBD5E1] flex-shrink-0 flex items-center justify-center">
+                  <img
+                    src={activeProductForDirectOrder.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop"}
+                    alt={activeProductForDirectOrder.product_name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider">
+                    {activeProductForDirectOrder.category}
+                  </span>
+                  <h4 className="font-bold text-[#0F172A] mt-1.5 text-sm truncate">{activeProductForDirectOrder.product_name}</h4>
+                  <div className="text-[10px] text-[#64748B] font-mono mt-0.5">
+                    Product Code: {activeProductForDirectOrder.sku}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div className="bg-[#F0FDF4] p-3 rounded-lg border border-emerald-100">
+                  <p className="text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1">Distributor Rate</p>
+                  <p className="text-base font-extrabold text-[#16A34A]">{formatCurrency(unitPrice)}</p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-lg border border-[#E2E8F0]">
+                  <p className="text-[9px] text-[#64748B] font-bold uppercase tracking-wider mb-1">Available Stock</p>
+                  <p className="text-base font-extrabold text-[#0F172A]">
+                    {availableQty.toLocaleString()} {activeProductForDirectOrder.unit || "PCS"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-bold text-[#0F172A] text-xs">Order Quantity</p>
+                    <p className="text-[10px] text-[#64748B] mt-0.5">
+                      Required MOQ: {minQty} {activeProductForDirectOrder.unit || "PCS"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDirectOrderQuantity(prev => Math.max(minQty, prev - 1))}
+                      disabled={directOrderQuantity <= minQty}
+                      className="w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      className="w-16 h-8 text-center font-mono font-bold text-xs border border-[#CBD5E1] rounded-lg bg-white focus:outline-none focus:border-blue-500"
+                      value={directOrderQuantity}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val)) setDirectOrderQuantity(val);
+                        else setDirectOrderQuantity("");
+                      }}
+                      onBlur={() => {
+                        const val = parseInt(directOrderQuantity);
+                        if (isNaN(val) || val < minQty) setDirectOrderQuantity(minQty);
+                        else if (val > availableQty) setDirectOrderQuantity(availableQty);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDirectOrderQuantity(prev => Math.min(availableQty, prev + 1))}
+                      disabled={directOrderQuantity >= availableQty}
+                      className="w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center border-t border-blue-100/50 pt-2.5 mt-1 text-[10px] text-[#64748B]">
+                  <span>Total Order Value</span>
+                  <span className="font-mono font-extrabold text-[#0F172A] text-sm">
+                    {formatCurrency(unitPrice * (directOrderQuantity || 0))}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2 border-t border-[#F1F5F9]">
+                <button
+                  type="button"
+                  onClick={() => setActiveProductForDirectOrder(null)}
+                  className="px-4 py-2 bg-white border border-[#E2E8F0] text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDirectOrder}
+                  className="px-5 py-2 bg-emerald-600 border-0 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm active:scale-95"
+                >
+                  Proceed to Login & Order
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 }

@@ -192,7 +192,17 @@ export default function DistributorPortal({ onLogout }) {
   const [actionToast, setActionToast] = useState("");
   const [isCounterMode, setIsCounterMode] = useState(false);
   const [counterValue, setCounterValue] = useState("");
-  const [draftItems, setDraftItems] = useState([]);
+  const [draftItems, setDraftItems] = useState(() => {
+    const saved = localStorage.getItem("ciq_b2b_draft_items");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [activeProductForQuote, setActiveProductForQuote] = useState(null);
   const [quoteQuantity, setQuoteQuantity] = useState(1);
@@ -200,6 +210,32 @@ export default function DistributorPortal({ onLogout }) {
   const [activeProductForDirectOrder, setActiveProductForDirectOrder] = useState(null);
   const [directOrderQuantity, setDirectOrderQuantity] = useState(1);
   const [directOrderSuccessToast, setDirectOrderSuccessToast] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem("ciq_b2b_draft_items", JSON.stringify(draftItems));
+  }, [draftItems]);
+
+  useEffect(() => {
+    const pendingStr = localStorage.getItem("ciq_b2b_pending_direct_order");
+    if (pendingStr && products && products.length > 0) {
+      try {
+        const pending = JSON.parse(pendingStr);
+        const product = products.find((p) => p.product_id === pending.product_id);
+        if (product) {
+          const minQty = product.min_wholesale_qty || 1;
+          const availableQty = (product.inventory || []).reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+          
+          if (availableQty > 0) {
+            setActiveProductForDirectOrder(product);
+            setDirectOrderQuantity(Math.min(pending.qty, availableQty));
+          }
+        }
+        localStorage.removeItem("ciq_b2b_pending_direct_order");
+      } catch (e) {
+        console.error("Error restoring pending direct order:", e);
+      }
+    }
+  }, [products]);
 
   const handleDirectOrder = (product) => {
     const minQty = product.min_wholesale_qty || 1;

@@ -17,3 +17,4 @@ const pool = new Pool({
 
 module.exports = pool;
 
+// Database connection initialization completed.
