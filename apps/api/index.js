@@ -229,7 +229,6 @@ async function initDb() {
       VALUES ('asim@commerceiq.com', 'demopassword', 'distributor', 'Asim Raza', 'Asim Distribution Pak', 'wh-1', '500000')
       ON CONFLICT (email) DO NOTHING;
     `);
-
     // Seed predefined buyer
     await client.query(`
       INSERT INTO users (email, password, role, buyer_contact_name, buyer_store_name, buyer_region, buyer_address, buyer_phone)
@@ -237,40 +236,50 @@ async function initDb() {
       ON CONFLICT (email) DO NOTHING;
     `);
 
-    // Seed predefined products
+    // Seed predefined products with proper image URLs
     const prodCountResult = await client.query('SELECT COUNT(*) FROM products');
     if (parseInt(prodCountResult.rows[0].count) === 0) {
       await client.query(`
         INSERT INTO products (
           product_id, sku, barcode, product_name, short_description, brand, 
           category, unit, weight, status, low_stock_threshold, overstock_threshold, 
-          dead_stock_days, prices, inventory
+          dead_stock_days, prices, inventory, image_url
         ) VALUES 
         (
           'p-1', 'SKU-CISCO-9300', '012345678901', 'Cisco Fiber Catalyst 9300', 
           'High performance catalyst networking fiber switch.', 'Cisco', 'Networking', 'Units', 4.5, 'ACTIVE', 15, 60, 90, 
           '{"RETAIL": 150000, "WHOLESALE": 120000, "LOYALTY": 135000}'::jsonb,
-          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 42, "reserved_quantity": 0, "available_quantity": 42}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 18, "reserved_quantity": 0, "available_quantity": 18}]'::jsonb
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 42, "reserved_quantity": 0, "available_quantity": 42}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 18, "reserved_quantity": 0, "available_quantity": 18}]'::jsonb,
+          'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=500&auto=format&fit=crop'
         ),
         (
           'p-2', 'SKU-CORNING-4KM', '012345678902', 'Corning Fiber Optic Spool 4km', 
           'High speed transmission single mode fiber optic spool.', 'Corning', 'Cables', 'Spools', 12.0, 'ACTIVE', 10, 40, 60, 
           '{"RETAIL": 85000, "WHOLESALE": 68000, "LOYALTY": 75000}'::jsonb,
-          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 8, "reserved_quantity": 0, "available_quantity": 8}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 12, "reserved_quantity": 0, "available_quantity": 12}]'::jsonb
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 8, "reserved_quantity": 0, "available_quantity": 8}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 12, "reserved_quantity": 0, "available_quantity": 12}]'::jsonb,
+          'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=500&auto=format&fit=crop'
         ),
         (
           'p-3', 'SKU-NVIDIA-CX6', '012345678903', 'Nvidia Mellanox ConnectX-6', 
           'Dual-port smart Network Interface Card 200Gb/s.', 'Nvidia', 'Hardware', 'Units', 0.8, 'ACTIVE', 8, 30, 45, 
           '{"RETAIL": 250000, "WHOLESALE": 200000, "LOYALTY": 220000}'::jsonb,
-          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 15, "reserved_quantity": 0, "available_quantity": 15}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 4, "reserved_quantity": 0, "available_quantity": 4}]'::jsonb
+          '[{"warehouse_id": "wh-1", "warehouse_name": "Karachi Depot", "city": "Karachi", "country": "Pakistan", "quantity": 15, "reserved_quantity": 0, "available_quantity": 15}, {"warehouse_id": "wh-2", "warehouse_name": "Lahore Terminal", "city": "Lahore", "country": "Pakistan", "quantity": 4, "reserved_quantity": 0, "available_quantity": 4}]'::jsonb,
+          'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?w=500&auto=format&fit=crop'
         )
       `);
       console.log("Predefined catalog products seeded successfully in PostgreSQL!");
     }
 
-    console.log("Database tables initialized, predefined users seeded successfully in PostgreSQL!");
+    // Update existing product image_urls if they still have the old placeholder
+    await client.query(`
+      UPDATE products SET image_url = 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=500&auto=format&fit=crop' WHERE sku = 'SKU-CISCO-9300' AND (image_url IS NULL OR image_url LIKE '%544244015%');
+      UPDATE products SET image_url = 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=500&auto=format&fit=crop' WHERE sku = 'SKU-CORNING-4KM' AND (image_url IS NULL OR image_url LIKE '%544244015%');
+      UPDATE products SET image_url = 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?w=500&auto=format&fit=crop' WHERE sku = 'SKU-NVIDIA-CX6' AND (image_url IS NULL OR image_url LIKE '%544244015%');
+    `);
+
+    console.log("Database initialized and seeded successfully!");
   } catch (err) {
-    console.error("Error during database tables initialization:", err);
+    console.error("Error during database initialization:", err);
   } finally {
     client.release();
   }

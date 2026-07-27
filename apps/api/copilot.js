@@ -21,9 +21,12 @@ const {
   createDistributorQuotationInDb,
   createDistributorDirectOrderInDb
 } = require('./distributorOperations');
+const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb } = require('./buyerOperations');
 
 const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline stating: "I can only assist with registered catalog inventory, supplier management, and order operations." Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.';
 const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
+const BUYER_SYSTEM_PROMPT = 'You are CIQ Personal Shopping Assistant, an AI assistant helping retail buyers discover products in the store. You strictly assist buyers with discovering retail products, filtering by budget limits in PKR, natural language specs, stock availability, and personal recommendations ("getBuyerProductRecommendations"). You are strictly prohibited from performing administrator tasks or distributor wholesale functions. If asked for admin or distributor operations, decline stating: "❌ As a Personal Shopping Assistant, I can only help you discover retail products and answer catalog shopping questions." Keep your answers friendly, structured, enthusiastic, and concise.';
+
 
 function filterProductsByMessage(rows, message) {
   const lower = message.toLowerCase();
@@ -483,10 +486,26 @@ function getAdminTools(isGemini = false) {
     }
   };
 
+  const fnGetBuyerProductRecommendations = {
+    name: 'getBuyerProductRecommendations',
+    description: 'Searches and recommends retail catalog products based on buyer budget limits in PKR, category, brand, features, or natural language query.',
+    parameters: {
+      type: isGemini ? 'OBJECT' : 'object',
+      properties: {
+        query: { type: isGemini ? 'STRING' : 'string', description: 'Search term or product description (e.g. wireless headphones).' },
+        max_price: { type: isGemini ? 'NUMBER' : 'number', description: 'Maximum budget limit in PKR (e.g. 15000).' },
+        category: { type: isGemini ? 'STRING' : 'string', description: 'Product category filter (e.g. Headphones, Electronics, Laptops).' },
+        brand: { type: isGemini ? 'STRING' : 'string', description: 'Brand filter (e.g. Sony, Logitech, Dell).' },
+        features: { type: isGemini ? 'STRING' : 'string', description: 'Key features requested (e.g. active noise cancellation, bluetooth).' }
+      }
+    }
+  };
+
   const list = [
     fnCreateProduct, fnDeleteProduct, fnUpdateProduct, fnBulkUpdateProducts, fnReadProductData, fnRunAnalyticalQuery,
     fnCreateSupplier, fnUpdateSupplier, fnDeleteSupplier, fnReadSupplierData, fnManageOrders,
-    fnCreateDistributorQuotation, fnCreateDistributorDirectOrder, fnManageDistributorQuotations
+    fnCreateDistributorQuotation, fnCreateDistributorDirectOrder, fnManageDistributorQuotations,
+    fnGetBuyerProductRecommendations
   ];
 
   if (isGemini) {
@@ -707,6 +726,26 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
     return {
       action_executed: 'manageDistributorQuotations',
       ai_message: formatQuotationsTable(rows, `📋 Partner Quotations & Bids`)
+    };
+  } else if (name === 'getBuyerProductRecommendations') {
+    const products = await getBuyerProductRecommendationsFromDb(pool, args);
+    let md = `### 🛍️ Recommended Products for You\n\n`;
+    if (products.length === 0) {
+      md += `Sorry, no products matched your criteria. Try expanding your budget limit or searching with different keywords!`;
+    } else {
+      md += products.map((p, idx) => {
+        const stockStatus = p.available_stock > 0 ? `In Stock (${p.available_stock} available)` : `Out of Stock`;
+        return `**${idx + 1}. ${p.product_name}**\n` +
+          `- **Brand**: ${p.brand || 'N/A'} | **Category**: ${p.category || 'General'}\n` +
+          `- **Price**: **Rs ${p.retail_price.toLocaleString()}**\n` +
+          `- **Availability**: ${stockStatus}\n` +
+          (p.short_description ? `- **Specs**: ${p.short_description}\n` : '');
+      }).join('\n');
+    }
+    return {
+      action_executed: 'getBuyerProductRecommendations',
+      ai_message: md,
+      products
     };
   }
   throw new Error(`Unknown tool name: ${name}`);
@@ -1362,9 +1401,13 @@ function registerCopilotRoutes(app, pool) {
       return res.status(400).json({ success: false, message: 'Message payload is required.' });
     }
 
+    const mistralKey = process.env.MISTRAL_API_KEY || 't2d7sL1xG1bmzcPP9avwhHXyq6lMppSH';
+    const openaiKey = process.env.OPENAI_API_KEY || '';
+    const geminiKey = process.env.GEMINI_API_KEY || '';
+
     const role = (portal_role || defaultRole).toUpperCase();
-    const displayName = user_name || (role === 'DISTRIBUTOR' ? 'Partner' : 'Saif');
-    const effectiveSystemPrompt = role === 'DISTRIBUTOR' ? DISTRIBUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT;
+    const displayName = user_name || (role === 'DISTRIBUTOR' ? 'Partner' : role === 'BUYER' ? 'Valued Customer' : 'Saif');
+    const effectiveSystemPrompt = role === 'DISTRIBUTOR' ? DISTRIBUTOR_SYSTEM_PROMPT : role === 'BUYER' ? BUYER_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     const lowerMsg = message.toLowerCase().trim();
 
@@ -1385,7 +1428,7 @@ function registerCopilotRoutes(app, pool) {
       });
     }
 
-    // Role security check: Distributors cannot modify or delete catalog items
+    // Role security check: Distributors & Buyers restrictions
     if (role === 'DISTRIBUTOR') {
       const isAdminModification = /\b(delete|remove product|create product|add product|bulk update|alter catalog|drop table|truncate|update price|change price)\b/i.test(lowerMsg);
       if (isAdminModification && !/\b(my order|quotation|quote|my cart)\b/i.test(lowerMsg)) {
@@ -1394,15 +1437,213 @@ function registerCopilotRoutes(app, pool) {
           ai_message: `❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify or delete baseline catalog products. Admin permissions are required.`
         });
       }
+    } else if (role === 'BUYER') {
+      const isAdminOrDistributorAction = /\b(delete|create product|add product|create supplier|update supplier|distributor ledger|b2b quotation|bulk update|drop table|truncate)\b/i.test(lowerMsg);
+      if (isAdminOrDistributorAction) {
+        return res.json({
+          success: true,
+          ai_message: `❌ As a Personal Shopping Assistant, I can only help you discover retail products and answer catalog shopping questions.`
+        });
+      }
     }
 
     // 1. Simple greetings
     const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/i.test(lowerMsg);
     if (isGreeting && lowerMsg.split(/\s+/).length <= 3) {
+      const botName = role === 'DISTRIBUTOR' ? 'CIQ Distributor Copilot' : role === 'BUYER' ? 'CIQ Personal Shopping Assistant' : 'CIQ Admin Copilot';
       return res.json({
         success: true,
-        ai_message: `Hello ${displayName}! I am your ${role === 'DISTRIBUTOR' ? 'CIQ Distributor Copilot' : 'CIQ Admin Copilot'}. How can I assist you today?`
+        ai_message: `Hello ${displayName}! I am your ${botName}. How can I assist you today?`
       });
+    }
+
+    // 1.5 BUYER Role direct handler (Visual Search, Comparison & Product Recommendations)
+    if (role === 'BUYER') {
+      try {
+        const lowerMsg2 = message.toLowerCase();
+
+        // --- Side-by-Side Spec & Price Comparison ---
+        const isComparison = /\b(compare|comparison|versus|\bvs\b|difference between|which is better)\b/i.test(message);
+        if (isComparison && !attached_image) {
+          const compResult = await compareBuyerProductsInDb(pool, { message });
+          return res.json({
+            success: true,
+            action_executed: 'compareBuyerProducts',
+            ai_message: compResult.ai_message,
+            products: compResult.products
+          });
+        }
+
+        let visualQuery = null;
+        let visualCategory = null;
+        let visualBrand = null;
+
+        let usedVisionEngine = null;
+
+        // --- Visual Search: Try local Ollama Vision model first (llama3.2-vision), then fallback to Gemini Vision ---
+        if (attached_image) {
+          let base64Data = attached_image;
+          const dataUriMatch = attached_image.match(/^data:([^;]+);base64,(.+)$/);
+          let mimeType = 'image/jpeg';
+          if (dataUriMatch) {
+            mimeType = dataUriMatch[1];
+            base64Data = dataUriMatch[2];
+          }
+
+          // Fetch current store products summary for vision context
+          let catalogContext = '';
+          try {
+            const catDbRes = await pool.query("SELECT product_name, category, brand, short_description FROM products WHERE status = 'ACTIVE'");
+            catalogContext = catDbRes.rows.map(r => `- "${r.product_name}" (Category: ${r.category || 'General'}, Brand: ${r.brand || 'N/A'}, Specs: ${r.short_description || ''})`).join('\n');
+          } catch (e) {
+            console.error("Error fetching catalog context for vision:", e);
+          }
+
+          const visionPromptText = `You are an AI product identification assistant for an e-commerce store.
+Here is our current store catalog items list:
+${catalogContext}
+
+Look at this image carefully. 
+Identify which store catalog item (or product type/category/brand) this image represents or belongs to.
+Respond ONLY as a valid JSON object with format (no markdown codeblock, no explanation):
+{
+  "product_name": "matching store product name from catalog or descriptive name",
+  "category": "category",
+  "brand": "brand name or null",
+  "keywords": ["keyword1", "keyword2"]
+}`;
+
+          // 1. Try local Ollama Vision model (e.g. llama3.2-vision, llava, moondream)
+          try {
+            const probeRes = await fetch('http://localhost:11434/api/tags');
+            if (probeRes.ok) {
+              const probeData = await probeRes.json();
+              const models = probeData.models || [];
+              const visionModelObj = models.find(m => 
+                /llava|moondream|bakllava|minicpm|vision|qwen2-vl/i.test(m.name)
+              );
+
+              if (visionModelObj) {
+                const ollamaVisionModel = visionModelObj.name;
+
+                const ollamaRes = await fetch('http://localhost:11434/api/generate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    model: ollamaVisionModel,
+                    prompt: visionPromptText,
+                    images: [base64Data],
+                    stream: false
+                  })
+                });
+
+                if (ollamaRes.ok) {
+                  const ollamaData = await ollamaRes.json();
+                  const visionText = (ollamaData.response || '').trim();
+                  const jsonMatch = visionText.match(/\{[\s\S]*\}/);
+                  if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    visualQuery = parsed.product_name || (parsed.keywords ? parsed.keywords.join(' ') : null);
+                    visualCategory = parsed.category || null;
+                    visualBrand = parsed.brand || null;
+                    usedVisionEngine = `Local Ollama Vision (${ollamaVisionModel})`;
+                  }
+                }
+              }
+            }
+          } catch (ollamaErr) {
+            console.error('Ollama Vision check error:', ollamaErr);
+          }
+
+          // 2. Fallback to Gemini Vision if local Ollama Vision is not active or didn't parse
+          if (!visualQuery && !usedVisionEngine && geminiKey) {
+            try {
+              const genAI = new GoogleGenerativeAI(geminiKey);
+              const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+              const visionResult = await visionModel.generateContent([
+                {
+                  inlineData: {
+                    data: base64Data,
+                    mimeType
+                  }
+                },
+                visionPromptText
+              ]);
+
+              const visionText = visionResult.response.text().trim();
+              const jsonMatch = visionText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                visualQuery = parsed.product_name || (parsed.keywords ? parsed.keywords.join(' ') : null);
+                visualCategory = parsed.category || null;
+                visualBrand = parsed.brand || null;
+                usedVisionEngine = 'Gemini 2.5 Flash Vision';
+              }
+            } catch (visionErr) {
+              console.error('Gemini Vision error:', visionErr);
+            }
+          }
+        }
+
+        // Extract max price from the message
+        const priceMatch = message.match(/(?:under|below|less\s+than|up\s+to|max(?:imum)?|within)\s+(?:rs\.?\s*)?(\d[\d,]*)/i)
+          || message.match(/(?:rs\.?\s*)?(\d[\d,]+)\s+(?:budget|pkr|rupees?)/i);
+        const maxPrice = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : null;
+
+        // Extract category hint
+        const catMatch = lowerMsg2.match(/\b(laptop|laptops|headphone|headphones|mouse|keyboard|monitor|phone|mobile|tablet|camera|printer|speaker|earphone|earbuds|gaming|networking|cable|router|switch|ssd|hard\s*disk|storage)\b/i);
+        const category = visualCategory || (catMatch ? catMatch[1] : null);
+
+        // Extract brand hint
+        const brandMatch = lowerMsg2.match(/\b(dell|hp|lenovo|apple|samsung|logitech|sony|asus|acer|microsoft|cisco|tp-link|nvidia|intel|amd|corsair|kingston|western\s*digital|seagate)\b/i);
+        const brand = visualBrand || (brandMatch ? brandMatch[1] : null);
+
+        let searchQuery = visualQuery || (message === "Find similar products to this image" ? "" : message);
+
+        let products = [];
+        // If image was uploaded but no visual query was identified (e.g. non-product photo), don't return arbitrary products
+        if (attached_image && !visualQuery) {
+          products = [];
+        } else {
+          products = await getBuyerProductRecommendationsFromDb(pool, {
+            query: searchQuery,
+            max_price: maxPrice,
+            category,
+            brand
+          });
+        }
+
+        let md = `### 🛍️ ${attached_image ? '📷 Visual Search Results' : 'Recommended Products for You'}\n\n`;
+        if (attached_image && usedVisionEngine) md += `*Analyzed via **${usedVisionEngine}**:*\n\n`;
+        if (maxPrice) md += `*Showing products up to **Rs ${maxPrice.toLocaleString()}***\n\n`;
+
+        if (products.length === 0) {
+          if (attached_image) {
+            md += `ℹ️ No matching products found in the store catalog for this image. Try uploading a photo of electronics, cables, or hardware items available in our store!`;
+          } else {
+            md += `Sorry, no products matched your criteria${maxPrice ? ` under Rs ${maxPrice.toLocaleString()}` : ''}. Try adjusting your budget or searching with different keywords!`;
+          }
+        } else {
+          md += products.slice(0, 10).map((p, idx) => {
+            const stockStatus = p.available_stock > 0 ? `In Stock (${p.available_stock} available)` : `⚠️ Out of Stock`;
+            return `**${idx + 1}. ${p.product_name}**\n` +
+              `- **Brand**: ${p.brand || 'N/A'} | **Category**: ${p.category || 'General'}\n` +
+              `- **Price**: **Rs ${p.retail_price.toLocaleString()}**\n` +
+              `- **Availability**: ${stockStatus}\n` +
+              (p.short_description ? `- **Specs**: ${p.short_description}\n` : '');
+          }).join('\n');
+        }
+
+        return res.json({
+          success: true,
+          action_executed: 'getBuyerProductRecommendations',
+          ai_message: md,
+          products: products.slice(0, 10)
+        });
+      } catch (err) {
+        return res.json({ success: true, ai_message: `❌ Error finding products: ${err.message}` });
+      }
     }
 
     // 2. Allowed business keywords (Static list + Platform tabs + Synonyms)
@@ -1440,10 +1681,6 @@ function registerCopilotRoutes(app, pool) {
         ai_message: `I can only assist with the registered operations: product catalog inventory management.`
       });
     }
-
-    const mistralKey = process.env.MISTRAL_API_KEY || 't2d7sL1xG1bmzcPP9avwhHXyq6lMppSH';
-    const openaiKey = process.env.OPENAI_API_KEY || '';
-    const geminiKey = process.env.GEMINI_API_KEY || '';
 
     // 0. Try local Ollama model first if running on local system
     try {
@@ -1718,12 +1955,13 @@ function registerCopilotRoutes(app, pool) {
       }
     }
 
-    // 4. Fallback locally if keys are not working
+    // 5. Fallback locally if keys are not working
     return handleLocalFallback(pool, message, attached_image, res, role);
   };
 
   app.post('/api/copilot/chat', (req, res) => handleChat(req, res, 'ADMIN'));
   app.post('/api/copilot/distributor/chat', (req, res) => handleChat(req, res, 'DISTRIBUTOR'));
+  app.post('/api/copilot/buyer/chat', (req, res) => handleChat(req, res, 'BUYER'));
 }
 
 module.exports = { registerCopilotRoutes };

@@ -15,6 +15,7 @@ import {
 import { useStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/data";
 import { OrderStatusBadge } from "@/components/ui";
+import BuyerChatbotWidget from "@/components/landing/BuyerChatbotWidget";
 export default function BuyerPortal({ onLogout }) {
   const {
     notifications,
@@ -299,7 +300,7 @@ export default function BuyerPortal({ onLogout }) {
                   /* @__PURE__ */ jsx("div", { className: "w-full h-36 rounded-xl overflow-hidden mb-4 bg-slate-50 border border-[#E2E8F0] flex items-center justify-center", children: /* @__PURE__ */ jsx(
                     "img",
                     {
-                      src: p.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
+                      src: p.image_url || "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=300&fit=crop",
                       alt: p.product_name,
                       className: "w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                     }
@@ -472,6 +473,7 @@ export default function BuyerPortal({ onLogout }) {
           ] })
         ] })
       ] })
-    ] })
+    ] }),
+    /* @__PURE__ */ jsx(BuyerChatbotWidget, {})
   ] });
 }

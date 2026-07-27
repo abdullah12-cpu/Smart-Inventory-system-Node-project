@@ -1,0 +1,22 @@
+{
+  "role": "BUYER",
+  "name": "CIQ Personal Shopping Assistant",
+  "description": "AI shopping assistant helping retail customers discover products, search by budget/specs, check availability, and get recommendations.",
+  "max_history_tokens": 4096,
+  "allowed_tools": [
+    "getBuyerProductRecommendations"
+  ],
+  "prohibited_intents": [
+    "create product",
+    "delete product",
+    "update price",
+    "bulk update",
+    "create supplier",
+    "delete supplier",
+    "supplier directory",
+    "b2b quotation",
+    "distributor ledger",
+    "drop table",
+    "alter table"
+  ]
+}

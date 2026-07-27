@@ -20,5 +20,8 @@
     "createDistributorQuotation",
     "createDistributorDirectOrder",
     "manageDistributorQuotations"
+  ],
+  "buyer_tools": [
+    "getBuyerProductRecommendations"
   ]
 }
