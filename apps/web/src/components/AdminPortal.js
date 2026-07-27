@@ -1481,42 +1481,6 @@ export default function AdminPortal({ onLogout }) {
                                 })
                                 ]
                               }),
-                          /* @__PURE__ */ jsxs("div", {
-                                className: "grid grid-cols-2 gap-3", children: [
-                            /* @__PURE__ */ jsxs("div", {
-                                  children: [
-                              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Lead Time (days)" }),
-                              /* @__PURE__ */ jsx(
-                                    "input",
-                                    {
-                                      className: "input-field py-2 text-xs",
-                                      type: "number",
-                                      min: "1",
-                                      max: "365",
-                                      value: sLeadTime,
-                                      onChange: (e) => setSLeadTime(e.target.value)
-                                    }
-                                  )
-                                  ]
-                                }),
-                            /* @__PURE__ */ jsxs("div", {
-                                  children: [
-                              /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Reliability Score (0\u2013100)" }),
-                              /* @__PURE__ */ jsx(
-                                    "input",
-                                    {
-                                      className: "input-field py-2 text-xs",
-                                      type: "number",
-                                      min: "0",
-                                      max: "100",
-                                      value: sReliability,
-                                      onChange: (e) => setSReliability(e.target.value)
-                                    }
-                                  )
-                                  ]
-                                })
-                                ]
-                              }),
                           /* @__PURE__ */ jsx(
                                 "button",
                                 {
