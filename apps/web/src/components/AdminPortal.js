@@ -1177,7 +1177,7 @@ export default function AdminPortal({ onLogout }) {
                                     )
                                     ]
                                   }) : /* @__PURE__ */ jsxs("div", {
-                                    className: "flex items-center gap-1.5 justify-center opacity-0 group-hover:opacity-100 transition-opacity", children: [
+                                    className: "flex items-center gap-1.5 justify-center", children: [
                           /* @__PURE__ */ jsx(
                                       "button",
                                       {
