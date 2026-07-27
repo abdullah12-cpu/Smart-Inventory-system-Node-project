@@ -645,10 +645,14 @@ export default function DistributorPortal({ onLogout }) {
       /* @__PURE__ */ jsxs("nav", { className: "flex-1 p-4 flex flex-col gap-1 overflow-y-auto", children: [
         /* @__PURE__ */ jsx("div", { className: "px-3 mb-2 mt-2", children: /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider", children: "Ordering" }) }),
         /* @__PURE__ */ jsxs(
-          "button",
+          "a",
           {
+            href: "?tab=catalog",
+            target: "_blank",
+            rel: "noopener noreferrer",
             onClick: () => setActiveTab("catalog"),
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "catalog" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "catalog" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            style: { textDecoration: "none" },
             children: [
               /* @__PURE__ */ jsx(
                 ShoppingCart,
@@ -662,10 +666,14 @@ export default function DistributorPortal({ onLogout }) {
           }
         ),
         /* @__PURE__ */ jsxs(
-          "button",
+          "a",
           {
+            href: "?tab=quotations",
+            target: "_blank",
+            rel: "noopener noreferrer",
             onClick: () => setActiveTab("quotations"),
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "quotations" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "quotations" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            style: { textDecoration: "none" },
             children: [
               /* @__PURE__ */ jsx(
                 FileText,
@@ -679,10 +687,14 @@ export default function DistributorPortal({ onLogout }) {
           }
         ),
         /* @__PURE__ */ jsxs(
-          "button",
+          "a",
           {
+            href: "?tab=orders",
+            target: "_blank",
+            rel: "noopener noreferrer",
             onClick: () => setActiveTab("orders"),
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "orders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "orders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            style: { textDecoration: "none" },
             children: [
               /* @__PURE__ */ jsx(
                 Package,
@@ -697,10 +709,14 @@ export default function DistributorPortal({ onLogout }) {
         ),
         /* @__PURE__ */ jsx("div", { className: "px-3 mb-2 mt-4", children: /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider", children: "Financials" }) }),
         /* @__PURE__ */ jsxs(
-          "button",
+          "a",
           {
+            href: "?tab=ledger",
+            target: "_blank",
+            rel: "noopener noreferrer",
             onClick: () => setActiveTab("ledger"),
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "ledger" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "ledger" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            style: { textDecoration: "none" },
             children: [
               /* @__PURE__ */ jsx(
                 FileSpreadsheet,
@@ -714,10 +730,14 @@ export default function DistributorPortal({ onLogout }) {
           }
         ),
         /* @__PURE__ */ jsxs(
-          "button",
+          "a",
           {
+            href: "?tab=reminders",
+            target: "_blank",
+            rel: "noopener noreferrer",
             onClick: () => setActiveTab("reminders"),
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "reminders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "reminders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            style: { textDecoration: "none" },
             children: [
               /* @__PURE__ */ jsx(
                 Bell,
@@ -731,10 +751,14 @@ export default function DistributorPortal({ onLogout }) {
           }
         ),
         /* @__PURE__ */ jsxs(
-          "button",
+          "a",
           {
+            href: "?tab=profile",
+            target: "_blank",
+            rel: "noopener noreferrer",
             onClick: () => setActiveTab("profile"),
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer ${activeTab === "profile" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "profile" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            style: { textDecoration: "none" },
             children: [
               /* @__PURE__ */ jsx(
                 User,

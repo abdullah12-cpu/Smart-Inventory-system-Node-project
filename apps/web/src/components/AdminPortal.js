@@ -59,14 +59,20 @@ function PaymentMethodIcon({ method }) {
 
 function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldReduceMotion }) {
   const isActive = activeTab === id;
+  const href = `?tab=${id}`;
   return /* @__PURE__ */ jsxs(
-    "button",
+    "a",
     {
-      onClick: () => setActiveTab(id),
-      className: `sidebar-link w-full text-left border-0 bg-transparent relative flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold transition-colors duration-200 cursor-pointer overflow-hidden ${
+      href: href,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      onClick: (e) => {
+        setActiveTab(id);
+      },
+      className: `sidebar-link w-full text-left border-0 bg-transparent relative flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold transition-colors duration-200 cursor-pointer overflow-hidden no-underline ${
         isActive ? "text-white" : "text-[#94A3B8] hover:text-white"
       }`,
-      style: { background: "transparent" },
+      style: { background: "transparent", textDecoration: "none" },
       children: [
         isActive && /* @__PURE__ */ jsx(motion.div, {
           layoutId: "sidebar-active-pill",
