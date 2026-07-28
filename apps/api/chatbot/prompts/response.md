@@ -9,7 +9,7 @@
    - Format stock counts with unit labels: `X units`.
 
 3. **Status Badges**:
-   - Represent statuses clearly: `APPROVED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, `UNDER_REVIEW`.
+   - Represent statuses clearly: `APPROVED`, `PROCESSING`, `SHIPPED`, `DELIVERED`, `PENDING`.
 
 4. **Conciseness**:
    - Keep conversational fluff minimal.

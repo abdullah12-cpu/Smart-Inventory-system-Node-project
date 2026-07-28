@@ -214,6 +214,14 @@ async function initDb() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
       ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS order_id VARCHAR(100);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS order_number VARCHAR(100);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS quotation_number VARCHAR(100);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS product_name TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS items_summary TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS distributor_name VARCHAR(255);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issue_date VARCHAR(100);
     `);
 
     // Seed predefined admin
@@ -848,6 +856,61 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
       }
     }
 
+    if (status === 'APPROVED' || status === 'CONFIRMED' || status === 'PROCESSING') {
+      try {
+        const order = result.rows[0];
+        const invId = `inv-${Date.now()}`;
+        const invNum = (order.order_number || order_id).replace('ORD-', 'INV-').replace('QUO-', 'INV-');
+        const checkInv = await pool.query('SELECT * FROM invoices WHERE invoice_number = $1 OR order_number = $2', [invNum, order.order_number]);
+        if (checkInv.rows.length === 0) {
+          const issueDate = new Date().toISOString().split('T')[0];
+          const dueDateObj = new Date();
+          dueDateObj.setDate(dueDateObj.getDate() + 30);
+          const dueDate = dueDateObj.toISOString().split('T')[0];
+
+          const itemsArr = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+          let prodName = 'handfree (25x)';
+          if (itemsArr && itemsArr.length > 0) {
+            const item = itemsArr[0];
+            const name = item.name || item.product_name || 'handfree';
+            const qty = item.qty || item.quantity || 1;
+            prodName = `${name} (${qty}x)`;
+          } else if (order.items_summary && !order.items_summary.includes('Wholesale B2B')) {
+            prodName = order.items_summary;
+          }
+          const itemsSummary = prodName;
+
+          await pool.query(
+            `INSERT INTO invoices (
+              invoice_id, invoice_number, order_id, order_number, quotation_number,
+              product_name, items_summary, customer_email, distributor_name,
+              total_amount, amount_paid, issue_date, due_date, status, late_payment_probability
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            ON CONFLICT (invoice_id) DO NOTHING`,
+            [
+              invId,
+              invNum,
+              order.order_id,
+              order.order_number,
+              null,
+              prodName,
+              itemsSummary,
+              order.customer_email || 'asim@commerceiq.com',
+              'Asim Distribution Pak',
+              parseFloat(order.total_amount || 0),
+              0,
+              issueDate,
+              dueDate,
+              'UNPAID',
+              0
+            ]
+          );
+        }
+      } catch (invErr) {
+        console.error('Error auto-creating invoice on order approval:', invErr.message);
+      }
+    }
+
     return res.json({ success: true, order: result.rows[0] });
   } catch (err) {
     console.error('Error updating order status:', err);
@@ -956,7 +1019,50 @@ app.put('/api/quotations/:quotation_id/status', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Quotation not found.' });
     }
-    return res.json({ success: true, quotation: result.rows[0] });
+    const quote = result.rows[0];
+
+    // If quotation is APPROVED or ACCEPTED, auto-create corresponding B2B order
+    const normStatus = (status || '').toUpperCase();
+    if (normStatus === 'APPROVED' || normStatus === 'ACCEPTED') {
+      try {
+        const orderNumber = (quote.quotation_number || quotation_id).replace("QUO-", "ORD-");
+        const checkOrder = await pool.query('SELECT * FROM orders WHERE order_number = $1', [orderNumber]);
+        if (checkOrder.rows.length === 0) {
+          const orderId = `ord-b2b-${Date.now()}`;
+          const items = quote.items || [{
+            product_id: 'b2b-stock',
+            name: quote.product_name || 'B2B Wholesale Order',
+            qty: 1,
+            price: quote.total_amount
+          }];
+          await pool.query(
+            `INSERT INTO orders (
+              order_id, order_number, order_type, status, subtotal, discount_total, 
+              tax_total, total_amount, currency, order_date, items_summary, items, customer_email
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            [
+              orderId,
+              orderNumber,
+              'B2B',
+              'PROCESSING',
+              quote.total_amount || 0,
+              0,
+              0,
+              quote.total_amount || 0,
+              'PKR',
+              new Date().toISOString(),
+              `Wholesale B2B Order generated from ${quote.quotation_number || quotation_id}`,
+              JSON.stringify(items),
+              quote.customer_email || 'demo@commerceiq.com'
+            ]
+          );
+        }
+      } catch (orderErr) {
+        console.error('Error auto-creating B2B order from quotation API status update:', orderErr.message);
+      }
+    }
+
+    return res.json({ success: true, quotation: quote });
   } catch (err) {
     console.error('Error updating quotation status:', err);
     return res.status(500).json({ success: false, message: 'Database error updating quotation status.' });
@@ -1029,10 +1135,18 @@ app.get('/api/invoices', async (req, res) => {
     const invoices = result.rows.map(row => ({
       invoice_id: row.invoice_id,
       invoice_number: row.invoice_number,
-      status: row.status,
-      total_amount: parseFloat(row.total_amount),
-      amount_paid: parseFloat(row.amount_paid),
+      order_id: row.order_id,
+      order_number: row.order_number,
+      quotation_number: row.quotation_number,
+      product_name: row.product_name || row.items_summary || 'Wholesale B2B Order',
+      items_summary: row.items_summary || row.product_name || 'Wholesale B2B Batch',
+      customer_email: row.customer_email || 'asim@commerceiq.com',
+      distributor_name: row.distributor_name || 'Asim Distribution Pak',
+      total_amount: parseFloat(row.total_amount || 0),
+      amount_paid: parseFloat(row.amount_paid || 0),
+      issue_date: row.issue_date || (row.due_date ? String(row.due_date).slice(0,10) : new Date().toISOString().split('T')[0]),
       due_date: row.due_date,
+      status: row.status || 'UNPAID',
       late_payment_probability: parseFloat(row.late_payment_probability || 0)
     }));
     return res.json(invoices);
@@ -1047,10 +1161,29 @@ app.post('/api/invoices', async (req, res) => {
   const inv = req.body;
   try {
     await pool.query(
-      `INSERT INTO invoices (invoice_id, invoice_number, status, total_amount, amount_paid, due_date, late_payment_probability)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO invoices (
+        invoice_id, invoice_number, order_id, order_number, quotation_number,
+        product_name, items_summary, customer_email, distributor_name,
+        total_amount, amount_paid, issue_date, due_date, status, late_payment_probability
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (invoice_id) DO NOTHING`,
-      [inv.invoice_id, inv.invoice_number, inv.status || 'SENT', inv.total_amount, inv.amount_paid || 0, inv.due_date || new Date().toISOString(), inv.late_payment_probability || 0]
+      [
+        inv.invoice_id,
+        inv.invoice_number,
+        inv.order_id || null,
+        inv.order_number || null,
+        inv.quotation_number || null,
+        inv.product_name || inv.items_summary || 'Wholesale B2B Order',
+        inv.items_summary || inv.product_name || 'Wholesale B2B Order',
+        inv.customer_email || 'asim@commerceiq.com',
+        inv.distributor_name || 'Asim Distribution Pak',
+        inv.total_amount,
+        inv.amount_paid || 0,
+        inv.issue_date || new Date().toISOString().split('T')[0],
+        inv.due_date || new Date().toISOString().split('T')[0],
+        inv.status || 'UNPAID',
+        inv.late_payment_probability || 0
+      ]
     );
     return res.status(201).json({ success: true });
   } catch (err) {
@@ -1068,6 +1201,21 @@ app.put('/api/invoices/:id', async (req, res) => {
       `UPDATE invoices SET amount_paid = $1, status = $2 WHERE invoice_id = $3`,
       [amount_paid, status, id]
     );
+
+    // Auto-convert matching order to READY_TO_SHIP when invoice is PAID
+    const invRes = await pool.query('SELECT * FROM invoices WHERE invoice_id = $1', [id]);
+    if (invRes.rows.length > 0) {
+      const inv = invRes.rows[0];
+      const isPaid = (status && status.toUpperCase() === 'PAID') || parseFloat(amount_paid) >= parseFloat(inv.total_amount || 0);
+      if (isPaid) {
+        const ordNum = inv.order_number || inv.invoice_number.replace('INV-', 'ORD-');
+        await pool.query(
+          "UPDATE orders SET status = 'READY_TO_SHIP' WHERE (order_number = $1 OR order_id = $2) AND status != 'SHIPPED'",
+          [ordNum, inv.order_id || '']
+        );
+      }
+    }
+
     return res.json({ success: true });
   } catch (err) {
     console.error('Error updating invoice:', err);

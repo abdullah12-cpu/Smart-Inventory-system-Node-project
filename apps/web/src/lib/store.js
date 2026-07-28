@@ -344,6 +344,9 @@ export function StoreProvider({ children }) {
         });
         setInvoices(updatedInvoices);
 
+        const freshOrdRes = await fetch("/api/orders");
+        if (freshOrdRes.ok) setOrders(await freshOrdRes.json());
+
         const newPayment = {
           payment_id: `pay-${Date.now()}`,
           customer_name: customerName,
@@ -641,6 +644,9 @@ export function StoreProvider({ children }) {
             body: JSON.stringify(newAudit)
           });
           setAuditLogs((prev) => [newAudit, ...prev]);
+
+          const invRes = await fetch("/api/invoices");
+          if (invRes.ok) setInvoices(await invRes.json());
 
           return true;
         }

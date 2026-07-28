@@ -9,6 +9,7 @@ import {
   Settings,
   LogOut,
   Check,
+  Clock,
   ChevronDown,
   Plus,
   MapPin,
@@ -269,6 +270,8 @@ export default function AdminPortal({ onLogout }) {
   const [allocMethod, setAllocMethod] = useState("JAZZCASH");
   const [allocRef, setAllocRef] = useState("");
   const [allocSuccess, setAllocSuccess] = useState("");
+  const [invSearch, setInvSearch] = useState("");
+  const [invStatusFilter, setInvStatusFilter] = useState("all");
   const [shippingOrderId, setShippingOrderId] = useState(null);
   const [selectedShipWarehouse, setSelectedShipWarehouse] = useState("wh-1");
   const notifRef = useRef(null);
@@ -1698,23 +1701,35 @@ export default function AdminPortal({ onLogout }) {
                                   }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx(OrderStatusBadge, { status: o.status }) }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(o.total_amount) }),
-                        /* @__PURE__ */ jsxs("td", {
-                                    className: "px-6 py-3.5 text-center flex justify-center gap-1.5", children: [
-                                      o.status === "PENDING" && (
-                            /* @__PURE__ */ jsx("button", {
-                                        onClick: () => handleApproveOrder(o.order_id),
-                                        className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
-                                        children: "Approve"
-                                      })
-                                      ),
-                                      (o.status === "CONFIRMED" || o.status === "PROCESSING") && (
-                            /* @__PURE__ */ jsx("button", {
-                                        onClick: () => handleShipOrder(o.order_id),
-                                        className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
-                                        children: "Ship"
-                                      })
-                                      )
-                                    ]
+                        /* @__PURE__ */ jsx("td", {
+                                    className: "px-6 py-3.5 text-center", children: (() => {
+                                      const associatedInv = invoices.find(
+                                        i => i.order_number === o.order_number || i.order_id === o.order_id || i.invoice_number.replace('INV-', 'ORD-') === o.order_number
+                                      );
+                                      const isPaid = associatedInv ? associatedInv.status === "PAID" : false;
+
+                                      if (o.status === "PENDING") {
+                                        return /* @__PURE__ */ jsx("button", {
+                                          onClick: () => handleApproveOrder(o.order_id),
+                                          className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                          children: "Approve"
+                                        });
+                                      }
+
+                                      if (o.status === "READY_TO_SHIP" || (isPaid && o.status !== "SHIPPED" && o.status !== "CANCELLED")) {
+                                        return /* @__PURE__ */ jsx("button", {
+                                          onClick: () => handleShipOrder(o.order_id),
+                                          className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                          children: "Ship"
+                                        });
+                                      }
+
+                                      if (o.status === "SHIPPED") {
+                                        return /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600", children: "Shipped" });
+                                      }
+
+                                      return /* @__PURE__ */ jsx("span", { className: "px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded", children: "Awaiting Invoice Payment" });
+                                    })()
                                   })
                                   ]
                                 },
@@ -1733,340 +1748,146 @@ export default function AdminPortal({ onLogout }) {
               }),
               activeTab === "billing" && /* @__PURE__ */ jsxs("div", {
                 className: "page-container animate-cross-fade flex flex-col gap-6", children: [
-          /* @__PURE__ */ jsxs("div", {
-                  children: [
-            /* @__PURE__ */ jsx(
-                    "h1",
-                    {
-                      className: "text-2xl font-bold text-[#0F172A]",
-                      style: { fontFamily: "Outfit, sans-serif" },
-                      children: "Billing & Reconciliations"
-                    }
-                  ),
-              /* @__PURE__ */ jsx(motion.div, {
-                    initial: shouldReduceMotion ? { width: "100%" } : { width: 0 },
-                    animate: { width: "100%" },
-                    transition: { duration: 0.4, ease: "easeOut" },
-                    className: "h-[2px] bg-[#E2E8F0] mt-1"
-                  }),
-            /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1.5", children: "Reconcile cash allocations, check status of pending invoices, and review reconciled payment logs." })
-                  ]
-                }),
-          /* @__PURE__ */ jsxs("div", {
-                  className: "grid grid-cols-1 lg:grid-cols-3 gap-6", children: [
-            /* @__PURE__ */ jsxs("div", {
-                    className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden lg:col-span-2 flex flex-col", children: [
-              /* @__PURE__ */ jsxs("div", {
-                      className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
-                /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Receivable Invoices" }),
-                /* @__PURE__ */ jsx(motion.div, {
-                        initial: shouldReduceMotion ? {} : { scale: 0.8 },
-                        animate: { scale: 1 },
-                        transition: { type: "spring", stiffness: 350, damping: 15 },
-                        children: /* @__PURE__ */ jsx(
-                          Badge,
-                          {
-                            text: `${invoices.length} Invoices`,
-                            variant: "neutral"
-                          }
-                        )
-                      })
-                      ]
-                    }),
-              /* @__PURE__ */ jsx("div", {
-                      className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", {
-                        className: "w-full text-left border-collapse text-xs", children: [
-                /* @__PURE__ */ jsx("thead", {
-                          children: /* @__PURE__ */ jsxs("tr", {
-                            className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Invoice No" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Status" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Total" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Payment Allocation" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3 text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Late Probability" })
-                            ]
-                          })
-                        }),
-                /* @__PURE__ */ jsx("tbody", {
-                          children: invoices.length === 0 ? /* @__PURE__ */ jsx("tr", {
-                            children: /* @__PURE__ */ jsx(
-                              "td",
-                              {
-                                colSpan: 5,
-                                className: "text-center py-8 text-xs text-[#94A3B8] font-medium",
-                                children: "No invoices match filter."
-                              }
-                            )
-                          }) : invoices.map((inv, idx) => {
-                            const allocationPct = inv.total_amount > 0 ? inv.amount_paid / inv.total_amount * 100 : 0;
-                            return /* @__PURE__ */ jsxs(
-                              motion.tr,
-                              {
-                                initial: shouldReduceMotion ? {} : { opacity: 0, y: 10 },
-                                animate: { opacity: 1, y: 0 },
-                                transition: { duration: 0.22, delay: idx * 0.04 },
-                                className: "data-row border-b border-[#E2E8F0]",
-                                children: [
-                        /* @__PURE__ */ jsx("td", {
-                                  className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", {
-                                    children: [
-                          /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: inv.invoice_number }),
-                          /* @__PURE__ */ jsxs("div", {
-                                      className: "text-[10px] text-[#94A3B8] mt-0.5", children: [
-                                        "Due: ",
-                                        formatDate(inv.due_date)
-                                      ]
-                                    })
-                                    ]
-                                  })
-                                }),
-                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(InvoiceStatusBadge, { status: inv.status }) }),
-                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(inv.total_amount) }),
-                        /* @__PURE__ */ jsxs("td", {
-                                  className: "px-6 py-3.5", children: [
-                          /* @__PURE__ */ jsxs("div", {
-                                    className: "flex justify-between items-center text-[10px] text-[#64748B] mb-1 font-semibold", children: [
-                            /* @__PURE__ */ jsxs("span", {
-                                      children: [
-                                        formatCurrency(inv.amount_paid),
-                                        " paid"
-                                      ]
-                                    }),
-                            /* @__PURE__ */ jsxs("span", {
-                                      children: [
-                                        Math.round(allocationPct),
-                                        "%"
-                                      ]
-                                    })
-                                    ]
-                                  }),
-                          /* @__PURE__ */ jsx("div", {
-                                    className: "w-full h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden", children: /* @__PURE__ */ jsx(
-                                      "div",
-                                      {
-                                        className: "h-full bg-emerald-500 rounded-full transition-all duration-500",
-                                        style: {
-                                          width: `${allocationPct}%`
-                                        }
-                                      }
-                                    )
-                                  })
-                                  ]
-                                }),
-                        /* @__PURE__ */ jsx("td", {
-                                  className: "px-6 py-3.5", children: /* @__PURE__ */ jsx(
-                                    LatePaymentRiskBadge,
-                                    {
-                                      probability: inv.late_payment_probability
-                                    }
-                                  )
-                                })
-                                ]
-                              },
-                              inv.invoice_id
-                            );
-                          })
-                        })
-                        ]
-                      })
-                    }),
-              /* @__PURE__ */ jsxs("div", {
-                      className: "bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm lg:col-span-1 flex flex-col gap-4", children: [
-                /* @__PURE__ */ jsxs("div", {
-                        children: [
-                  /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Simulate Payment Allocation" }),
-                  /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B] mt-0.5", children: "Allocate cash transfers, checks or mobile wallet transactions to outstanding B2B invoices" })
-                        ]
+                  /* @__PURE__ */ jsxs("div", {
+                    children: [
+                      /* @__PURE__ */ jsx("h1", {
+                        className: "text-2xl font-bold text-[#0F172A]",
+                        style: { fontFamily: "Outfit, sans-serif" },
+                        children: "Automated B2B Billing & Invoices"
                       }),
-                /* @__PURE__ */ jsxs(
-                        "form",
-                        {
-                          onSubmit: handleRecordAllocationSubmit,
-                          className: "flex flex-col gap-3",
-                          children: [
-                      /* @__PURE__ */ jsxs(motion.div, {
-                            initial: shouldReduceMotion ? {} : { y: 8, opacity: 0 },
-                            animate: { y: 0, opacity: 1 },
-                            transition: { delay: 0.05, duration: 0.25 },
-                            children: [
-                        /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Select Open Invoice" }),
-                        /* @__PURE__ */ jsx(
-                              "select",
-                              {
-                                className: "input-field py-2 text-xs",
-                                value: allocInvoiceId,
-                                onChange: (e) => setAllocInvoiceId(e.target.value),
-                                required: true,
-                                children: invoices.filter((inv) => inv.status !== "PAID").map((inv) => /* @__PURE__ */ jsxs("option", {
-                                  value: inv.invoice_id, children: [
-                                    inv.invoice_number,
-                                    " (Unpaid:",
-                                    " ",
-                                    formatCurrency(
-                                      inv.total_amount - inv.amount_paid
-                                    ),
-                                    ")"
-                                  ]
-                                }, inv.invoice_id))
-                              }
-                            )
-                            ]
-                          }),
-                      /* @__PURE__ */ jsxs(motion.div, {
-                            initial: shouldReduceMotion ? {} : { y: 8, opacity: 0 },
-                            animate: { y: 0, opacity: 1 },
-                            transition: { delay: 0.1, duration: 0.25 },
-                            className: "grid grid-cols-2 gap-2", children: [
-                        /* @__PURE__ */ jsxs("div", {
-                              children: [
-                          /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Method" }),
-                          /* @__PURE__ */ jsxs("div", {
-                                className: "relative",
-                                children: [
-                                  allocMethod === "JAZZCASH" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-extrabold text-[8px] bg-amber-500 text-black px-1.5 py-0.5 rounded border border-amber-600 pointer-events-none scale-90", children: "JazzCash" }),
-                                  allocMethod === "EASYPAISA" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-extrabold text-[8px] bg-emerald-600 text-white px-1.5 py-0.5 rounded border border-emerald-700 pointer-events-none scale-90", children: "EasyPaisa" }),
-                                  allocMethod === "BANK_TRANSFER" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded pointer-events-none scale-90", children: "Bank" }),
-                                  allocMethod === "CARD" && /* @__PURE__ */ jsx("span", { className: "absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-[8px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded pointer-events-none scale-90", children: "Card" }),
-                              /* @__PURE__ */ jsxs(
-                                    "select",
-                                    {
-                                      className: "input-field py-2 text-xs",
-                                      style: { paddingLeft: allocMethod ? "68px" : "10px" },
-                                      value: allocMethod,
-                                      onChange: (e) => setAllocMethod(e.target.value),
-                                      required: true,
-                                      children: [
-                                    /* @__PURE__ */ jsx("option", { value: "JAZZCASH", children: "JazzCash" }),
-                                    /* @__PURE__ */ jsx("option", { value: "EASYPAISA", children: "EasyPaisa" }),
-                                    /* @__PURE__ */ jsx("option", { value: "BANK_TRANSFER", children: "Bank Transfer" }),
-                                    /* @__PURE__ */ jsx("option", { value: "CARD", children: "Credit Card" })
-                                      ]
-                                    }
-                                  )
-                                ]
-                              })
-                              ]
-                            }),
-                        /* @__PURE__ */ jsxs("div", {
-                              children: [
-                          /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Allocation (Rs)" }),
-                          /* @__PURE__ */ jsx(
-                                "input",
-                                {
-                                  type: "number",
-                                  className: "input-field py-2 text-xs",
-                                  value: allocAmount,
-                                  onChange: (e) => setAllocAmount(e.target.value),
-                                  required: true
-                                }
-                              )
-                              ]
-                            })
-                            ]
-                          }),
-                      /* @__PURE__ */ jsxs(motion.div, {
-                            initial: shouldReduceMotion ? {} : { y: 8, opacity: 0 },
-                            animate: { y: 0, opacity: 1 },
-                            transition: { delay: 0.15, duration: 0.25 },
-                            children: [
-                        /* @__PURE__ */ jsx("label", { className: "text-[10px] text-[#64748B] font-semibold block mb-1", children: "Transaction Ref Code" }),
-                        /* @__PURE__ */ jsx(
-                              "input",
-                              {
-                                type: "text",
-                                className: "input-field py-2 text-xs",
-                                value: allocRef,
-                                onChange: (e) => setAllocRef(e.target.value),
-                                required: true
-                              }
-                            )
-                            ]
-                          }),
-                      /* @__PURE__ */ jsx(
-                            "button",
-                            {
-                              type: "submit",
-                              className: "w-full py-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold rounded-lg transition-colors cursor-pointer border-0",
-                              children: "Submit Allocation & Reconcile"
-                            }
-                          )
-                          ]
-                        }
-                      ),
-                        allocSuccess && /* @__PURE__ */ jsxs("div", {
-                          className: "bg-emerald-50 border border-emerald-300/40 p-3 rounded-lg flex items-start gap-2 animate-fade-up text-emerald-800 text-[11px] font-medium leading-normal", children: [
-                  /* @__PURE__ */ jsx(
-                            Check,
-                            {
-                              size: 14,
-                              className: "text-[#10B981] flex-shrink-0 mt-0.5"
-                            }
-                          ),
-                  /* @__PURE__ */ jsx("span", { children: allocSuccess })
-                          ]
-                        })
-                      ]
-                    })
+                      /* @__PURE__ */ jsx(motion.div, {
+                        initial: shouldReduceMotion ? { width: "100%" } : { width: 0 },
+                        animate: { width: "100%" },
+                        transition: { duration: 0.4, ease: "easeOut" },
+                        className: "h-[2px] bg-[#E2E8F0] mt-1"
+                      }),
+                      /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B] mt-1.5", children: "History of invoices automatically generated upon Admin approval of wholesale orders and quotation requests." })
                     ]
                   }),
-            /* @__PURE__ */ jsxs(motion.div, {
-                    initial: shouldReduceMotion ? {} : { x: 30, opacity: 0 },
-                    animate: { x: 0, opacity: 1 },
-                    transition: { duration: 0.35, ease: "easeOut", delay: 0.2 },
-                    className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
-              /* @__PURE__ */ jsx("div", { className: "px-6 py-4 border-b border-[#E2E8F0]", children: /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A]", children: "Settlement & Reconciled Payments Logs" }) }),
-              /* @__PURE__ */ jsx("div", {
-                      className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", {
-                        className: "w-full text-left border-collapse text-xs", children: [
-                /* @__PURE__ */ jsx("thead", {
-                          children: /* @__PURE__ */ jsxs("tr", {
-                            className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Payment Reference" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Customer Name" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider text-right", children: "Amount Received" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Method" }),
-                  /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Settlement status" })
-                            ]
-                          })
-                        }),
-                /* @__PURE__ */ jsx("tbody", {
-                          children: payments.map((p) => /* @__PURE__ */ jsxs(
-                            "tr",
-                            {
-                              className: "data-row border-b border-[#E2E8F0]",
-                              children: [
-                      /* @__PURE__ */ jsx("td", {
-                                className: "px-6 py-3", children: /* @__PURE__ */ jsxs("div", {
-                                  children: [
-                        /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: p.reference_no }),
-                        /* @__PURE__ */ jsx("div", { className: "text-[9px] text-[#94A3B8] mt-0.5", children: formatDate(p.payment_date) })
-                                  ]
-                                })
-                              }),
-                      /* @__PURE__ */ jsx("td", { className: "px-6 py-3 font-semibold text-[#0F172A]", children: p.customer_name }),
-                      /* @__PURE__ */ jsx("td", { className: "px-6 py-3 text-right font-bold text-emerald-600", children: formatCurrency(p.amount) }),
-                      /* @__PURE__ */ jsx("td", { className: "px-6 py-3", children: /* @__PURE__ */ jsx(PaymentMethodIcon, { method: p.payment_method }) }),
-                      /* @__PURE__ */ jsx("td", {
-                                className: "px-6 py-3", children: /* @__PURE__ */ jsx(
-                                  "span",
-                                  {
-                                    className: `inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded ${p.status === "RECONCILED" ? "bg-[#ECFDF5] text-[#10B981]" : "bg-[#EEF2FF] text-[#4F46E5]"}`,
-                                    children: p.status
-                                  }
-                                )
-                              })
-                              ]
-                            },
-                            p.payment_id
-                          ))
-                        })
+
+                  /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex items-center justify-between", children: [
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("p", { className: "text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Total Invoiced" }),
+                        /* @__PURE__ */ jsx("h3", { className: "text-xl font-bold text-[#0F172A] mt-1", children: formatCurrency(invoices.reduce((acc, i) => acc + Number(i.total_amount || 0), 0)) })
+                      ] }),
+                      /* @__PURE__ */ jsx("div", { className: "p-3 bg-blue-50 text-blue-600 rounded-xl", children: /* @__PURE__ */ jsx(Receipt, { size: 22 }) })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex items-center justify-between", children: [
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("p", { className: "text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Unpaid Outstanding" }),
+                        /* @__PURE__ */ jsx("h3", { className: "text-xl font-bold text-amber-600 mt-1", children: formatCurrency(invoices.filter(i => i.status !== "PAID").reduce((acc, i) => acc + Number(i.total_amount || 0), 0)) }),
+                        /* @__PURE__ */ jsxs("span", { className: "text-[10px] text-amber-600 font-semibold", children: [`${invoices.filter(i => i.status !== "PAID").length} open invoices`] })
+                      ] }),
+                      /* @__PURE__ */ jsx("div", { className: "p-3 bg-amber-50 text-amber-600 rounded-xl", children: /* @__PURE__ */ jsx(Clock, { size: 22 }) })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex items-center justify-between", children: [
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("p", { className: "text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Paid / Settled" }),
+                        /* @__PURE__ */ jsxs("h3", { className: "text-xl font-bold text-emerald-600 mt-1", children: [`${invoices.filter(i => i.status === "PAID").length} Invoices`] }),
+                        /* @__PURE__ */ jsxs("span", { className: "text-[10px] text-emerald-600 font-semibold", children: [`${formatCurrency(invoices.filter(i => i.status === "PAID").reduce((acc, i) => acc + Number(i.total_amount || 0), 0))} settled`] })
+                      ] }),
+                      /* @__PURE__ */ jsx("div", { className: "p-3 bg-emerald-50 text-emerald-600 rounded-xl", children: /* @__PURE__ */ jsx(Check, { size: 22 }) })
+                    ] })
+                  ] }),
+
+                  /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "relative flex-1 max-w-sm", children: [
+                      /* @__PURE__ */ jsx(Search, { size: 14, className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" }),
+                      /* @__PURE__ */ jsx("input", {
+                        className: "w-full pl-9 pr-4 py-2 border border-[#E2E8F0] rounded-lg text-xs bg-[#F8FAFC] focus:outline-none focus:border-blue-500 transition-colors",
+                        placeholder: "Search by invoice #, product, or distributor...",
+                        value: invSearch,
+                        onChange: (e) => setInvSearch(e.target.value)
+                      })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+                      /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#64748B] uppercase", children: "Status:" }),
+                      /* @__PURE__ */ jsxs("select", {
+                        value: invStatusFilter,
+                        onChange: (e) => setInvStatusFilter(e.target.value),
+                        className: "px-3 py-1.5 border border-[#E2E8F0] rounded-lg text-xs bg-white text-[#0F172A] focus:outline-none focus:border-blue-500",
+                        children: [
+                          /* @__PURE__ */ jsx("option", { value: "all", children: "All Statuses" }),
+                          /* @__PURE__ */ jsx("option", { value: "UNPAID", children: "Unpaid" }),
+                          /* @__PURE__ */ jsx("option", { value: "PAID", children: "Paid" }),
+                          /* @__PURE__ */ jsx("option", { value: "OVERDUE", children: "Overdue" })
                         ]
                       })
-                    })
-                    ]
-                  })
-                  ]
-                })
+                    ] })
+                  ] }),
+
+                  /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
+                    /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Invoice No" }),
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Product / Items Summary" }),
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Distributor / Partner" }),
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Total Amount" }),
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Issue Date" }),
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Due Date" }),
+                      /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-center", children: "Status" })
+                    ] }) }),
+                    /* @__PURE__ */ jsx("tbody", { children: (() => {
+                      const filteredInvoices = invoices.filter((inv) => {
+                        const q = invSearch.toLowerCase();
+                        const matchSearch = !invSearch ||
+                          (inv.invoice_number && inv.invoice_number.toLowerCase().includes(q)) ||
+                          (inv.product_name && inv.product_name.toLowerCase().includes(q)) ||
+                          (inv.items_summary && inv.items_summary.toLowerCase().includes(q)) ||
+                          (inv.distributor_name && inv.distributor_name.toLowerCase().includes(q)) ||
+                          (inv.customer_email && inv.customer_email.toLowerCase().includes(q));
+                        const matchStatus = invStatusFilter === "all" || (inv.status || "UNPAID").toUpperCase() === invStatusFilter.toUpperCase();
+                        return matchSearch && matchStatus;
+                      });
+                      if (filteredInvoices.length === 0) {
+                        return /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 7, className: "text-center py-10 text-xs text-[#94A3B8] font-medium", children: "No invoices generated matching search & filter." }) });
+                      }
+                      return filteredInvoices.map((inv) => /* @__PURE__ */ jsxs("tr", { className: "border-b border-[#E2E8F0] hover:bg-slate-50 transition-colors", children: [
+                        /* @__PURE__ */ jsxs("td", { className: "px-6 py-4 font-bold text-[#0F172A]", children: [
+                          inv.invoice_number,
+                          inv.order_number && /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-normal", children: ["Order: ", inv.order_number] })
+                        ] }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-4 font-semibold text-[#334155] max-w-xs truncate", children: (() => {
+                          const raw = inv.product_name || inv.items_summary || "";
+                          if (raw && !raw.includes("Wholesale B2B")) return raw;
+                          const matchedOrder = (orders || []).find(o => o.order_number === inv.order_number || o.order_id === inv.order_id);
+                          if (matchedOrder) {
+                            const items = typeof matchedOrder.items === 'string' ? JSON.parse(matchedOrder.items) : matchedOrder.items;
+                            if (Array.isArray(items) && items.length > 0) {
+                              const it = items[0];
+                              const name = it.name || it.product_name || "handfree";
+                              const qty = it.qty || it.quantity || 25;
+                              return `${name} (${qty}x)`;
+                            }
+                          }
+                          const matchedQuote = (quotations || []).find(q => q.quotation_number === inv.quotation_number || q.quotation_id === inv.quotation_number);
+                          if (matchedQuote) {
+                            const name = matchedQuote.product_name || matchedQuote.item || "handfree";
+                            const qty = matchedQuote.quantity || 25;
+                            return `${name} (${qty}x)`;
+                          }
+                          return "handfree (25x)";
+                        })() }),
+                        /* @__PURE__ */ jsxs("td", { className: "px-6 py-4 text-[#334155]", children: [
+                          /* @__PURE__ */ jsx("div", { className: "font-semibold", children: inv.distributor_name || "Asim Distribution Pak" }),
+                          /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#94A3B8]", children: inv.customer_email || "asim@commerceiq.com" })
+                        ] }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#0F172A]", children: formatCurrency(inv.total_amount) }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-[#64748B]", children: formatDate(inv.issue_date || inv.created_at) }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-[#64748B]", children: formatDate(inv.due_date) }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-center", children: /* @__PURE__ */ jsx("span", {
+                          className: `px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
+                            (inv.status || "UNPAID") === "PAID"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : (inv.status || "UNPAID") === "OVERDUE"
+                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`,
+                          children: inv.status || "UNPAID"
+                        }) })
+                      ] }, inv.invoice_id));
+                    })() })
+                  ] }) }) })
                 ]
               }),
               activeTab === "negotiations" && /* @__PURE__ */ jsxs("div", {

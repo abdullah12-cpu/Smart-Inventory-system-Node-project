@@ -476,7 +476,7 @@ function getAdminTools(isGemini = false) {
           description: 'The quotation operation to perform.'
         },
         identifier: { type: isGemini ? 'STRING' : 'string', description: 'Quote ID or quote number (e.g. QUO-2026-69395).' },
-        status: { type: isGemini ? 'STRING' : 'string', description: 'Quotation status: UNDER_REVIEW, ACCEPTED, APPROVED, NEGOTIATING, REJECTED.' },
+        status: { type: isGemini ? 'STRING' : 'string', description: 'Quotation status: PENDING, ACCEPTED, APPROVED, NEGOTIATING, REJECTED.' },
         new_status: { type: isGemini ? 'STRING' : 'string', description: 'New status to apply (ACCEPTED, REJECTED, CANCELLED).' },
         product_name: { type: isGemini ? 'STRING' : 'string', description: 'Product name to filter quotations.' },
         amount: { type: isGemini ? 'NUMBER' : 'number', description: 'Amount threshold for by_amount filter.' },
@@ -668,10 +668,10 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
     const identifier = args.identifier || '';
 
     if (action === 'by_status') {
-      const rows = await getDistributorQuotationsByStatusFromDb(pool, args.status || 'UNDER_REVIEW');
+      const rows = await getDistributorQuotationsByStatusFromDb(pool, args.status || 'PENDING');
       return {
         action_executed: 'manageDistributorQuotations',
-        ai_message: formatQuotationsTable(rows, `📋 ${(args.status || 'UNDER_REVIEW').toUpperCase().replace('_',' ')} Quotations`)
+        ai_message: formatQuotationsTable(rows, `📋 ${(args.status || 'PENDING').toUpperCase().replace('_',' ')} Quotations`)
       };
     }
     if (action === 'find') {
@@ -760,7 +760,7 @@ function formatOrdersTable(rows, title) {
 function formatQuotationsTable(rows, title) {
   if (!rows || rows.length === 0) return `ℹ️ No quotations found for this criteria.`;
   return `### ${title}\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n` +
-    rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join('\n');
+    rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join('\n');
 }
 
 async function handleManageOrders(pool, args, message) {
@@ -973,10 +973,10 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
         }
       }
 
-      // 4. Status Filter: UNDER_REVIEW, ACCEPTED, APPROVED, NEGOTIATING, REJECTED
+      // 4. Status Filter: PENDING, ACCEPTED, APPROVED, NEGOTIATING, REJECTED
       const statusFilterMatch = lowerMsg.match(/\b(under review|under_review|accepted|approved|negotiating|rejected|draft|pending acceptance)\b/);
       if (statusFilterMatch) {
-        const rawStatus = statusFilterMatch[1] === 'pending acceptance' ? 'UNDER_REVIEW' : statusFilterMatch[1];
+        const rawStatus = statusFilterMatch[1] === 'pending acceptance' ? 'PENDING' : statusFilterMatch[1];
         try {
           const rows = await getDistributorQuotationsByStatusFromDb(pool, rawStatus);
           return res.json({

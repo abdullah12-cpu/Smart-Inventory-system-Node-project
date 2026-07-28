@@ -28,6 +28,12 @@ async function getDistributorQuotationsFromDb(pool, customerEmail) {
 
 async function getDistributorQuotationsByStatusFromDb(pool, status) {
   const normStatus = status.toUpperCase().replace(/\s+/g, '_');
+  if (normStatus === 'DRAFT' || normStatus === 'UNDER_REVIEW' || normStatus === 'PENDING') {
+    const res = await pool.query(
+      "SELECT * FROM quotations WHERE UPPER(status) IN ('DRAFT', 'UNDER_REVIEW', 'PENDING') ORDER BY created_at DESC LIMIT 30"
+    );
+    return res.rows;
+  }
   const res = await pool.query(
     'SELECT * FROM quotations WHERE UPPER(status) = $1 ORDER BY created_at DESC LIMIT 30',
     [normStatus]
@@ -59,12 +65,54 @@ async function updateDistributorQuotationStatusInDb(pool, identifier, newStatus)
     [normStatus, `%${identifier}%`]
   );
   if (res.rows.length === 0) throw new Error(`Quotation not found matching: "${identifier}"`);
-  return res.rows[0];
+  
+  const quote = res.rows[0];
+
+  if (normStatus === 'APPROVED' || normStatus === 'ACCEPTED') {
+    try {
+      const orderNumber = (quote.quotation_number || quote.quotation_id).replace("QUO-", "ORD-");
+      const checkOrder = await pool.query('SELECT * FROM orders WHERE order_number = $1', [orderNumber]);
+      if (checkOrder.rows.length === 0) {
+        const orderId = `ord-b2b-${Date.now()}`;
+        const items = quote.items || [{
+          product_id: 'b2b-stock',
+          name: quote.product_name || quote.item || 'B2B Wholesale Order',
+          qty: quote.quantity || 1,
+          price: quote.unit_price || quote.total_amount
+        }];
+        await pool.query(
+          `INSERT INTO orders (
+            order_id, order_number, order_type, status, subtotal, discount_total, 
+            tax_total, total_amount, currency, order_date, items_summary, items, customer_email
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            orderId,
+            orderNumber,
+            'B2B',
+            'PROCESSING',
+            quote.total_amount || 0,
+            0,
+            0,
+            quote.total_amount || 0,
+            'PKR',
+            new Date().toISOString(),
+            `Wholesale B2B Order generated from ${quote.quotation_number || quote.quotation_id}`,
+            JSON.stringify(items),
+            quote.customer_email || 'asim@commerceiq.com'
+          ]
+        );
+      }
+    } catch (orderErr) {
+      console.error('Error auto-creating B2B order from quotation status update:', orderErr.message);
+    }
+  }
+
+  return quote;
 }
 
 async function getDistributorQuotationKpisFromDb(pool) {
   const countRes = await pool.query('SELECT COUNT(*) as active_count, COALESCE(SUM(total_amount), 0) as total_value FROM quotations');
-  const pendingRes = await pool.query("SELECT COUNT(*) as pending_count FROM quotations WHERE UPPER(status) IN ('UNDER_REVIEW', 'NEGOTIATING', 'DRAFT')");
+  const pendingRes = await pool.query("SELECT COUNT(*) as pending_count FROM quotations WHERE UPPER(status) IN ('PENDING', 'NEGOTIATING', 'DRAFT')");
   const statusRes = await pool.query('SELECT status, COUNT(*) as count, SUM(total_amount) as amount FROM quotations GROUP BY status ORDER BY count DESC');
 
   return {
@@ -172,7 +220,7 @@ async function createDistributorQuotationInDb(pool, customerEmail, customerName,
     `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [quoteId, quoteNumber, 'UNDER_REVIEW', totalAmount, validUntil, new Date().toISOString()]
+    [quoteId, quoteNumber, 'DRAFT', totalAmount, validUntil, new Date().toISOString()]
   );
 
   return {
@@ -183,7 +231,7 @@ async function createDistributorQuotationInDb(pool, customerEmail, customerName,
     quantity: qty,
     unit_price: unitPrice,
     total_amount: totalAmount,
-    status: 'UNDER_REVIEW',
+    status: 'DRAFT',
     valid_until: validUntil,
     customer_name: name,
     customer_email: email

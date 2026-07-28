@@ -16,6 +16,7 @@ import {
   UploadCloud,
   CreditCard,
   AlertCircle,
+  Receipt,
   Sparkles,
   Send,
   Paperclip,
@@ -720,72 +721,24 @@ export default function DistributorPortal({ onLogout }) {
         /* @__PURE__ */ jsxs(
           "a",
           {
-            href: "?tab=ledger",
+            href: "?tab=invoices",
             onClick: (e) => {
               if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
                 e.preventDefault();
-                setActiveTab("ledger");
+                setActiveTab("invoices");
               }
             },
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "ledger" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "invoices" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
               /* @__PURE__ */ jsx(
-                FileSpreadsheet,
+                Receipt,
                 {
                   size: 18,
-                  className: activeTab === "ledger" ? "text-blue-600" : ""
+                  className: activeTab === "invoices" ? "text-blue-600" : ""
                 }
               ),
-              "Ledger"
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "a",
-          {
-            href: "?tab=reminders",
-            onClick: (e) => {
-              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
-                e.preventDefault();
-                setActiveTab("reminders");
-              }
-            },
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "reminders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
-            style: { textDecoration: "none" },
-            children: [
-              /* @__PURE__ */ jsx(
-                Bell,
-                {
-                  size: 18,
-                  className: activeTab === "reminders" ? "text-blue-600" : ""
-                }
-              ),
-              "Reminders"
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "a",
-          {
-            href: "?tab=profile",
-            onClick: (e) => {
-              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
-                e.preventDefault();
-                setActiveTab("profile");
-              }
-            },
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "profile" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
-            style: { textDecoration: "none" },
-            children: [
-              /* @__PURE__ */ jsx(
-                User,
-                {
-                  size: 18,
-                  className: activeTab === "profile" ? "text-blue-600" : ""
-                }
-              ),
-              "Billing Profile"
+              "Invoices & Payments"
             ]
           }
         )
@@ -823,9 +776,7 @@ export default function DistributorPortal({ onLogout }) {
               activeTab === "catalog" && "Bulk Catalog & Ordering",
               activeTab === "quotations" && "Quotations & Bids",
               activeTab === "orders" && "Sales Orders & Logistics",
-              activeTab === "ledger" && "Customer Statement Ledger",
-              activeTab === "reminders" && "Smart Reminders History",
-              activeTab === "profile" && "Billing Profile & Terms"
+              activeTab === "invoices" && "Invoices & Payments"
             ]
           }
         ) }),
@@ -1192,7 +1143,7 @@ export default function DistributorPortal({ onLogout }) {
             ] })
           ] }) }) })
         ] }),
-        activeTab === "ledger" && /* @__PURE__ */ jsxs("div", { className: "animate-fade-up flex flex-col gap-6", children: [
+        activeTab === "invoices" && /* @__PURE__ */ jsxs("div", { className: "animate-fade-up flex flex-col gap-6", children: [
           /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-start", children: [
             /* @__PURE__ */ jsxs("div", { children: [
               /* @__PURE__ */ jsx(
@@ -1200,237 +1151,99 @@ export default function DistributorPortal({ onLogout }) {
                 {
                   className: "text-lg font-bold text-[#0F172A]",
                   style: { fontFamily: "Outfit, sans-serif" },
-                  children: "Statement of Account"
+                  children: "Received Invoices & Payments"
                 }
               ),
-              /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-1 text-xs", children: "A running ledger of invoices computed dynamically from database logs." })
+              /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-1 text-xs", children: "View received invoices for approved orders and pay directly to trigger order shipment." })
             ] }),
-            /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-end gap-3", children: [
-              /* @__PURE__ */ jsxs("div", { className: "text-right", children: [
-                /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#64748B] font-bold uppercase tracking-wider", children: "Current Balance" }),
-                /* @__PURE__ */ jsx(
-                  "div",
-                  {
-                    className: "text-2xl font-bold text-red-600",
-                    style: { fontFamily: "Outfit, sans-serif" },
-                    children: formatCurrency(invoices ? invoices.reduce((sum, inv) => sum + (inv.status !== "PAID" ? inv.total_amount - inv.amount_paid : 0), 0) : 0)
-                  }
-                )
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex gap-2", children: [
-                /* @__PURE__ */ jsxs(
-                  "button",
-                  {
-                    onClick: handleDownloadInvoices,
-                    className: "flex items-center gap-2 px-3 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer shadow-sm active:scale-95 disabled:opacity-50",
-                    disabled: downloading,
-                    children: [
-                      /* @__PURE__ */ jsx(
-                        Download,
-                        {
-                          size: 14,
-                          className: downloading ? "animate-bounce" : ""
-                        }
-                      ),
-                      downloading ? "Preparing ZIP..." : "Bulk Invoice Download"
-                    ]
-                  }
-                ),
-                /* @__PURE__ */ jsxs(
-                  "button",
-                  {
-                    onClick: () => setPaymentModalOpen(true),
-                    className: "flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer border-0 shadow-sm active:scale-95",
-                    children: [
-                      /* @__PURE__ */ jsx(UploadCloud, { size: 14 }),
-                      " Submit Payment Proof"
-                    ]
-                  }
-                )
-              ] })
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 gap-4", children: [
-            /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] p-4 rounded-xl flex flex-col justify-center shadow-sm", children: [
-              /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "0 - 30 Days" }),
-              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-[#0F172A] mt-1", children: formatCurrency(invoices ? invoices.reduce((sum, inv) => sum + (inv.status !== "PAID" ? inv.total_amount - inv.amount_paid : 0), 0) : 0) })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "bg-amber-50 border border-amber-200 p-4 rounded-xl flex flex-col justify-center shadow-sm", children: [
-              /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-amber-700 uppercase tracking-wider", children: "31 - 60 Days" }),
-              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-amber-800 mt-1", children: formatCurrency(0) })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 p-4 rounded-xl flex flex-col justify-center shadow-sm", children: [
-              /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-red-700 uppercase tracking-wider", children: "61 - 90 Days" }),
-              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-red-800 mt-1", children: formatCurrency(0) })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 p-4 rounded-xl flex flex-col justify-center shadow-sm", children: [
-              /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-red-700 uppercase tracking-wider", children: "90+ Days" }),
-              /* @__PURE__ */ jsx("span", { className: "text-lg font-bold text-red-800 mt-1", children: formatCurrency(0) })
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-end gap-1", children: [
+              /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#64748B] font-bold uppercase tracking-wider", children: "Unpaid Outstanding Balance" }),
+              /* @__PURE__ */ jsx(
+                "div",
+                {
+                  className: "text-2xl font-bold text-amber-600",
+                  style: { fontFamily: "Outfit, sans-serif" },
+                  children: formatCurrency(invoices ? invoices.reduce((sum, inv) => sum + (inv.status !== "PAID" ? Number(inv.total_amount || 0) : 0), 0) : 0)
+                }
+              )
             ] })
           ] }),
           /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col mt-2", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
             /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Invoice Number" }),
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Product / Items Summary" }),
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Due Date" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Billed (Debit)" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Settled (Credit)" }),
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-right", children: "Total Billed" }),
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-center", children: "Status" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-center", children: "Late Risk tier" })
+              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase text-center", children: "Action" })
             ] }) }),
             /* @__PURE__ */ jsx("tbody", { children: invoices.length === 0 ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx(
               "td",
               {
                 colSpan: 6,
-                className: "text-center py-8 text-[#94A3B8] font-medium",
-                children: "No invoices logged in database."
+                className: "text-center py-10 text-[#94A3B8] font-medium",
+                children: "No invoices received yet."
               }
-            ) }) : invoices.map((inv) => /* @__PURE__ */ jsxs(
-              "tr",
-              {
-                className: "border-b border-[#E2E8F0] hover:bg-slate-50 transition-colors",
-                children: [
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: inv.invoice_number }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-[#64748B]", children: formatDate(inv.due_date) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-semibold text-slate-700", children: formatCurrency(inv.total_amount) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-emerald-600", children: formatCurrency(inv.amount_paid) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx(InvoiceStatusBadge, { status: inv.status }) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx(LatePaymentRiskBadge, { probability: inv.late_payment_probability }) })
-                ]
-              },
-              inv.invoice_id
-            )) })
+            ) }) : invoices.map((inv) => {
+              const isPaid = (inv.status || "UNPAID") === "PAID";
+              return /* @__PURE__ */ jsxs(
+                "tr",
+                {
+                  className: "border-b border-[#E2E8F0] hover:bg-slate-50 transition-colors",
+                  children: [
+                    /* @__PURE__ */ jsxs("td", { className: "px-6 py-3.5 font-bold text-[#0F172A]", children: [
+                      inv.invoice_number,
+                      inv.order_number && /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B] font-normal", children: ["Order: ", inv.order_number] })
+                    ] }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-semibold text-[#334155]", children: (() => {
+                      const raw = inv.product_name || inv.items_summary || "";
+                      if (raw && !raw.includes("Wholesale B2B")) return raw;
+                      const matchedOrder = (orders || []).find(o => o.order_number === inv.order_number || o.order_id === inv.order_id);
+                      if (matchedOrder) {
+                        const items = typeof matchedOrder.items === 'string' ? JSON.parse(matchedOrder.items) : matchedOrder.items;
+                        if (Array.isArray(items) && items.length > 0) {
+                          const it = items[0];
+                          const name = it.name || it.product_name || "handfree";
+                          const qty = it.qty || it.quantity || 25;
+                          return `${name} (${qty}x)`;
+                        }
+                      }
+                      const matchedQuote = (quotations || []).find(q => q.quotation_number === inv.quotation_number || q.quotation_id === inv.quotation_number);
+                      if (matchedQuote) {
+                        const name = matchedQuote.product_name || matchedQuote.item || "handfree";
+                        const qty = matchedQuote.quantity || 25;
+                        return `${name} (${qty}x)`;
+                      }
+                      return "handfree (25x)";
+                    })() }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-[#64748B]", children: formatDate(inv.due_date) }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(inv.total_amount) }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx("span", {
+                      className: `px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
+                        isPaid
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`,
+                      children: isPaid ? "PAID" : "UNPAID"
+                    }) }),
+                    /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: isPaid ? (
+                      /* @__PURE__ */ jsx("span", { className: "text-[#10B981] font-bold text-xs", children: "PAID ✓" })
+                    ) : (
+                      /* @__PURE__ */ jsx("button", {
+                        onClick: () => {
+                          setPaymentInvoiceId(inv.invoice_id);
+                          setPaymentModalOpen(true);
+                        },
+                        className: "px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors border-0 cursor-pointer shadow-sm active:scale-95",
+                        children: "Pay Invoice"
+                      })
+                    ) })
+                  ]
+                },
+                inv.invoice_id
+              );
+            }) })
           ] }) }) })
-        ] }),
-        activeTab === "reminders" && /* @__PURE__ */ jsxs("div", { className: "animate-fade-up flex flex-col gap-6", children: [
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx(
-              "h3",
-              {
-                className: "text-lg font-bold text-[#0F172A]",
-                style: { fontFamily: "Outfit, sans-serif" },
-                children: "Smart Reminders History"
-              }
-            ),
-            /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-1 text-xs", children: "Record of automated and manual payment reminders sent for outstanding invoices." })
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
-            /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Invoice Ref" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Sent Date" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Channel & Tone" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Delivery Status" }),
-              /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Response" })
-            ] }) }),
-            /* @__PURE__ */ jsx("tbody", { children: MOCK_REMINDERS.map((rem) => /* @__PURE__ */ jsxs(
-              "tr",
-              {
-                className: "border-b border-[#E2E8F0] hover:bg-slate-50",
-                children: [
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-4 font-bold text-[#0F172A]", children: rem.ref_id }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-[#64748B]", children: formatDate(rem.sent_at) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsxs("div", { className: "flex gap-2 items-center", children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded", children: rem.channel }),
-                    /* @__PURE__ */ jsx(
-                      "span",
-                      {
-                        className: `text-[10px] font-bold px-2 py-0.5 rounded ${rem.tone === "FIRM" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"}`,
-                        children: rem.tone
-                      }
-                    )
-                  ] }) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx(
-                    "span",
-                    {
-                      className: `text-[10px] font-bold ${rem.status === "OPENED" ? "text-emerald-600" : "text-amber-600"}`,
-                      children: rem.status
-                    }
-                  ) }),
-                  /* @__PURE__ */ jsx("td", { className: "px-6 py-4", children: /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: rem.response.replace(/_/g, " ") }) })
-                ]
-              },
-              rem.id
-            )) })
-          ] }) })
-        ] }),
-        activeTab === "profile" && /* @__PURE__ */ jsxs("div", { className: "animate-fade-up flex flex-col gap-6", children: [
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx(
-              "h3",
-              {
-                className: "text-lg font-bold text-[#0F172A]",
-                style: { fontFamily: "Outfit, sans-serif" },
-                children: "Billing Profile"
-              }
-            ),
-            /* @__PURE__ */ jsx("p", { className: "text-[#64748B] mt-1 text-xs", children: "Manage credit terms, limits, and taxation identities." })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-6", children: [
-            /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-sm", children: [
-              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 mb-6", children: [
-                /* @__PURE__ */ jsx("div", { className: "w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600", children: /* @__PURE__ */ jsx(CreditCard, { size: 20 }) }),
-                /* @__PURE__ */ jsxs("div", { children: [
-                  /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-[#0F172A]", children: "Credit & Payment Terms" }),
-                  /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B]", children: "Active limits and settlement timelines." })
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
-                /* @__PURE__ */ jsxs("div", { children: [
-                  /* @__PURE__ */ jsxs("div", { className: "flex justify-between text-xs mb-1", children: [
-                    /* @__PURE__ */ jsx("span", { className: "text-[#64748B] font-medium", children: "Credit Limit Utilized" }),
-                    /* @__PURE__ */ jsxs("span", { className: "font-bold text-[#0F172A]", children: [
-                      formatCurrency(outstandingBalance),
-                      " / ",
-                      formatCurrency(creditLimit)
-                    ] })
-                  ] }),
-                  /* @__PURE__ */ jsx("div", { className: "w-full bg-[#E2E8F0] h-2 rounded-full overflow-hidden", children: /* @__PURE__ */ jsx(
-                    "div",
-                    {
-                      className: "bg-blue-600 h-full rounded-full",
-                      style: {
-                        width: `${Math.min(100, Math.round((outstandingBalance / creditLimit) * 100))}%`
-                      }
-                    }
-                  ) })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "pt-4 border-t border-[#E2E8F0] flex justify-between items-center", children: [
-                  /* @__PURE__ */ jsx("span", { className: "text-xs text-[#64748B]", children: "Approved Terms" }),
-                  /* @__PURE__ */ jsx("span", { className: "font-bold text-xs bg-slate-100 px-3 py-1 rounded-md", children: "Net 30 Days" })
-                ] }),
-                /* @__PURE__ */ jsx(
-                  "button",
-                  {
-                    onClick: handleRequestLimit,
-                    className: "w-full mt-2 py-2 bg-slate-50 border border-[#E2E8F0] text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-50 transition-colors cursor-pointer active:scale-[0.98]",
-                    children: "Request Limit Increase"
-                  }
-                )
-              ] })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-sm", children: [
-              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 mb-6", children: [
-                /* @__PURE__ */ jsx("div", { className: "w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600", children: /* @__PURE__ */ jsx(AlertCircle, { size: 20 }) }),
-                /* @__PURE__ */ jsxs("div", { children: [
-                  /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-[#0F172A]", children: "Business Identity" }),
-                  /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#64748B]", children: "Taxation and compliance records." })
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
-                /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center pb-3 border-b border-[#E2E8F0]", children: [
-                  /* @__PURE__ */ jsx("span", { className: "text-xs text-[#64748B]", children: "Business Name" }),
-                  /* @__PURE__ */ jsx("span", { className: "font-bold text-xs text-[#0F172A]", children: currentUser?.business_name || "Saif Distributor LLC" })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center pb-3 border-b border-[#E2E8F0]", children: [
-                  /* @__PURE__ */ jsx("span", { className: "text-xs text-[#64748B]", children: "NTN (National Tax No)" }),
-                  /* @__PURE__ */ jsx("span", { className: "font-bold text-xs text-[#0F172A]", children: currentUser?.ntn_code || "823901-4" })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
-                  /* @__PURE__ */ jsx("span", { className: "text-xs text-[#64748B]", children: "STRN (Sales Tax Reg)" }),
-                  /* @__PURE__ */ jsx("span", { className: "font-bold text-xs text-[#0F172A]", children: "29048123000" })
-                ] })
-              ] })
-            ] })
-          ] })
         ] })
       ] })
     ] }),

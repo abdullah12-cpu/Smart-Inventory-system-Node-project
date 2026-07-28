@@ -190,7 +190,7 @@ async function executeDistributorTool(pool, name, args) {
     const rows = await distributorOps.getDistributorQuotationsFromDb(pool, args ? args.identifier : null);
     if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No quotations found.` };
     const md = "### 📋 Distributor Partner Quotations\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n" +
-      rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+      rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
     return { action_executed: name, ai_message: md };
   }
   if (name === 'getDistributorOrders') {
@@ -221,31 +221,31 @@ async function executeDistributorTool(pool, name, args) {
   if (name === 'manageDistributorQuotations') {
     const action = args.action_type || 'list';
     if (action === 'by_status') {
-      const rows = await distributorOps.getDistributorQuotationsByStatusFromDb(pool, args.status || 'UNDER_REVIEW');
-      if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No ${(args.status || 'UNDER_REVIEW')} quotations found.` };
-      const md = "### 📋 " + (args.status || 'UNDER_REVIEW').toUpperCase().replace('_', ' ') + " Quotations\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n" +
-        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+      const rows = await distributorOps.getDistributorQuotationsByStatusFromDb(pool, args.status || 'PENDING');
+      if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No ${(args.status || 'PENDING')} quotations found.` };
+      const md = "### 📋 " + (args.status || 'PENDING').toUpperCase().replace('_', ' ') + " Quotations\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n" +
+        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
       return { action_executed: name, ai_message: md };
     }
     if (action === 'find') {
       const rows = await distributorOps.getDistributorQuotationByIdFromDb(pool, args.identifier || '');
       if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No quotation found matching "${args.identifier}".` };
       const md = "### 🔍 Quotation Details\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n" +
-        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
       return { action_executed: name, ai_message: md };
     }
     if (action === 'by_amount') {
       const rows = await distributorOps.getDistributorQuotationsByAmountFromDb(pool, args.amount_operator || 'above', args.amount || 0);
       if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No quotations found ${args.amount_operator || 'above'} Rs ${Number(args.amount || 0).toLocaleString()}.` };
       const md = `### 💰 Quotations ${args.amount_operator || 'above'} Rs ${Number(args.amount || 0).toLocaleString()}\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n` +
-        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
       return { action_executed: name, ai_message: md };
     }
     if (action === 'by_product') {
       const rows = await distributorOps.getDistributorQuotationsByProductFromDb(pool, args.product_name || '');
       if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No quotations found for product "${args.product_name}".` };
       const md = `### 📦 Quotations for "${args.product_name}"\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n` +
-        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
       return { action_executed: name, ai_message: md };
     }
     if (action === 'update_status') {
@@ -271,14 +271,14 @@ async function executeDistributorTool(pool, name, args) {
       const rows = await distributorOps.getExpiringDistributorQuotationsFromDb(pool, 7);
       if (rows.length === 0) return { action_executed: name, ai_message: `✅ No quotations expiring in the next 7 days.` };
       const md = "### ⏰ Quotations Expiring Soon (Next 7 Days)\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n" +
-        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+        rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
       return { action_executed: name, ai_message: md };
     }
     // Default: list all quotations
     const rows = await distributorOps.getDistributorQuotationsFromDb(pool);
     if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No quotations found.` };
     const md = "### 📋 All Partner Quotations & Bids\n\n| Quote No | Date | Valid Until | Status | Amount (PKR) |\n|---|---|---|---|---|\n" +
-      rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'UNDER_REVIEW'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+      rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'Recent'} | ${r.valid_until || '14 Days'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
     return { action_executed: name, ai_message: md };
   }
   throw new Error(`Tool execution error: Unknown distributor tool ${name}`);
