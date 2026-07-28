@@ -4,7 +4,8 @@ const {
   createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb, filterSuppliersByLocationInDb,
   listOrdersFromDb, getOrderByIdFromDb, getOrdersByStatusFromDb, getOrdersByCustomerFromDb, getOrdersByDateRangeFromDb,
   getOrdersByAmountFilterFromDb, updateOrderStatusInDb, bulkApproveOrdersInDb, getOrderAnalyticsFromDb,
-  getTopBuyersFromDb, getMostOrderedProductsFromDb, getOverdueOrdersFromDb, getOrdersByProductFromDb
+  getTopBuyersFromDb, getMostOrderedProductsFromDb, getOverdueOrdersFromDb, getOrdersByProductFromDb,
+  getOrdersAwaitingShipmentFromDb, shipOrderInDb, shipAllOrdersInDb
 } = require('./adminOperations');
 const { 
   getDistributorWholesaleProductsFromDb, 
@@ -416,7 +417,7 @@ function getAdminTools(isGemini = false) {
       properties: {
         action_type: {
           type: isGemini ? 'STRING' : 'string',
-          enum: ['list', 'find', 'by_status', 'by_customer', 'by_date_range', 'by_amount', 'by_product', 'update_status', 'bulk_approve', 'analytics', 'top_buyers', 'top_products', 'overdue'],
+          enum: ['list', 'find', 'by_status', 'by_customer', 'by_date_range', 'by_amount', 'by_product', 'update_status', 'bulk_approve', 'analytics', 'top_buyers', 'top_products', 'overdue', 'ship', 'ship_all', 'awaiting_shipment'],
           description: 'The order operation to perform.'
         },
         identifier: { type: isGemini ? 'STRING' : 'string', description: 'Order ID, order number, or customer email.' },
@@ -869,6 +870,45 @@ async function handleManageOrders(pool, args, message) {
     if (rows.length === 0) return `✅ No overdue pending orders (threshold: ${days} days)${typeLabel}.`;
     return formatOrdersTable(rows, `⚠️ Overdue Orders (Pending > ${days} days)${typeLabel}`);
   }
+  if (action === 'ship' || action === 'ship_order') {
+    if (!identifier) return `❌ Please specify an Order ID or Order Number to ship. Example: "ship order ORD-2026-12345"`;
+    try {
+      const shipResult = await shipOrderInDb(pool, identifier, args.warehouse_id || 'wh-1');
+      return `🚚 **Order Shipped Successfully!**\n\n- **Order Number**: **${shipResult.shippedOrder?.order_number || identifier}**\n- **Status**: \`SHIPPED\`\n- **Depot**: Karachi Central Depot (\`wh-1\`)\n- **Details**: ${shipResult.message}`;
+    } catch (err) {
+      return `❌ Shipping failed: ${err.message}`;
+    }
+  }
+  if (action === 'ship_all') {
+    const cat = args.category || args.product_name || null;
+    const shipResult = await shipAllOrdersInDb(pool, cat, args.warehouse_id || 'wh-1');
+    if (shipResult.shipped_count === 0) {
+      return `ℹ️ No ready orders to ship${cat ? ` in category "${cat}"` : ''}.`;
+    }
+    let md = `🚚 **Bulk Order Shipment Complete!**\n\n`;
+    md += `Successfully shipped **${shipResult.shipped_count}** order(s)${cat ? ` in category "${cat}"` : ''} from Karachi Central Depot (\`wh-1\`):\n\n`;
+    md += shipResult.shipped_orders.map(o => `- **${o.order_number || o.order_id}** | ${o.customer_email} | Rs ${Number(o.total_amount || 0).toLocaleString()}`).join('\n');
+    return md;
+  }
+  if (action === 'awaiting_shipment' || action === 'to_ship') {
+    const cat = args.category || args.product_name || null;
+    const awaitingData = await getOrdersAwaitingShipmentFromDb(pool, cat);
+    if (awaitingData.total_awaiting_shipment === 0) {
+      return `✅ **All Orders Shipped!** There are currently 0 orders waiting to be shipped.`;
+    }
+
+    let md = `### 📦 Orders Ready to Ship (${awaitingData.total_awaiting_shipment} Total)\n\n`;
+    md += `Below is the intelligent category breakdown of orders ready for shipment:\n\n`;
+
+    for (const [catName, catOrders] of Object.entries(awaitingData.by_category)) {
+      md += `#### 📁 Category: **${catName}** (${catOrders.length} order${catOrders.length > 1 ? 's' : ''})\n`;
+      md += `| Order # | Customer | Status | Invoice Status | Total Amount |\n|---|---|---|---|---|\n`;
+      md += catOrders.map(o => `| **${o.order_number || o.order_id}** | ${o.customer_email} | \`${o.status}\` | \`${o.invoice_status}\` | Rs ${Number(o.total_amount || 0).toLocaleString()} |`).join('\n') + '\n\n';
+    }
+
+    md += `💡 *Tip: Prompt "ship all ${Object.keys(awaitingData.by_category)[0]} orders" or "ship order [ORDER_NUMBER]" to execute shipments automatically.*`;
+    return md;
+  }
   return `❌ Unknown order action: "${action}"`;
 }
 
@@ -1066,6 +1106,34 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
   }
 
   // ── ORDER MANAGEMENT FALLBACKS ────────────────────────────────────────────
+
+  // 1. Orders awaiting shipment / category breakdown
+  if (/\b(need to ship|to ship|ready to ship|awaiting shipment|which category order|shipping category)\b/i.test(lowerMsg)) {
+    const catMatch = lowerMsg.match(/category\s+["']?([^"'\n,]+?)["']?\s*(?:orders?|$)/i) || lowerMsg.match(/for\s+([a-z]+)\s+category/i);
+    const categoryFilter = catMatch ? catMatch[1].trim() : null;
+    try {
+      const md = await handleManageOrders(pool, { action_type: 'awaiting_shipment', category: categoryFilter }, message);
+      return res.json({ success: true, action_executed: 'manageOrders', ai_message: md });
+    } catch (err) { return res.json({ success: true, ai_message: `❌ Error: ${err.message}` }); }
+  }
+
+  // 2. Prompt ship order / ship all orders
+  if (/\b(prompt\s+ship|ship\s+(?:all\s+)?orders?|ship\s+(?:the\s+)?order)\b/i.test(lowerMsg)) {
+    const orderIdMatch = message.match(/\b(ORD-[\w-]+|ord-[\w-]+|q-[\w-]+)\b/i) || message.match(/order\s+([\w-]+)/i);
+    if (orderIdMatch) {
+      try {
+        const md = await handleManageOrders(pool, { action_type: 'ship', identifier: orderIdMatch[1] }, message);
+        return res.json({ success: true, action_executed: 'manageOrders', ai_message: md });
+      } catch (err) { return res.json({ success: true, ai_message: `❌ Shipping failed: ${err.message}` }); }
+    } else {
+      const catMatch = lowerMsg.match(/ship\s+(?:all\s+)?([a-z]+)\s+(?:category\s+)?orders?/i);
+      const catFilter = catMatch && !['the', 'all', 'ready', 'pending'].includes(catMatch[1]) ? catMatch[1] : null;
+      try {
+        const md = await handleManageOrders(pool, { action_type: 'ship_all', category: catFilter }, message);
+        return res.json({ success: true, action_executed: 'manageOrders', ai_message: md });
+      } catch (err) { return res.json({ success: true, ai_message: `❌ Bulk shipping failed: ${err.message}` }); }
+    }
+  }
 
   // Bulk approve all pending orders
   if (/bulk\s+approve\s+(?:all\s+)?(?:pending\s+)?orders?/i.test(lowerMsg) ||

@@ -522,6 +522,135 @@ async function getOrdersByProductFromDb(pool, productName) {
   return res.rows.map(formatOrder);
 }
 
+// Intelligent shipping operations
+async function getOrdersAwaitingShipmentFromDb(pool, categoryFilter = null) {
+  const res = await pool.query(
+    `SELECT o.*, i.status as invoice_status
+     FROM orders o
+     LEFT JOIN invoices i ON (i.order_number = o.order_number OR i.order_id = o.order_id)
+     WHERE UPPER(o.status) IN ('READY_TO_SHIP', 'APPROVED', 'CONFIRMED', 'PROCESSING')
+     ORDER BY o.id DESC`
+  );
+
+  const productsRes = await pool.query(`SELECT product_id, sku, product_name, category FROM products`);
+  const prodCategoryMap = {};
+  productsRes.rows.forEach(p => {
+    if (p.product_name) prodCategoryMap[p.product_name.toLowerCase()] = p.category;
+    if (p.sku) prodCategoryMap[p.sku.toLowerCase()] = p.category;
+    if (p.product_id) prodCategoryMap[p.product_id.toLowerCase()] = p.category;
+  });
+
+  const ordersWithCat = res.rows.map(row => {
+    const formatted = formatOrder(row);
+    const items = typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || []);
+    let category = 'General Inventory';
+    if (items.length > 0) {
+      const it = items[0];
+      const name = (it.name || it.product_name || '').toLowerCase();
+      const sku = (it.sku || '').toLowerCase();
+      category = prodCategoryMap[name] || prodCategoryMap[sku] || 'General Inventory';
+    }
+    return {
+      ...formatted,
+      category,
+      invoice_status: row.invoice_status || 'UNPAID'
+    };
+  });
+
+  let filtered = ordersWithCat;
+  if (categoryFilter && categoryFilter.trim() !== '' && categoryFilter.toLowerCase() !== 'all') {
+    filtered = filtered.filter(o => o.category.toLowerCase().includes(categoryFilter.toLowerCase()));
+  }
+
+  const byCategory = {};
+  filtered.forEach(o => {
+    if (!byCategory[o.category]) byCategory[o.category] = [];
+    byCategory[o.category].push(o);
+  });
+
+  return {
+    total_awaiting_shipment: filtered.length,
+    by_category: byCategory,
+    orders: filtered
+  };
+}
+
+async function shipOrderInDb(pool, identifier, warehouseId = 'wh-1') {
+  const res = await pool.query(
+    `SELECT * FROM orders WHERE order_id ILIKE $1 OR order_number ILIKE $1 LIMIT 1`,
+    [`%${identifier}%`]
+  );
+  if (res.rows.length === 0) throw new Error(`Order not found matching: "${identifier}"`);
+
+  const order = res.rows[0];
+  if (order.status === 'SHIPPED') {
+    return { message: `Order ${order.order_number || order.order_id} is already SHIPPED.`, order: formatOrder(order) };
+  }
+
+  const updateRes = await pool.query(
+    `UPDATE orders SET status = 'SHIPPED' WHERE id = $1 RETURNING *`,
+    [order.id]
+  );
+  const shippedOrder = formatOrder(updateRes.rows[0]);
+
+  const items = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+  for (const item of items) {
+    const prodName = item.name || item.product_name;
+    const qty = parseInt(item.qty || item.quantity || 1);
+    if (prodName) {
+      const pRes = await pool.query(
+        `SELECT * FROM products WHERE product_name ILIKE $1 OR sku ILIKE $1 OR product_id = $1 LIMIT 1`,
+        [`%${prodName}%`]
+      );
+      if (pRes.rows.length > 0) {
+        const prod = pRes.rows[0];
+        const inv = typeof prod.inventory === 'string' ? JSON.parse(prod.inventory) : prod.inventory;
+        if (Array.isArray(inv)) {
+          let whItem = inv.find(w => w.warehouse_id === warehouseId) || inv[0];
+          if (whItem) {
+            whItem.available_quantity = Math.max(0, (whItem.available_quantity || 0) - qty);
+            whItem.quantity = Math.max(0, (whItem.quantity || 0) - qty);
+            await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inv), prod.product_id]);
+          }
+        }
+      }
+    }
+  }
+
+  const auditId = `aud-${Date.now()}`;
+  await pool.query(
+    `INSERT INTO audit_logs (audit_id, table_name, record_id, action, performed_by, notes) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [auditId, 'orders', shippedOrder.order_id, 'SHIP_ORDER', 'CIQ Copilot', `Shipped order ${shippedOrder.order_number} from warehouse ${warehouseId}`]
+  );
+
+  return {
+    success: true,
+    message: `Order ${shippedOrder.order_number || shippedOrder.order_id} successfully SHIPPED from warehouse depot ${warehouseId}! Inventory stock deducted.`,
+    shippedOrder
+  };
+}
+
+async function shipAllOrdersInDb(pool, categoryFilter = null, warehouseId = 'wh-1') {
+  const awaiting = await getOrdersAwaitingShipmentFromDb(pool, categoryFilter);
+  const targetOrders = awaiting.orders;
+  if (targetOrders.length === 0) {
+    return { success: true, message: `No orders awaiting shipment${categoryFilter ? ` in category "${categoryFilter}"` : ''}.`, shipped_count: 0 };
+  }
+
+  const shippedList = [];
+  for (const o of targetOrders) {
+    const res = await shipOrderInDb(pool, o.order_number || o.order_id, warehouseId);
+    shippedList.push(res.shippedOrder || o);
+  }
+
+  return {
+    success: true,
+    message: `Successfully shipped ${shippedList.length} order(s)${categoryFilter ? ` in category "${categoryFilter}"` : ''}!`,
+    shipped_count: shippedList.length,
+    shipped_orders: shippedList
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -550,6 +679,9 @@ module.exports = {
   getTopBuyersFromDb,
   getMostOrderedProductsFromDb,
   getOverdueOrdersFromDb,
-  getOrdersByProductFromDb
+  getOrdersByProductFromDb,
+  getOrdersAwaitingShipmentFromDb,
+  shipOrderInDb,
+  shipAllOrdersInDb
 };
 
