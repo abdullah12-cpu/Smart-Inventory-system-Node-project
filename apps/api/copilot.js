@@ -515,6 +515,63 @@ function getAdminTools(isGemini = false) {
   return list.map(fn => ({ type: 'function', function: fn }));
 }
 
+// ─── Buyer-only tool definitions ─────────────────────────────────────────────
+function getBuyerTools(isGemini = false) {
+  const T = (t) => isGemini ? t.toUpperCase() : t;
+
+  const tools = [
+    {
+      name: 'getBuyerProductRecommendations',
+      description: 'Search and recommend retail catalog products by budget (max_price in PKR), category, brand, or natural language query/features.',
+      parameters: {
+        type: T('object'),
+        properties: {
+          query:     { type: T('string'), description: 'Natural language search term, e.g. "wireless headphones", "gaming monitor".' },
+          max_price: { type: T('number'), description: 'Maximum budget in PKR, e.g. 15000.' },
+          category:  { type: T('string'), description: 'Product category, e.g. Laptops, Headphones, Networking.' },
+          brand:     { type: T('string'), description: 'Brand name, e.g. Sony, Dell, Logitech.' },
+          features:  { type: T('string'), description: 'Key feature requirements, e.g. "noise cancellation", "bluetooth 5.0".' }
+        }
+      }
+    },
+    {
+      name: 'compareBuyerProducts',
+      description: 'Side-by-side spec and price comparison of two products mentioned by the buyer.',
+      parameters: {
+        type: T('object'),
+        properties: {
+          product_a: { type: T('string'), description: 'First product name or SKU to compare.' },
+          product_b: { type: T('string'), description: 'Second product name or SKU to compare.' }
+        }
+      }
+    },
+    {
+      name: 'trackBuyerOrder',
+      description: 'Track a specific order by order number or order ID and return its current status.',
+      parameters: {
+        type: T('object'),
+        properties: {
+          order_id_query: { type: T('string'), description: 'Order number or order ID, e.g. "ORD-2026-7781".' }
+        },
+        required: ['order_id_query']
+      }
+    },
+    {
+      name: 'listBuyerOrders',
+      description: 'List orders, optionally filtered by fulfillment status (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, RETURNED).',
+      parameters: {
+        type: T('object'),
+        properties: {
+          status_filter: { type: T('string'), description: 'Order status to filter by. Omit to list all orders.' }
+        }
+      }
+    }
+  ];
+
+  if (isGemini) return tools;
+  return tools.map(fn => ({ type: 'function', function: fn }));
+}
+
 async function handleReadSupplierData(pool, args, message) {
   if (args.action_type === 'list_all') {
     const res = await pool.query('SELECT * FROM suppliers LIMIT 20');
@@ -731,11 +788,12 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
   } else if (name === 'getBuyerProductRecommendations') {
     const products = await getBuyerProductRecommendationsFromDb(pool, args);
     let md = `### 🛍️ Recommended Products for You\n\n`;
+    if (args.max_price) md += `*Showing products up to **Rs ${Number(args.max_price).toLocaleString()}***\n\n`;
     if (products.length === 0) {
-      md += `Sorry, no products matched your criteria. Try expanding your budget limit or searching with different keywords!`;
+      md += `Sorry, no products matched your criteria. Try expanding your budget or searching with different keywords!`;
     } else {
-      md += products.map((p, idx) => {
-        const stockStatus = p.available_stock > 0 ? `In Stock (${p.available_stock} available)` : `Out of Stock`;
+      md += products.slice(0, 10).map((p, idx) => {
+        const stockStatus = p.available_stock > 0 ? `In Stock (${p.available_stock} available)` : `⚠️ Out of Stock`;
         return `**${idx + 1}. ${p.product_name}**\n` +
           `- **Brand**: ${p.brand || 'N/A'} | **Category**: ${p.category || 'General'}\n` +
           `- **Price**: **Rs ${p.retail_price.toLocaleString()}**\n` +
@@ -743,11 +801,19 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
           (p.short_description ? `- **Specs**: ${p.short_description}\n` : '');
       }).join('\n');
     }
-    return {
-      action_executed: 'getBuyerProductRecommendations',
-      ai_message: md,
-      products
-    };
+    return { action_executed: 'getBuyerProductRecommendations', ai_message: md, products: products.slice(0, 10) };
+
+  } else if (name === 'compareBuyerProducts') {
+    const result = await compareBuyerProductsInDb(pool, { message, product_a: args.product_a || '', product_b: args.product_b || '' });
+    return { action_executed: 'compareBuyerProducts', ai_message: result.ai_message, products: result.products };
+
+  } else if (name === 'trackBuyerOrder') {
+    const result = await trackBuyerOrder(pool, { order_id_query: args.order_id_query || '' });
+    return { action_executed: 'trackBuyerOrder', ai_message: result.ai_message, orders: result.orders };
+
+  } else if (name === 'listBuyerOrders') {
+    const result = await listBuyerOrdersByStatus(pool, { status_filter: args.status_filter || null });
+    return { action_executed: 'listBuyerOrders', ai_message: result.ai_message, orders: result.orders };
   }
   throw new Error(`Unknown tool name: ${name}`);
 }
@@ -1742,6 +1808,128 @@ function registerCopilotRoutes(app, pool) {
           }).join('\n');
         }
 
+        // ── Fast-path return: image search or explicit product search with results ──
+        // Only return immediately if: it's a visual search, OR the regex found clear
+        // product intent (category/brand/price hit) with actual results.
+        const hadExplicitProductIntent = !!(visualQuery || category || brand || maxPrice || searchQuery.trim());
+        if (attached_image || (hadExplicitProductIntent && products.length > 0)) {
+          return res.json({
+            success: true,
+            action_executed: 'getBuyerProductRecommendations',
+            ai_message: md,
+            products: products.slice(0, 10)
+          });
+        }
+
+        // ── LLM fallback: message didn't clearly match any regex or returned 0 results ──
+        // Let the LLM reason with full conversation history and buyer tools.
+        const buyerMessages = [
+          { role: 'system', content: BUYER_SYSTEM_PROMPT },
+          ...(history || []).map(m => ({
+            role: m.sender === 'user' ? 'user' : 'assistant',
+            content: m.text || ''
+          })),
+          { role: 'user', content: message }
+        ];
+
+        // Try Ollama first (local, free)
+        try {
+          const ollamaTagRes = await fetch('http://localhost:11434/api/tags');
+          if (ollamaTagRes.ok) {
+            const tagData = await ollamaTagRes.json();
+            const models = tagData.models || [];
+            const chatModel = models.find(m => /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision/i.test(m.name));
+            if (chatModel) {
+              const ollamaChatRes = await fetch('http://localhost:11434/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: chatModel.name,
+                  messages: buyerMessages,
+                  tools: getBuyerTools(false),
+                  tool_choice: 'auto'
+                })
+              });
+              if (ollamaChatRes.ok) {
+                const ollamaResp = await ollamaChatRes.json();
+                const choice = ollamaResp.choices?.[0];
+                if (choice?.message?.tool_calls?.length > 0) {
+                  const tc = choice.message.tool_calls[0];
+                  const fnName = tc.function.name;
+                  const fnArgs = JSON.parse(tc.function.arguments || '{}');
+                  const result = await executeCopilotTool(pool, fnName, fnArgs, message, null);
+                  return res.json({ success: true, ...result });
+                }
+                if (choice?.message?.content) {
+                  return res.json({ success: true, ai_message: choice.message.content });
+                }
+              }
+            }
+          }
+        } catch (ollamaErr) { /* Ollama not running, fall through */ }
+
+        // Try Gemini
+        if (geminiKey) {
+          try {
+            const { GoogleGenerativeAI } = require('@google/generative-ai');
+            const genAI = new GoogleGenerativeAI(geminiKey);
+            const geminiModel = genAI.getGenerativeModel({
+              model: 'gemini-2.0-flash',
+              systemInstruction: BUYER_SYSTEM_PROMPT,
+              tools: [{ functionDeclarations: getBuyerTools(true) }]
+            });
+            const geminiHistory = (history || []).map(m => ({
+              role: m.sender === 'user' ? 'user' : 'model',
+              parts: [{ text: m.text || '' }]
+            }));
+            const chat = geminiModel.startChat({ history: geminiHistory });
+            const geminiResult = await chat.sendMessage(message);
+            const gResp = geminiResult.response;
+            const fnCall = gResp.candidates?.[0]?.content?.parts?.find(p => p.functionCall)?.functionCall;
+            if (fnCall) {
+              const result = await executeCopilotTool(pool, fnCall.name, fnCall.args || {}, message, null);
+              return res.json({ success: true, ...result });
+            }
+            const textContent = gResp.text();
+            if (textContent) return res.json({ success: true, ai_message: textContent });
+          } catch (geminiErr) {
+            console.error('[Buyer LLM] Gemini error:', geminiErr.message);
+          }
+        }
+
+        // Try Mistral
+        if (mistralKey) {
+          try {
+            const mistralRes = await fetch('https://api.mistral.ai/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${mistralKey}` },
+              body: JSON.stringify({
+                model: 'mistral-large-latest',
+                messages: buyerMessages,
+                tools: getBuyerTools(false),
+                tool_choice: 'auto'
+              })
+            });
+            if (mistralRes.ok) {
+              const mistralData = await mistralRes.json();
+              const choice = mistralData.choices?.[0];
+              if (choice?.message?.tool_calls?.length > 0) {
+                const tc = choice.message.tool_calls[0];
+                const fnName = tc.function.name;
+                const fnArgs = JSON.parse(tc.function.arguments || '{}');
+                const result = await executeCopilotTool(pool, fnName, fnArgs, message, null);
+                return res.json({ success: true, ...result });
+              }
+              if (choice?.message?.content) {
+                return res.json({ success: true, ai_message: choice.message.content });
+              }
+            }
+          } catch (mistralErr) {
+            console.error('[Buyer LLM] Mistral error:', mistralErr.message);
+          }
+        }
+
+        // Final fallback: return whatever the regex search found (even if 0 results)
         return res.json({
           success: true,
           action_executed: 'getBuyerProductRecommendations',

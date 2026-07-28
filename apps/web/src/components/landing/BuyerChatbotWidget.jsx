@@ -229,12 +229,19 @@ export default function BuyerChatbotWidget() {
     setLoading(true);
 
     try {
+      // Build history from current messages (exclude welcome msg + image previews, keep last 10 turns)
+      const history = messages
+        .filter(m => m.text && m.sender)
+        .slice(-10)
+        .map(m => ({ sender: m.sender, text: m.text }));
+
       const response = await fetch("/api/copilot/buyer/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: textToSend || "Find similar products to this image",
-          attached_image: imageToSend
+          attached_image: imageToSend,
+          history
         })
       });
       const data = await response.json();
