@@ -7,9 +7,9 @@ const adminConfig = require('../config/admin.json');
 const distributorConfig = require('../config/distributor.json');
 
 const SENSITIVE_KEYWORDS = [
-  'password', 'passwords', 'env', 'envs', 'secret', 'secrets', 'credential', 'credentials', 
-  'token', 'tokens', 'key', 'keys', 'database_url', 'connectionstring',
-  'port', 'ports', 'config', 'configs', 'process.env', 'leak', 'hack', 'exploit', 'bypass'
+  'password', 'passwords', 'api_key', 'apikey', 'api key', 'database_url', 'connectionstring',
+  'process.env', '.env file', 'secret key', 'secret token', 'access token', 'auth token',
+  'private key', 'encryption key', 'ssh key', 'jwt secret', 'leak', 'hack', 'exploit', 'bypass'
 ];
 
 /**
@@ -19,7 +19,7 @@ function evaluatePlanSafety(message, role) {
   const lower = message.toLowerCase().trim();
 
   // 1. Sensitive security check
-  const isSensitive = SENSITIVE_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(lower));
+  const isSensitive = SENSITIVE_KEYWORDS.some(kw => lower.includes(kw.toLowerCase()));
   if (isSensitive) {
     return {
       allowed: false,

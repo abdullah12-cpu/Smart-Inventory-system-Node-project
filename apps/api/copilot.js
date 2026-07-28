@@ -1578,112 +1578,90 @@ function registerCopilotRoutes(app, pool) {
         let visualQuery = null;
         let visualCategory = null;
         let visualBrand = null;
+        let visualCatalogName = null; // exact catalog product name from vision model
 
         let usedVisionEngine = null;
 
-        // --- Visual Search: Try local Ollama Vision model first (llama3.2-vision), then fallback to Gemini Vision ---
+        // --- Visual Search: llava:latest via Ollama ---
         if (attached_image) {
           let base64Data = attached_image;
           const dataUriMatch = attached_image.match(/^data:([^;]+);base64,(.+)$/);
-          let mimeType = 'image/jpeg';
           if (dataUriMatch) {
-            mimeType = dataUriMatch[1];
             base64Data = dataUriMatch[2];
           }
 
-          // Fetch current store products summary for vision context
+          // Fetch active catalog for context
           let catalogContext = '';
           try {
-            const catDbRes = await pool.query("SELECT product_name, category, brand, short_description FROM products WHERE status = 'ACTIVE'");
-            catalogContext = catDbRes.rows.map(r => `- "${r.product_name}" (Category: ${r.category || 'General'}, Brand: ${r.brand || 'N/A'}, Specs: ${r.short_description || ''})`).join('\n');
+            const catDbRes = await pool.query(
+              "SELECT product_name, category, brand, short_description FROM products WHERE status = 'ACTIVE'"
+            );
+            catalogContext = catDbRes.rows
+              .map(r => `"${r.product_name}" | category: ${r.category || 'General'} | brand: ${r.brand || 'N/A'}`)
+              .join('\n');
           } catch (e) {
-            console.error("Error fetching catalog context for vision:", e);
+            console.error('Catalog fetch error for visual search:', e);
           }
 
-          const visionPromptText = `You are an AI product identification assistant for an e-commerce store.
-Here is our current store catalog items list:
-${catalogContext}
+          // Tightly-constrained prompt — llava tends to ramble, so we anchor it hard to JSON-only output
+          const visionPromptText = [
+            'You are a product identification assistant. Look at the image carefully.',
+            'Below is the store catalog:',
+            catalogContext,
+            '',
+            'Task: Identify what product (or product type) is shown in the image.',
+            'Match it to the closest catalog item if possible.',
+            'Reply with ONLY this JSON — no explanation, no markdown, no extra text:',
+            '{"product_name":"<name>","category":"<category>","brand":"<brand or null>","keywords":["<word1>","<word2>","<word3>"]}',
+          ].join('\n');
 
-Look at this image carefully. 
-Identify which store catalog item (or product type/category/brand) this image represents or belongs to.
-Respond ONLY as a valid JSON object with format (no markdown codeblock, no explanation):
-{
-  "product_name": "matching store product name from catalog or descriptive name",
-  "category": "category",
-  "brand": "brand name or null",
-  "keywords": ["keyword1", "keyword2"]
-}`;
-
-          // 1. Try local Ollama Vision model (e.g. llama3.2-vision, llava, moondream)
           try {
-            const probeRes = await fetch('http://localhost:11434/api/tags');
-            if (probeRes.ok) {
-              const probeData = await probeRes.json();
-              const models = probeData.models || [];
-              const visionModelObj = models.find(m => 
-                /llava|moondream|bakllava|minicpm|vision|qwen2-vl/i.test(m.name)
-              );
+            const ollamaRes = await fetch('http://localhost:11434/api/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'llava:latest',
+                prompt: visionPromptText,
+                images: [base64Data],
+                stream: false,
+                options: { temperature: 0.1 }   // low temp = more deterministic JSON
+              })
+            });
 
-              if (visionModelObj) {
-                const ollamaVisionModel = visionModelObj.name;
+            if (ollamaRes.ok) {
+              const ollamaData = await ollamaRes.json();
+              const raw = (ollamaData.response || '').trim();
 
-                const ollamaRes = await fetch('http://localhost:11434/api/generate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    model: ollamaVisionModel,
-                    prompt: visionPromptText,
-                    images: [base64Data],
-                    stream: false
-                  })
-                });
+              // Extract first JSON object — llava sometimes prepends junk text
+              const jsonMatch = raw.match(/\{[\s\S]*?\}/);
+              if (jsonMatch) {
+                try {
+                  const parsed = JSON.parse(jsonMatch[0]);
 
-                if (ollamaRes.ok) {
-                  const ollamaData = await ollamaRes.json();
-                  const visionText = (ollamaData.response || '').trim();
-                  const jsonMatch = visionText.match(/\{[\s\S]*\}/);
-                  if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    visualQuery = parsed.product_name || (parsed.keywords ? parsed.keywords.join(' ') : null);
-                    visualCategory = parsed.category || null;
-                    visualBrand = parsed.brand || null;
-                    usedVisionEngine = `Local Ollama Vision (${ollamaVisionModel})`;
-                  }
+                  // Build search query: prefer keywords (short, targeted) over full product name
+                  const keywordQuery = Array.isArray(parsed.keywords) && parsed.keywords.length > 0
+                    ? parsed.keywords.filter(k => k && k.length > 1).join(' ')
+                    : null;
+
+                  visualQuery      = keywordQuery || parsed.product_name || null;
+                  visualCategory   = parsed.category || null;
+                  visualBrand      = parsed.brand && parsed.brand !== 'null' ? parsed.brand : null;
+                  visualCatalogName = parsed.product_name || null;
+                  usedVisionEngine = 'llava:latest';
+
+                  console.log(`[Visual Search] llava output → query="${visualQuery}" category="${visualCategory}" brand="${visualBrand}"`);
+                } catch (parseErr) {
+                  console.error('[Visual Search] JSON parse failed. Raw output:', raw);
                 }
+              } else {
+                console.error('[Visual Search] No JSON found in llava response. Raw output:', raw);
               }
+            } else {
+              const errText = await ollamaRes.text();
+              console.error('[Visual Search] llava:latest HTTP error:', ollamaRes.status, errText);
             }
           } catch (ollamaErr) {
-            console.error('Ollama Vision check error:', ollamaErr);
-          }
-
-          // 2. Fallback to Gemini Vision if local Ollama Vision is not active or didn't parse
-          if (!visualQuery && !usedVisionEngine && geminiKey) {
-            try {
-              const genAI = new GoogleGenerativeAI(geminiKey);
-              const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-              const visionResult = await visionModel.generateContent([
-                {
-                  inlineData: {
-                    data: base64Data,
-                    mimeType
-                  }
-                },
-                visionPromptText
-              ]);
-
-              const visionText = visionResult.response.text().trim();
-              const jsonMatch = visionText.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                visualQuery = parsed.product_name || (parsed.keywords ? parsed.keywords.join(' ') : null);
-                visualCategory = parsed.category || null;
-                visualBrand = parsed.brand || null;
-                usedVisionEngine = 'Gemini 2.5 Flash Vision';
-              }
-            } catch (visionErr) {
-              console.error('Gemini Vision error:', visionErr);
-            }
+            console.error('[Visual Search] Ollama connection error:', ollamaErr.message);
           }
         }
 
@@ -1700,7 +1678,15 @@ Respond ONLY as a valid JSON object with format (no markdown codeblock, no expla
         const brandMatch = lowerMsg2.match(/\b(dell|hp|lenovo|apple|samsung|logitech|sony|asus|acer|microsoft|cisco|tp-link|nvidia|intel|amd|corsair|kingston|western\s*digital|seagate)\b/i);
         const brand = visualBrand || (brandMatch ? brandMatch[1] : null);
 
-        let searchQuery = visualQuery || (message === "Find similar products to this image" ? "" : message);
+        // Strip budget/price phrasing from query so it doesn't pollute keyword search
+        const strippedMessage = message
+          .replace(/(?:under|below|less\s+than|up\s+to|max(?:imum)?|within|at\s+most)\s+(?:rs\.?\s*)?\d[\d,]*/gi, '')
+          .replace(/(?:rs\.?\s*)?\d[\d,]+\s+(?:budget|pkr|rupees?)/gi, '')
+          .replace(/\b(?:suggest|show|find|recommend|list|give|me|some|products?|items?|best|good|pkr|rupees?|rs)\b/gi, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
+        let searchQuery = visualQuery || (message === "Find similar products to this image" ? "" : strippedMessage);
 
         let products = [];
         // If image was uploaded but no visual query was identified (e.g. non-product photo), don't return arbitrary products
@@ -1713,6 +1699,26 @@ Respond ONLY as a valid JSON object with format (no markdown codeblock, no expla
             category,
             brand
           });
+
+          // If visual search returned 0 results but we have an exact catalog name, retry with that name directly
+          if (products.length === 0 && visualCatalogName) {
+            products = await getBuyerProductRecommendationsFromDb(pool, {
+              query: visualCatalogName,
+              max_price: maxPrice,
+              category: null,
+              brand: null
+            });
+          }
+
+          // Last resort: if still 0 results and we have category/brand hints, return top matches in that category/brand
+          if (products.length === 0 && (category || brand)) {
+            products = await getBuyerProductRecommendationsFromDb(pool, {
+              query: '',
+              max_price: maxPrice,
+              category,
+              brand
+            });
+          }
         }
 
         let md = `### 🛍️ ${attached_image ? '📷 Visual Search Results' : 'Recommended Products for You'}\n\n`;
