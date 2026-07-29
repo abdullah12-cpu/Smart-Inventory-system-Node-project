@@ -1874,7 +1874,12 @@ function registerCopilotRoutes(app, pool) {
       });
     }
 
-    // 1.5 BUYER Role direct handler (Order Tracking, Visual Search, Comparison & Product Recommendations)
+    // 1.5 DISTRIBUTOR Role direct handler — bypasses LLM chain entirely, goes straight to RAG
+    if (role === 'DISTRIBUTOR') {
+      return handleLocalFallback(pool, message, attached_image, res, 'DISTRIBUTOR');
+    }
+
+    // 1.6 BUYER Role direct handler (Order Tracking, Visual Search, Comparison & Product Recommendations)
     if (role === 'BUYER') {
       try {
         const lowerMsg2 = message.toLowerCase();
