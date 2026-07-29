@@ -236,11 +236,119 @@ async function isEmbedModelAvailable() {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. Distributor-specific vector search
+//    Same embedding column, but returns WHOLESALE pricing fields instead of retail.
+//    Also applies min_wholesale_qty / max_discount context in the prompt text.
+// ─────────────────────────────────────────────────────────────────────────────
+async function vectorSearchWholesaleProducts(pool, query, opts = {}) {
+  const {
+    limit     = 15,
+    max_price = null,   // wholesale price ceiling
+    min_price = null,   // wholesale price floor
+    category  = null,
+    brand     = null,
+    threshold = 0.20,
+  } = opts;
+
+  let queryVector;
+  try {
+    queryVector = await generateEmbedding(query);
+  } catch (err) {
+    console.error('[Embeddings] Distributor query embedding failed:', err.message);
+    return [];
+  }
+
+  const vectorLiteral = `[${queryVector.join(',')}]`;
+
+  const conditions = [`status = 'ACTIVE'`, `embedding IS NOT NULL`];
+  const params     = [vectorLiteral];
+  let   idx        = 2;
+
+  // Filter by wholesale/distributor price stored in JSONB prices column
+  if (max_price !== null) {
+    conditions.push(`COALESCE((prices->>'DISTRIBUTOR')::numeric, (prices->>'RETAIL')::numeric) <= $${idx}`);
+    params.push(max_price); idx++;
+  }
+  if (min_price !== null) {
+    conditions.push(`COALESCE((prices->>'DISTRIBUTOR')::numeric, (prices->>'RETAIL')::numeric) >= $${idx}`);
+    params.push(min_price); idx++;
+  }
+  if (category) { conditions.push(`LOWER(category) LIKE $${idx}`); params.push(`%${category.toLowerCase()}%`); idx++; }
+  if (brand)    { conditions.push(`LOWER(brand) LIKE $${idx}`);    params.push(`%${brand.toLowerCase()}%`);    idx++; }
+
+  const whereClause = conditions.join(' AND ');
+
+  const sql = `
+    SELECT *,
+           1 - (embedding <=> $1::vector) AS similarity
+    FROM   products
+    WHERE  ${whereClause}
+      AND  1 - (embedding <=> $1::vector) >= ${threshold}
+    ORDER  BY similarity DESC
+    LIMIT  $${idx}
+  `;
+  params.push(limit);
+
+  try {
+    const result = await pool.query(sql, params);
+
+    return result.rows.map(r => {
+      let prices    = {};
+      let inventory = [];
+      try { prices    = typeof r.prices    === 'string' ? JSON.parse(r.prices)    : r.prices    || {}; } catch (_) {}
+      try { inventory = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory || []; } catch (_) {}
+
+      const totalStock = inventory.reduce((sum, i) => sum + (i.available_quantity || i.quantity || 0), 0);
+
+      return {
+        product_id:        r.product_id,
+        sku:               r.sku,
+        product_name:      r.product_name,
+        short_description: r.short_description || '',
+        brand:             r.brand,
+        category:          r.category,
+        retail_price:      prices.RETAIL      !== undefined ? parseFloat(prices.RETAIL)      : 0,
+        wholesale_price:   prices.DISTRIBUTOR !== undefined ? parseFloat(prices.DISTRIBUTOR) : (prices.RETAIL !== undefined ? parseFloat(prices.RETAIL) : 0),
+        min_wholesale_qty: r.min_wholesale_qty || 1,
+        max_discount:      r.max_discount      || 0,
+        image_url:         r.image_url,
+        available_stock:   totalStock,
+        inventory,
+        similarity:        parseFloat(r.similarity).toFixed(3)
+      };
+    });
+  } catch (err) {
+    console.error('[Embeddings] Distributor vector search failed:', err.message);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. Build rich text for a wholesale product (includes wholesale price + MOQ)
+// ─────────────────────────────────────────────────────────────────────────────
+function buildWholesaleProductText(product) {
+  const base = buildProductText(product);
+
+  let wholesalePriceText = '';
+  try {
+    const prices = typeof product.prices === 'string' ? JSON.parse(product.prices) : (product.prices || {});
+    if (prices.DISTRIBUTOR) wholesalePriceText = `wholesale price Rs ${Number(prices.DISTRIBUTOR).toLocaleString()} PKR`;
+  } catch (_) {}
+
+  const moq     = product.min_wholesale_qty ? `minimum order ${product.min_wholesale_qty} units` : '';
+  const discount = product.max_discount      ? `maximum discount ${product.max_discount}%`         : '';
+
+  return [base, wholesalePriceText, moq, discount].filter(Boolean).join('. ');
+}
+
 module.exports = {
   generateEmbedding,
   buildProductText,
+  buildWholesaleProductText,
   upsertProductEmbedding,
   vectorSearchProducts,
+  vectorSearchWholesaleProducts,
   backfillEmbeddings,
   isEmbedModelAvailable,
 };
