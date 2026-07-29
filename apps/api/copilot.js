@@ -1877,14 +1877,12 @@ function registerCopilotRoutes(app, pool) {
           }).join('\n');
         }
 
-        // ── Fast-path return: image search or explicit product search with results ──
-        // Return immediately if: it's a visual search, OR the regex found clear
-        // product intent (category/brand/price/sort hit) with actual results,
-        // OR it's a bare "suggest me" type request (show all products).
-        const hadExplicitProductIntent = !!(visualQuery || category || brand || maxPrice || minPrice || sortBy || searchQuery.trim());
-        const isBareRecommendRequest = /^\s*(suggest|show|recommend|find|list|give)\s*(me)?\s*(some|all|the)?\s*(products?|items?)?\s*$/i.test(message.trim());
-        if (attached_image || (hadExplicitProductIntent && products.length > 0) || (isBareRecommendRequest && products.length > 0)) {
-          // Save session context so follow-up messages have memory
+        // ── Always route through RAG + LLM for natural responses ──────────────
+        // The regex above is used only to EXTRACT filters (price, category, brand,
+        // sort). The LLM always generates the final conversational response.
+        // Exception: image search returns structured results immediately.
+        if (attached_image) {
+          // Save session for image search fast-path
           const userEmailFast = req.body.user_email || 'guest';
           saveBuyerSession(userEmailFast, {
             lastProducts:  products,
@@ -1916,12 +1914,14 @@ function registerCopilotRoutes(app, pool) {
         let ragQuery     = searchQuery || session.lastQuery   || '';
 
         // Detect relative follow-ups: "cheaper", "more expensive", "anything else"
-        const isCheaper     = /\b(cheaper|less expensive|more affordable|lower price|budget|something cheaper)\b/i.test(lowerMsg2);
+        const isCheaper       = /\b(cheaper|less expensive|more affordable|lower price|something cheaper)\b/i.test(lowerMsg2);
         const isMoreExpensive = /\b(more expensive|pricier|higher end|premium|something better)\b/i.test(lowerMsg2);
         const isAnythingElse  = /\b(anything else|other options|show more|different|another|alternatives)\b/i.test(lowerMsg2);
 
+        // Price-only follow-up: user sets a budget but no new topic — inherit last query/category
+        const isPriceOnlyFollowUp = (maxPrice || minPrice) && !searchQuery.trim() && !category && !brand && session.lastQuery;
+
         if (isCheaper && session.lastMaxPrice) {
-          // "cheaper" → set max to 90% of the previous max
           ragMaxPrice = Math.floor(session.lastMaxPrice * 0.9);
           ragCategory = ragCategory || session.lastCategory;
           ragQuery    = session.lastQuery;
@@ -1932,6 +1932,10 @@ function registerCopilotRoutes(app, pool) {
         } else if (isAnythingElse && session.lastCategory) {
           ragCategory = session.lastCategory;
           ragQuery    = session.lastQuery;
+        } else if (isPriceOnlyFollowUp) {
+          // e.g. "budget under 220000" after "gaming processor" → keep gaming context
+          ragQuery    = session.lastQuery;
+          ragCategory = ragCategory || session.lastCategory;
         }
 
         // 3. Hybrid retrieval: vector similarity search → keyword fallback
@@ -2100,12 +2104,12 @@ function registerCopilotRoutes(app, pool) {
           console.error('[Buyer RAG] Ollama connection error:', ollamaErr.message);
         }
 
-        // Final fallback: return structured regex result
+        // Final fallback: return structured regex result using ragProducts for cards
         return res.json({
           success: true,
           action_executed: 'getBuyerProductRecommendations',
           ai_message: md,
-          products: products.slice(0, 10)
+          products: (ragProducts && ragProducts.length > 0 ? ragProducts : products).slice(0, 10)
         });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ Error finding products: ${err.message}` });
