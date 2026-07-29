@@ -71,24 +71,15 @@ async function initDb() {
       );
     `);
 
-    // Add separate embedding columns for buyer (retail context) and distributor (wholesale context)
-    // This prevents retail and wholesale semantic spaces from mixing
+    // Add embedding column if it doesn't exist yet (nomic-embed-text = 768 dims)
     await client.query(`
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding_buyer vector(768);
-    `);
-    await client.query(`
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding_distributor vector(768);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding vector(768);
     `);
 
-    // Indexes for fast cosine similarity search — one per portal
+    // Index for fast cosine similarity search
     await client.query(`
-      CREATE INDEX IF NOT EXISTS products_embedding_buyer_idx
-      ON products USING ivfflat (embedding_buyer vector_cosine_ops)
-      WITH (lists = 10);
-    `);
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS products_embedding_distributor_idx
-      ON products USING ivfflat (embedding_distributor vector_cosine_ops)
+      CREATE INDEX IF NOT EXISTS products_embedding_idx
+      ON products USING ivfflat (embedding vector_cosine_ops)
       WITH (lists = 10);
     `);
 
