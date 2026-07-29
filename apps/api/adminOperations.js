@@ -1,3 +1,5 @@
+const { upsertProductEmbedding } = require('./embeddings');
+
 async function createProductInDb(pool, data) {
   const nameVal = data.name || data.product_name;
   const catVal = data.category || null;
@@ -126,7 +128,7 @@ async function createProductInDb(pool, data) {
     ]
   );
 
-  return {
+  const newProduct = {
     product_id: newProdId,
     sku: cleanedSku,
     barcode: cleanedBarcode,
@@ -147,6 +149,13 @@ async function createProductInDb(pool, data) {
     min_wholesale_qty: minWhQty,
     max_discount: maxDisc
   };
+
+  // Fire-and-forget embedding — non-blocking, won't fail the create operation
+  upsertProductEmbedding(pool, newProduct).catch(err =>
+    console.error('[Embeddings] createProduct embed failed:', err.message)
+  );
+
+  return newProduct;
 }
 
 async function updateProductInDb(pool, identifier, updates) {
@@ -177,7 +186,23 @@ async function updateProductInDb(pool, identifier, updates) {
      WHERE product_id = $6 RETURNING *`,
     [newName, newCat, newBrand, JSON.stringify(prices), JSON.stringify(inventory), existing.product_id]
   );
-  return upRes.rows[0];
+  const updatedProduct = upRes.rows[0];
+
+  // Re-embed after update — description/price/brand may have changed
+  upsertProductEmbedding(pool, {
+    product_id:        updatedProduct.product_id,
+    product_name:      updatedProduct.product_name,
+    brand:             updatedProduct.brand,
+    category:          updatedProduct.category,
+    short_description: updatedProduct.short_description,
+    unit:              updatedProduct.unit,
+    weight:            updatedProduct.weight,
+    prices:            updatedProduct.prices
+  }).catch(err =>
+    console.error('[Embeddings] updateProduct embed failed:', err.message)
+  );
+
+  return updatedProduct;
 }
 
 async function bulkUpdateProductsInDb(pool, categoryFilter, brandFilter, updates) {

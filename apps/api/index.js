@@ -42,6 +42,9 @@ async function initDb() {
       );
     `);
 
+    // Enable pgvector extension for semantic search
+    await client.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+
     // Create products table
     await client.query(`
       CREATE TABLE IF NOT EXISTS products (
@@ -66,6 +69,18 @@ async function initDb() {
         inventory JSONB NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    // Add embedding column if it doesn't exist yet (nomic-embed-text = 768 dims)
+    await client.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding vector(768);
+    `);
+
+    // Index for fast cosine similarity search
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS products_embedding_idx
+      ON products USING ivfflat (embedding vector_cosine_ops)
+      WITH (lists = 10);
     `);
 
 
@@ -1347,4 +1362,20 @@ registerCopilotRoutes(app, pool);
 
 app.listen(port, () => {
   console.log(`CommerceIQ Auth API Server running on port ${port}`);
+
+  // ── Embedding backfill: runs after server is up, non-blocking ───────────
+  // Generates nomic-embed-text vectors for any products missing embeddings.
+  // Safe to run on every restart — skips products that already have one.
+  const { backfillEmbeddings, isEmbedModelAvailable } = require('./embeddings');
+  isEmbedModelAvailable().then(available => {
+    if (available) {
+      console.log('[Embeddings] nomic-embed-text detected — starting backfill...');
+      backfillEmbeddings(pool).catch(err =>
+        console.error('[Embeddings] Backfill error:', err.message)
+      );
+    } else {
+      console.warn('[Embeddings] nomic-embed-text not found in Ollama. Vector search will fall back to keyword search.');
+      console.warn('[Embeddings] To enable: ollama pull nomic-embed-text');
+    }
+  });
 });
