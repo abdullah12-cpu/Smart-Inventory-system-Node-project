@@ -27,7 +27,6 @@ import {
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/data";
 import Modal from "@/components/Modal";
-import BuyerChatbotWidget from "./BuyerChatbotWidget";
 
 export default function LandingPage({ onGetStarted, onRegisterClick }) {
   const {
@@ -1165,8 +1164,6 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
         })()}
       </Modal>
 
-      {/* Retail Buyer AI Personal Shopping Assistant */}
-      <BuyerChatbotWidget />
     </div>
   );
 }
