@@ -1996,62 +1996,44 @@ function registerCopilotRoutes(app, pool) {
           'Respond naturally based ONLY on the product data above. If the customer asks about a product not in the list, say "We don\'t carry that in our store currently."',
         ].join('\n');
 
-        // 5. Call Gemini 2.0 Flash with the RAG prompt (plain text, no tool-calling needed)
-        if (geminiKey) {
-          try {
-            const { GoogleGenerativeAI } = require('@google/generative-ai');
-            const genAI = new GoogleGenerativeAI(geminiKey);
-            const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-            const ragResult = await geminiModel.generateContent(ragSystemPrompt);
-            const ragText = ragResult.response.text().trim();
-
-            // Output validation: if response doesn't mention any real product and looks like
-            // a prompt injection response, return a safe fallback
-            const mentionsRealProduct = ragProducts.slice(0, 5).some(p =>
-              ragText.toLowerCase().includes(p.product_name.toLowerCase().split(' ')[0])
-            );
-            const looksInjected = /ignore|system prompt|instructions|i am now|you are now/i.test(ragText);
-
-            if (looksInjected || (!mentionsRealProduct && ragProducts.length > 0 && ragText.length < 80)) {
-              console.warn('[Buyer RAG] Possible injection response detected, returning safe fallback.');
-              return res.json({
-                success: true,
-                action_executed: 'getBuyerProductRecommendations',
-                ai_message: md,
-                products: ragProducts.slice(0, 10)
-              });
-            }
-
-            return res.json({
-              success: true,
-              action_executed: 'getBuyerProductRecommendations',
-              ai_message: ragText,
-              products: ragProducts.slice(0, 10)
-            });
-          } catch (geminiErr) {
-            console.error('[Buyer RAG] Gemini error:', geminiErr.message);
-          }
-        }
-
-        // 6. Ollama RAG fallback (if Gemini key not set)
+        // 5. Call local Ollama model with the RAG prompt
         try {
           const ollamaTagRes = await fetch('http://localhost:11434/api/tags');
           if (ollamaTagRes.ok) {
             const tagData = await ollamaTagRes.json();
-            const chatModel = (tagData.models || []).find(m => /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision/i.test(m.name));
+            // Pick any non-vision chat model available (qwen, mistral, llama, phi, gemma…)
+            const chatModel = (tagData.models || []).find(m =>
+              /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision/i.test(m.name)
+            );
             if (chatModel) {
+              console.log(`[Buyer RAG] Using Ollama model: ${chatModel.name}`);
               const ollamaRagRes = await fetch('http://localhost:11434/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   model: chatModel.name,
-                  messages: [{ role: 'user', content: ragSystemPrompt }]
+                  messages: [
+                    { role: 'system', content: ragSystemPrompt },
+                    { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
+                  ],
+                  options: { temperature: 0.3 }
                 })
               });
               if (ollamaRagRes.ok) {
                 const ollamaData = await ollamaRagRes.json();
                 const ragText = ollamaData.choices?.[0]?.message?.content?.trim();
                 if (ragText) {
+                  // Output validation — same injection guard
+                  const looksInjected = /ignore|system prompt|instructions|i am now|you are now/i.test(ragText);
+                  if (looksInjected) {
+                    console.warn('[Buyer RAG] Possible injection response detected, returning safe fallback.');
+                    return res.json({
+                      success: true,
+                      action_executed: 'getBuyerProductRecommendations',
+                      ai_message: md,
+                      products: ragProducts.slice(0, 10)
+                    });
+                  }
                   return res.json({
                     success: true,
                     action_executed: 'getBuyerProductRecommendations',
@@ -2059,10 +2041,17 @@ function registerCopilotRoutes(app, pool) {
                     products: ragProducts.slice(0, 10)
                   });
                 }
+              } else {
+                const errText = await ollamaRagRes.text();
+                console.error('[Buyer RAG] Ollama HTTP error:', ollamaRagRes.status, errText);
               }
+            } else {
+              console.warn('[Buyer RAG] No suitable chat model found in Ollama. Install one with: ollama pull llama3.2');
             }
           }
-        } catch (ollamaErr) { /* Ollama not running */ }
+        } catch (ollamaErr) {
+          console.error('[Buyer RAG] Ollama connection error:', ollamaErr.message);
+        }
 
         // Final fallback: return structured regex result
         return res.json({
