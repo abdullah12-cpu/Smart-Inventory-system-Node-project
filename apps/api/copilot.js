@@ -1035,7 +1035,8 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
   const lowerMsg = message.toLowerCase();
 
   // ── DISTRIBUTOR PARTNER FALLBACKS ──────────────────────────────────────────
-  if (role === 'DISTRIBUTOR' || /\b(wholesale|distributor|quotation|quote|bid|order|po|ledger|credit limit)\b/i.test(lowerMsg)) {
+  // All DISTRIBUTOR role messages are handled here exclusively — no keyword gate needed
+  if (role === 'DISTRIBUTOR') {
     // Prompt action 1: Request Quotation via Prompt
     const isQuoteCreate = /\b(request|create|submit|add)\s+(?:a\s+)?(?:quote|quotation)\b/i.test(lowerMsg) ||
       /\b(quote|quotation)\s+(?:for|request|requesting)\b/i.test(lowerMsg);
@@ -2394,7 +2395,8 @@ function registerCopilotRoutes(app, pool) {
     const ALLOWED_KEYWORDS = [...STATIC_KEYWORDS, ...dbKeywords];
     const hasKeyword = ALLOWED_KEYWORDS.some(kw => lowerMsg.includes(kw));
 
-    if (!hasKeyword) {
+    // Keyword gate only applies to ADMIN role — distributor and buyer have their own handlers
+    if (!hasKeyword && role === 'ADMIN') {
       return res.json({
         success: true,
         ai_message: `I can only assist with the registered operations: product catalog inventory management.`
