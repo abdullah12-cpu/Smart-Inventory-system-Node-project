@@ -244,6 +244,12 @@ async function initDb() {
       ON CONFLICT (email) DO NOTHING;
     `);
 
+    // Clean up legacy auto-created B2C quotations and unapproved quote request orders
+    await client.query(`DELETE FROM quotations WHERE quotation_number LIKE 'QUO-2026-%'`);
+    await client.query(`DELETE FROM orders WHERE items_summary LIKE 'B2B Order request%' OR (order_type = 'B2B' AND order_number LIKE 'ORD-2026-%' AND status IN ('PENDING', 'REJECTED', 'DRAFT'))`);
+
+
+
     // Seed predefined products with proper image URLs
     const prodCountResult = await client.query('SELECT COUNT(*) FROM products');
     if (parseInt(prodCountResult.rows[0].count) === 0) {
@@ -713,24 +719,7 @@ app.post('/api/orders', async (req, res) => {
       ]
     );
 
-    // If order type is B2C (placed by a buyer/retailer), auto-generate a matching Quotation in status 'NEGOTIATING' for the distributor
-    if (ord.order_type === 'B2C') {
-      const quoteId = `q-${Date.now()}`;
-      const quoteNumber = `QUO-2026-${ord.order_number.split('-')[2]}`;
-      await pool.query(
-        `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          quoteId,
-          quoteNumber,
-          'NEGOTIATING',
-          ord.total_amount,
-          new Date(Date.now() + 15*24*60*60*1000).toISOString(),
-          new Date().toISOString()
-        ]
-      );
-    }
-
+    // Buyer orders (B2C) remain exclusively as orders and do not create quotations
     const row = result.rows[0];
     const savedOrder = {
       order_id: row.order_id,

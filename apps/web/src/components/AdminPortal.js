@@ -58,7 +58,7 @@ function PaymentMethodIcon({ method }) {
   }
 }
 
-function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldReduceMotion }) {
+function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldReduceMotion, hasNotification }) {
   const isActive = activeTab === id;
   const href = `?tab=${id}`;
   return /* @__PURE__ */ jsxs(
@@ -71,7 +71,7 @@ function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldRed
           setActiveTab(id);
         }
       },
-      className: `sidebar-link w-full text-left border-0 bg-transparent relative flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold transition-colors duration-200 cursor-pointer overflow-hidden no-underline ${isActive ? "text-white" : "text-[#94A3B8] hover:text-white"
+      className: `sidebar-link w-full text-left border-0 bg-transparent relative flex items-center justify-between px-3 py-2.5 rounded-lg font-semibold transition-colors duration-200 cursor-pointer overflow-hidden no-underline ${isActive ? "text-white" : "text-[#94A3B8] hover:text-white"
         }`,
       style: { background: "transparent", textDecoration: "none" },
       children: [
@@ -96,10 +96,16 @@ function SidebarLink({ id, label, icon: Icon, activeTab, setActiveTab, shouldRed
         /* @__PURE__ */ jsxs(motion.div, {
           whileHover: shouldReduceMotion || isActive ? {} : { x: 3 },
           transition: { duration: 0.15 },
-          className: "flex items-center gap-3 w-full",
+          className: "flex items-center justify-between w-full",
           children: [
-            /* @__PURE__ */ jsx(Icon, { size: 18, className: isActive ? "text-white" : "text-[#94A3B8] group-hover:text-white" }),
-            /* @__PURE__ */ jsx("span", { children: label })
+            /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+              /* @__PURE__ */ jsx(Icon, { size: 18, className: isActive ? "text-white" : "text-[#94A3B8] group-hover:text-white" }),
+              /* @__PURE__ */ jsx("span", { children: label })
+            ] }),
+            hasNotification && /* @__PURE__ */ jsxs("span", { className: "relative flex h-2.5 w-2.5 flex-shrink-0 ml-auto", children: [
+              /* @__PURE__ */ jsx("span", { className: "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" }),
+              /* @__PURE__ */ jsx("span", { className: "relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" })
+            ] })
           ]
         })
       ]
@@ -394,11 +400,72 @@ export default function AdminPortal({ onLogout }) {
   }, [invoices, allocInvoiceId]);
 
   const handleApproveOrder = async (orderId) => {
-    const success = await approveOrder(orderId);
+    const success = await approveOrder(orderId, "APPROVED");
     if (success) {
       alert("Order approved successfully!");
     } else {
       alert("Failed to approve order.");
+    }
+  };
+
+  const handleApproveBuyerOrder = async (order) => {
+    let orderItems = [];
+    if (Array.isArray(order.items)) {
+      orderItems = order.items;
+    } else if (typeof order.items === "string") {
+      try {
+        orderItems = JSON.parse(order.items);
+      } catch (e) {
+        orderItems = [];
+      }
+    }
+
+    let stockSufficient = true;
+    let failedItemName = "";
+    let requiredQty = 0;
+    let availableQty = 0;
+
+    for (const item of orderItems) {
+      const prod = products.find(
+        (p) => p.product_id === item.product_id || p.sku === item.sku || p.product_name === item.product_name
+      );
+      const req = item.qty || item.quantity || 1;
+      if (prod) {
+        const avail = Array.isArray(prod.inventory)
+          ? prod.inventory.reduce((sum, inv) => sum + (inv.available_quantity ?? inv.quantity ?? 0), 0)
+          : 0;
+        if (avail < req) {
+          stockSufficient = false;
+          failedItemName = prod.product_name;
+          requiredQty = req;
+          availableQty = avail;
+          break;
+        }
+      } else {
+        stockSufficient = false;
+        failedItemName = item.product_name || item.sku || "Ordered Item";
+        requiredQty = req;
+        availableQty = 0;
+        break;
+      }
+    }
+
+    if (!stockSufficient) {
+      alert(
+        `⚠️ Stock Check Failed for ${order.order_number}:\n\n` +
+        `Item: "${failedItemName}"\n` +
+        `Required Quantity: ${requiredQty}\n` +
+        `Available Inventory: ${availableQty}\n\n` +
+        `Cannot approve order due to insufficient stock.`
+      );
+      return;
+    }
+
+    const success = await approveOrder(order.order_id, "APPROVED");
+    if (success) {
+      alert(`✅ Stock verified! Buyer Order ${order.order_number} approved successfully.`);
+    } else {
+      alert(`Failed to approve order ${order.order_number}.`);
     }
   };
 
@@ -535,9 +602,9 @@ export default function AdminPortal({ onLogout }) {
           /* @__PURE__ */ jsx(SidebarLink, { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, activeTab, setActiveTab, shouldReduceMotion }),
           /* @__PURE__ */ jsx(SidebarLink, { id: "products", label: "Products", icon: Box, activeTab, setActiveTab, shouldReduceMotion }),
           canAccessSuppliers && /* @__PURE__ */ jsx(SidebarLink, { id: "suppliers", label: "Suppliers", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
-          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "orders", label: "Orders", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "orders", label: "Orders", icon: Database, activeTab, setActiveTab, shouldReduceMotion, hasNotification: (orders || []).some(o => ["PENDING", "PROCEED", "DRAFT"].includes(o.status?.toUpperCase())) }),
           canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "billing", label: "Billing & Payments", icon: Receipt, activeTab, setActiveTab, shouldReduceMotion }),
-          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "negotiations", label: "Quotations", icon: Database, activeTab, setActiveTab, shouldReduceMotion }),
+          canAccessBilling && /* @__PURE__ */ jsx(SidebarLink, { id: "negotiations", label: "Quotations", icon: Database, activeTab, setActiveTab, shouldReduceMotion, hasNotification: (quotations || []).some(q => ["PENDING", "NEGOTIATING", "DRAFT", "SENT", "UNDER_REVIEW"].includes(q.status?.toUpperCase())) }),
           /* @__PURE__ */ jsx(SidebarLink, { id: "distributors", label: "Distributors", icon: Users, activeTab, setActiveTab, shouldReduceMotion }),
           /* @__PURE__ */ jsx(SidebarLink, { id: "settings", label: "Settings", icon: Settings, activeTab, setActiveTab, shouldReduceMotion })
         ]
@@ -1613,17 +1680,32 @@ export default function AdminPortal({ onLogout }) {
                                   }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx(OrderStatusBadge, { status: o.status }) }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(o.total_amount) }),
-                        /* @__PURE__ */ jsxs("td", {
-                                    className: "px-6 py-3.5 text-center flex justify-center gap-1.5", children: [
-                                      (o.status === "PROCEED" || o.status === "PENDING" || o.status === "CONFIRMED" || o.status === "PROCESSING") && (
-                            /* @__PURE__ */ jsx("button", {
-                                        onClick: () => handleShipOrder(o.order_id),
-                                        className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
-                                        children: "Ship"
-                                      })
-                                      )
-                                    ]
-                                  })
+                        /* @__PURE__ */ jsx("td", {
+                          className: "px-6 py-3.5 text-center",
+                          children: (() => {
+                            if (o.status === "PENDING" || o.status === "PROCEED" || o.status === "DRAFT") {
+                              return /* @__PURE__ */ jsx("button", {
+                                onClick: () => handleApproveBuyerOrder(o),
+                                className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                children: "Approve"
+                              });
+                            }
+                            if (o.status === "APPROVED" || o.status === "CONFIRMED" || o.status === "READY_TO_SHIP" || o.status === "PROCESSING") {
+                              return /* @__PURE__ */ jsx("button", {
+                                onClick: () => handleShipOrder(o.order_id),
+                                className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                children: "Ship"
+                              });
+                            }
+                            if (o.status === "SHIPPED") {
+                              return /* @__PURE__ */ jsx("span", {
+                                className: "px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold",
+                                children: "Shipped"
+                              });
+                            }
+                            return /* @__PURE__ */ jsx("span", { className: "text-[10px] text-slate-500 font-medium", children: o.status });
+                          })()
+                        })
                                   ]
                                 },
                                 o.order_id
@@ -1702,35 +1784,35 @@ export default function AdminPortal({ onLogout }) {
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-center", children: /* @__PURE__ */ jsx(OrderStatusBadge, { status: o.status }) }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(o.total_amount) }),
                         /* @__PURE__ */ jsx("td", {
-                                    className: "px-6 py-3.5 text-center", children: (() => {
-                                      const associatedInv = invoices.find(
-                                        i => i.order_number === o.order_number || i.order_id === o.order_id || i.invoice_number.replace('INV-', 'ORD-') === o.order_number
-                                      );
-                                      const isPaid = associatedInv ? associatedInv.status === "PAID" : false;
+                          className: "px-6 py-3.5 text-center", children: (() => {
+                            const associatedInv = invoices.find(
+                              i => i.order_number === o.order_number || i.order_id === o.order_id || i.invoice_number.replace('INV-', 'ORD-') === o.order_number
+                            );
+                            const isPaid = associatedInv ? associatedInv.status === "PAID" : false;
 
-                                      if (o.status === "PENDING") {
-                                        return /* @__PURE__ */ jsx("button", {
-                                          onClick: () => handleApproveOrder(o.order_id),
-                                          className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
-                                          children: "Approve"
-                                        });
-                                      }
+                            if (o.status === "PENDING" || o.status === "PROCEED" || o.status === "DRAFT") {
+                              return /* @__PURE__ */ jsx("button", {
+                                onClick: () => handleApproveBuyerOrder(o),
+                                className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                children: "Approve"
+                              });
+                            }
 
-                                      if (o.status === "READY_TO_SHIP" || (isPaid && o.status !== "SHIPPED" && o.status !== "CANCELLED")) {
-                                        return /* @__PURE__ */ jsx("button", {
-                                          onClick: () => handleShipOrder(o.order_id),
-                                          className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
-                                          children: "Ship"
-                                        });
-                                      }
+                            if (o.status === "APPROVED" || o.status === "CONFIRMED" || o.status === "PROCESSING" || o.status === "READY_TO_SHIP" || (isPaid && o.status !== "SHIPPED" && o.status !== "CANCELLED")) {
+                              return /* @__PURE__ */ jsx("button", {
+                                onClick: () => handleShipOrder(o.order_id),
+                                className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                children: "Ship"
+                              });
+                            }
 
-                                      if (o.status === "SHIPPED") {
-                                        return /* @__PURE__ */ jsx("span", { className: "text-[10px] font-bold text-blue-600", children: "Shipped" });
-                                      }
+                            if (o.status === "SHIPPED") {
+                              return /* @__PURE__ */ jsx("span", { className: "px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold rounded", children: "Shipped" });
+                            }
 
-                                      return /* @__PURE__ */ jsx("span", { className: "px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded", children: "Awaiting Invoice Payment" });
-                                    })()
-                                  })
+                            return /* @__PURE__ */ jsx("span", { className: "px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded", children: "Awaiting Invoice Payment" });
+                          })()
+                        })
                                   ]
                                 },
                                 o.order_id

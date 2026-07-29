@@ -460,12 +460,12 @@ export function StoreProvider({ children }) {
     [orders, currentUser, products]
   );
   const approveOrder = useCallback(
-    async (orderId) => {
+    async (orderId, targetStatus = "APPROVED") => {
       try {
         const response = await fetch(`/api/orders/${orderId}/status`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "CONFIRMED" })
+          body: JSON.stringify({ status: targetStatus })
         });
         if (response.ok) {
           const res = await fetch("/api/orders");
@@ -479,8 +479,8 @@ export function StoreProvider({ children }) {
             table_name: "orders",
             record_id: orderId,
             action: "UPDATE",
-            performed_by: `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role_name})`,
-            notes: `Approved order request: ${orderNum} (status updated to CONFIRMED).`,
+            performed_by: `${currentUser?.first_name || 'Admin'} ${currentUser?.last_name || ''} (${currentUser?.role_name || 'Admin'})`,
+            notes: `Approved order request: ${orderNum} (status updated to ${targetStatus}).`,
             created_at: new Date().toISOString()
           };
           await fetch("/api/audit-logs", {

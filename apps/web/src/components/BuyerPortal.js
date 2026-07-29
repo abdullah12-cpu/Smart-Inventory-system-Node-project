@@ -100,7 +100,7 @@ export default function BuyerPortal({ onLogout }) {
       order_id: `o-${Date.now()}`,
       order_number: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
       order_type: "B2C",
-      status: "PROCEED",
+      status: "PENDING",
       subtotal: cartTotal,
       discount_total: 0,
       tax_total: tax,
@@ -162,10 +162,14 @@ export default function BuyerPortal({ onLogout }) {
           "button",
           {
             onClick: () => setActiveTab("orders"),
-            className: `px-4 py-2 rounded-lg font-semibold transition-all border-0 bg-transparent cursor-pointer flex items-center gap-2 ${activeTab === "orders" ? "bg-white/15 text-white shadow" : "text-[#E0E7FF] hover:bg-white/10 hover:text-white"}`,
+            className: `px-4 py-2 rounded-lg font-semibold transition-all border-0 bg-transparent cursor-pointer flex items-center gap-2 relative ${activeTab === "orders" ? "bg-white/15 text-white shadow" : "text-[#E0E7FF] hover:bg-white/10 hover:text-white"}`,
             children: [
               /* @__PURE__ */ jsx(Package, { size: 15 }),
-              /* @__PURE__ */ jsx("span", { children: "My Orders" })
+              /* @__PURE__ */ jsx("span", { children: "My Orders" }),
+              buyerOrders.some(o => ["PENDING", "PROCEED", "DRAFT"].includes(o.status?.toUpperCase())) && /* @__PURE__ */ jsxs("span", { className: "relative flex h-2 w-2 flex-shrink-0 ml-0.5", children: [
+                /* @__PURE__ */ jsx("span", { className: "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" }),
+                /* @__PURE__ */ jsx("span", { className: "relative inline-flex rounded-full h-2 w-2 bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.9)]" })
+              ] })
             ]
           }
         ),

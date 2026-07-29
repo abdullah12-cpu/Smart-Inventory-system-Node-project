@@ -402,7 +402,7 @@ export default function DistributorPortal({ onLogout }) {
       order_id: `ord-${Date.now()}`,
       order_number: orderNumber,
       order_type: "B2B",
-      status: "PROCESSING",
+      status: "PENDING",
       subtotal: subtotal,
       discount_total: 0,
       tax_total: 0,
@@ -679,17 +679,23 @@ export default function DistributorPortal({ onLogout }) {
                 setActiveTab("quotations");
               }
             },
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "quotations" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "quotations" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
-              /* @__PURE__ */ jsx(
-                FileText,
-                {
-                  size: 18,
-                  className: activeTab === "quotations" ? "text-blue-600" : ""
-                }
-              ),
-              "Quotations"
+              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+                /* @__PURE__ */ jsx(
+                  FileText,
+                  {
+                    size: 18,
+                    className: activeTab === "quotations" ? "text-blue-600" : ""
+                  }
+                ),
+                "Quotations"
+              ] }),
+              (quotations || []).some(q => ["PENDING", "NEGOTIATING", "DRAFT", "SENT", "UNDER_REVIEW"].includes(q.status?.toUpperCase())) && /* @__PURE__ */ jsxs("span", { className: "relative flex h-2.5 w-2.5 flex-shrink-0 ml-auto", children: [
+                /* @__PURE__ */ jsx("span", { className: "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" }),
+                /* @__PURE__ */ jsx("span", { className: "relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" })
+              ] })
             ]
           }
         ),
@@ -703,17 +709,23 @@ export default function DistributorPortal({ onLogout }) {
                 setActiveTab("orders");
               }
             },
-            className: `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "orders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
+            className: `flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200 border-0 cursor-pointer no-underline ${activeTab === "orders" ? "bg-blue-50 text-blue-700" : "text-[#64748B] bg-transparent hover:bg-slate-50 hover:text-[#0F172A]"}`,
             style: { textDecoration: "none" },
             children: [
-              /* @__PURE__ */ jsx(
-                Package,
-                {
-                  size: 18,
-                  className: activeTab === "orders" ? "text-blue-600" : ""
-                }
-              ),
-              "Orders"
+              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+                /* @__PURE__ */ jsx(
+                  Package,
+                  {
+                    size: 18,
+                    className: activeTab === "orders" ? "text-blue-600" : ""
+                  }
+                ),
+                "Orders"
+              ] }),
+              (orders || []).some(o => ["PENDING", "PROCEED", "DRAFT"].includes(o.status?.toUpperCase())) && /* @__PURE__ */ jsxs("span", { className: "relative flex h-2.5 w-2.5 flex-shrink-0 ml-auto", children: [
+                /* @__PURE__ */ jsx("span", { className: "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" }),
+                /* @__PURE__ */ jsx("span", { className: "relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" })
+              ] })
             ]
           }
         ),
@@ -1684,41 +1696,6 @@ export default function DistributorPortal({ onLogout }) {
                     };
                     const success = await submitQuotationRequest(quoteData);
                     if (success) {
-                      // Post a matching pending B2B order record so the Admin sees it in their Orders list
-                      const orderPayload = {
-                        order_id: `ord-${Date.now()}`,
-                        order_number: quoteData.quotation_number.replace("QUO-", "ORD-"),
-                        order_type: "B2B",
-                        status: "PENDING",
-                        subtotal: total,
-                        discount_total: 0,
-                        tax_total: 0,
-                        total_amount: total,
-                        currency: "PKR",
-                        order_date: new Date().toISOString(),
-                        items_summary: `B2B Order request from ${currentUser?.business_name || currentUser?.email || "Distributor"}`,
-                        items: draftItems.map((item) => ({
-                          product_id: item.product_id,
-                          product_name: item.name,
-                          price: item.price,
-                          qty: item.qty
-                        })),
-                        customer_email: currentUser?.email || "distributor@commerceiq.com"
-                      };
-                      try {
-                        const orderRes = await fetch("/api/orders", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify(orderPayload)
-                        });
-                        if (orderRes.ok) {
-                          const ordRes = await fetch("/api/orders");
-                          if (ordRes.ok) setOrders(await ordRes.json());
-                        }
-                      } catch (err) {
-                        console.error("Error creating B2B order request:", err);
-                      }
-
                       setDraftModalOpen(false);
                       setDraftItems([]);
                       setActionToast("Quote Request formally submitted to vendor!");
