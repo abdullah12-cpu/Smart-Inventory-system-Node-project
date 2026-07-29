@@ -78,7 +78,10 @@ function buildProductText(product) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. Generate embedding for a product and store it in the DB
+// 3. Generate embeddings for a product and store in BOTH portal columns
+//    embedding_buyer       ← built from retail-focused text (retail price, specs)
+//    embedding_distributor ← built from wholesale-focused text (wholesale price, MOQ, discount)
+//    The two columns are completely independent — no cross-contamination.
 // ─────────────────────────────────────────────────────────────────────────────
 async function upsertProductEmbedding(pool, product) {
   const productId = product.product_id;
@@ -88,20 +91,23 @@ async function upsertProductEmbedding(pool, product) {
   }
 
   try {
-    const text   = buildProductText(product);
-    const vector = await generateEmbedding(text);
+    // ── Buyer embedding (retail context) ─────────────────────────────────
+    const buyerText   = buildProductText(product);
+    const buyerVector = await generateEmbedding(buyerText);
+    const buyerLiteral = `[${buyerVector.join(',')}]`;
 
-    // Store as pgvector literal: '[0.1, 0.2, ...]'
-    const vectorLiteral = `[${vector.join(',')}]`;
+    // ── Distributor embedding (wholesale context) ─────────────────────────
+    const distText    = buildWholesaleProductText(product);
+    const distVector  = await generateEmbedding(distText);
+    const distLiteral = `[${distVector.join(',')}]`;
 
     await pool.query(
-      `UPDATE products SET embedding = $1 WHERE product_id = $2`,
-      [vectorLiteral, productId]
+      `UPDATE products SET embedding_buyer = $1, embedding_distributor = $2 WHERE product_id = $3`,
+      [buyerLiteral, distLiteral, productId]
     );
 
-    console.log(`[Embeddings] ✅ Stored embedding for: "${product.product_name}" (${productId})`);
+    console.log(`[Embeddings] ✅ Stored buyer + distributor embeddings for: "${product.product_name}" (${productId})`);
   } catch (err) {
-    // Non-fatal — product is still usable, just won't have vector search
     console.error(`[Embeddings] ⚠️  Failed to embed "${product.product_name}": ${err.message}`);
   }
 }
@@ -132,24 +138,24 @@ async function vectorSearchProducts(pool, query, opts = {}) {
   const vectorLiteral = `[${queryVector.join(',')}]`;
 
   // Build dynamic SQL with optional filters
-  const conditions = [`status = 'ACTIVE'`, `embedding IS NOT NULL`];
+  const conditions = [`status = 'ACTIVE'`, `embedding_buyer IS NOT NULL`];
   const params     = [vectorLiteral];
   let   idx        = 2;
 
-  if (max_price !== null) { conditions.push(`(prices->>'RETAIL')::numeric <= $${idx}`); params.push(max_price); idx++; }
-  if (min_price !== null) { conditions.push(`(prices->>'RETAIL')::numeric >= $${idx}`); params.push(min_price); idx++; }
-  if (category)           { conditions.push(`LOWER(category) LIKE $${idx}`);            params.push(`%${category.toLowerCase()}%`); idx++; }
-  if (brand)              { conditions.push(`LOWER(brand) LIKE $${idx}`);               params.push(`%${brand.toLowerCase()}%`);    idx++; }
+  if (max_price  !== null) { conditions.push(`(prices->>'RETAIL')::numeric <= $${idx}`); params.push(max_price);  idx++; }
+  if (min_price  !== null) { conditions.push(`(prices->>'RETAIL')::numeric >= $${idx}`); params.push(min_price);  idx++; }
+  if (category)            { conditions.push(`LOWER(category) LIKE $${idx}`);            params.push(`%${category.toLowerCase()}%`); idx++; }
+  if (brand)               { conditions.push(`LOWER(brand) LIKE $${idx}`);               params.push(`%${brand.toLowerCase()}%`);    idx++; }
 
   const whereClause = conditions.join(' AND ');
 
-  // Cosine similarity: 1 - cosine_distance  (pgvector <=> operator = cosine distance)
+  // Cosine similarity using embedding_buyer column
   const sql = `
     SELECT *,
-           1 - (embedding <=> $1::vector) AS similarity
+           1 - (embedding_buyer <=> $1::vector) AS similarity
     FROM   products
     WHERE  ${whereClause}
-      AND  1 - (embedding <=> $1::vector) >= ${threshold}
+      AND  1 - (embedding_buyer <=> $1::vector) >= ${threshold}
     ORDER  BY similarity DESC
     LIMIT  $${idx}
   `;
@@ -194,9 +200,11 @@ async function backfillEmbeddings(pool) {
   let rows;
   try {
     const res = await pool.query(
-      `SELECT product_id, product_name, brand, category, short_description, unit, weight, prices
+      `SELECT product_id, product_name, brand, category, short_description, unit, weight, prices,
+              min_wholesale_qty, max_discount
        FROM products
-       WHERE status = 'ACTIVE' AND embedding IS NULL
+       WHERE status = 'ACTIVE'
+         AND (embedding_buyer IS NULL OR embedding_distributor IS NULL)
        ORDER BY created_at ASC`
     );
     rows = res.rows;
@@ -206,20 +214,18 @@ async function backfillEmbeddings(pool) {
   }
 
   if (rows.length === 0) {
-    console.log('[Embeddings] ✅ All products already have embeddings.');
+    console.log('[Embeddings] ✅ All products already have buyer + distributor embeddings.');
     return;
   }
 
-  console.log(`[Embeddings] 🔄 Backfilling embeddings for ${rows.length} product(s)...`);
+  console.log(`[Embeddings] 🔄 Backfilling buyer + distributor embeddings for ${rows.length} product(s)...`);
 
-  // Sequential to avoid overwhelming Ollama
   for (const row of rows) {
     await upsertProductEmbedding(pool, row);
-    // Small delay between calls so Ollama doesn't queue up
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 200)); // slight delay between calls
   }
 
-  console.log('[Embeddings] ✅ Backfill complete.');
+  console.log('[Embeddings] ✅ Backfill complete — both buyer and distributor embeddings stored.');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -261,7 +267,7 @@ async function vectorSearchWholesaleProducts(pool, query, opts = {}) {
 
   const vectorLiteral = `[${queryVector.join(',')}]`;
 
-  const conditions = [`status = 'ACTIVE'`, `embedding IS NOT NULL`];
+  const conditions = [`status = 'ACTIVE'`, `embedding_distributor IS NOT NULL`];
   const params     = [vectorLiteral];
   let   idx        = 2;
 
@@ -279,12 +285,13 @@ async function vectorSearchWholesaleProducts(pool, query, opts = {}) {
 
   const whereClause = conditions.join(' AND ');
 
+  // Cosine similarity using embedding_distributor column
   const sql = `
     SELECT *,
-           1 - (embedding <=> $1::vector) AS similarity
+           1 - (embedding_distributor <=> $1::vector) AS similarity
     FROM   products
     WHERE  ${whereClause}
-      AND  1 - (embedding <=> $1::vector) >= ${threshold}
+      AND  1 - (embedding_distributor <=> $1::vector) >= ${threshold}
     ORDER  BY similarity DESC
     LIMIT  $${idx}
   `;
