@@ -1561,6 +1561,33 @@ async function handleAnalyticalQuery(pool, sqlQuery) {
   return `### 📊 Analytical Report\n\n${mdHeader}\n${mdRows}`;
 }
 
+// ─── Helper: filter product cards to only those mentioned in LLM response ────
+// Prevents showing unrelated products alongside a focused LLM answer.
+// Scoring: +3 if full product name mentioned, +2 if brand mentioned, +1 if category mentioned.
+// Falls back to top ragProducts if nothing scores above 0.
+function getRelevantCards(ragProducts, llmText, maxCards = 6) {
+  if (!ragProducts || ragProducts.length === 0) return [];
+  const lower = llmText.toLowerCase();
+
+  const scored = ragProducts.map(p => {
+    let score = 0;
+    if (p.product_name && lower.includes(p.product_name.toLowerCase())) score += 3;
+    // Also check first 3 significant words of product name
+    const nameWords = (p.product_name || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    nameWords.slice(0, 3).forEach(w => { if (lower.includes(w)) score += 1; });
+    if (p.brand    && lower.includes(p.brand.toLowerCase()))    score += 2;
+    if (p.category && lower.includes(p.category.toLowerCase())) score += 1;
+    return { ...p, _score: score };
+  });
+
+  // Return products that scored > 0, sorted by score desc, capped at maxCards
+  const relevant = scored.filter(p => p._score > 0).sort((a, b) => b._score - a._score);
+  if (relevant.length > 0) return relevant.slice(0, maxCards);
+
+  // Nothing matched text — return top-scored ragProducts (most semantically relevant)
+  return ragProducts.slice(0, maxCards);
+}
+
 function registerCopilotRoutes(app, pool) {
   const handleChat = async (req, res, defaultRole) => {
     const { message, history, attached_image, portal_role, user_name } = req.body;
@@ -2082,14 +2109,14 @@ function registerCopilotRoutes(app, pool) {
                       success: true,
                       action_executed: 'getBuyerProductRecommendations',
                       ai_message: md,
-                      products: ragProducts.slice(0, 10)
+                      products: getRelevantCards(ragProducts, ragText)
                     });
                   }
                   return res.json({
                     success: true,
                     action_executed: 'getBuyerProductRecommendations',
                     ai_message: ragText,
-                    products: ragProducts.slice(0, 10)
+                    products: getRelevantCards(ragProducts, ragText)
                   });
                 }
               } else {
@@ -2109,7 +2136,7 @@ function registerCopilotRoutes(app, pool) {
           success: true,
           action_executed: 'getBuyerProductRecommendations',
           ai_message: md,
-          products: (ragProducts && ragProducts.length > 0 ? ragProducts : products).slice(0, 10)
+          products: getRelevantCards(ragProducts && ragProducts.length > 0 ? ragProducts : products, md)
         });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ Error finding products: ${err.message}` });
