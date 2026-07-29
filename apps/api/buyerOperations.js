@@ -8,7 +8,7 @@
 // Product Recommendations
 // ─────────────────────────────────────────────────────────────────────────────
 async function getBuyerProductRecommendationsFromDb(pool, args = {}) {
-  const { query, max_price, category, brand, features } = args;
+  const { query, max_price, min_price, category, brand, features, sort_by } = args;
 
   let sql = `SELECT * FROM products WHERE status = 'ACTIVE'`;
   const params = [];
@@ -56,6 +56,12 @@ async function getBuyerProductRecommendationsFromDb(pool, args = {}) {
     products = products.filter(p => p.retail_price <= limit);
   }
 
+  // Filter by Min Price in PKR (for "above X", "more than X", "over X" queries)
+  if (min_price && !isNaN(parseFloat(min_price))) {
+    const limit = parseFloat(min_price);
+    products = products.filter(p => p.retail_price >= limit);
+  }
+
   // Natural language query & keywords filtering
   const searchTerm = (query || features || '').toLowerCase().trim();
   if (searchTerm) {
@@ -63,7 +69,9 @@ async function getBuyerProductRecommendationsFromDb(pool, args = {}) {
       'best', 'with', 'under', 'than', 'more', 'less', 'some', 'show', 'find', 'suggest', 'pkr', 'rs', 'rupees',
       'products', 'product', 'items', 'item', 'available', 'catalog', 'store', 'recommend', 'recommendation',
       'recommendations', 'search', 'get', 'list', 'give', 'me', 'all', 'the', 'for', 'please', 'similar',
-      'image', 'photo', 'picture', 'this', 'that', 'have', 'from', 'can', 'you', 'what', 'which', 'are'
+      'image', 'photo', 'picture', 'this', 'that', 'have', 'from', 'can', 'you', 'what', 'which', 'are',
+      'above', 'below', 'over', 'highest', 'lowest', 'cheapest', 'expensive', 'price', 'priced', 'budget',
+      'starting', 'greater', 'most', 'top'
     ]);
     const tokens = searchTerm.split(/\s+/).filter(t => t.length > 1 && !STOP_WORDS.has(t) && !/^\d+$/.test(t));
 
@@ -75,6 +83,18 @@ async function getBuyerProductRecommendationsFromDb(pool, args = {}) {
         return { ...p, score: matchCount };
       }).filter(p => p.score > 0)
         .sort((a, b) => b.score - a.score || a.retail_price - b.retail_price);
+    }
+  }
+
+  // Apply sorting
+  if (sort_by) {
+    const sortKey = sort_by.toLowerCase();
+    if (sortKey === 'price_high' || sortKey === 'highest' || sortKey === 'most_expensive') {
+      products.sort((a, b) => b.retail_price - a.retail_price);
+    } else if (sortKey === 'price_low' || sortKey === 'cheapest' || sortKey === 'lowest') {
+      products.sort((a, b) => a.retail_price - b.retail_price);
+    } else if (sortKey === 'name') {
+      products.sort((a, b) => a.product_name.localeCompare(b.product_name));
     }
   }
 

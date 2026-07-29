@@ -489,15 +489,17 @@ function getAdminTools(isGemini = false) {
 
   const fnGetBuyerProductRecommendations = {
     name: 'getBuyerProductRecommendations',
-    description: 'Searches and recommends retail catalog products based on buyer budget limits in PKR, category, brand, features, or natural language query.',
+    description: 'Searches and recommends retail catalog products based on buyer budget limits in PKR, category, brand, features, sorting, or natural language query. Supports both max_price (under/below) and min_price (above/over) filters.',
     parameters: {
       type: isGemini ? 'OBJECT' : 'object',
       properties: {
         query: { type: isGemini ? 'STRING' : 'string', description: 'Search term or product description (e.g. wireless headphones).' },
-        max_price: { type: isGemini ? 'NUMBER' : 'number', description: 'Maximum budget limit in PKR (e.g. 15000).' },
-        category: { type: isGemini ? 'STRING' : 'string', description: 'Product category filter (e.g. Headphones, Electronics, Laptops).' },
-        brand: { type: isGemini ? 'STRING' : 'string', description: 'Brand filter (e.g. Sony, Logitech, Dell).' },
-        features: { type: isGemini ? 'STRING' : 'string', description: 'Key features requested (e.g. active noise cancellation, bluetooth).' }
+        max_price: { type: isGemini ? 'NUMBER' : 'number', description: 'Maximum budget limit in PKR (e.g. 15000). Use for "under", "below", "less than" queries.' },
+        min_price: { type: isGemini ? 'NUMBER' : 'number', description: 'Minimum price in PKR (e.g. 200000). Use for "above", "over", "more than" queries.' },
+        category: { type: isGemini ? 'STRING' : 'string', description: 'Product category filter (e.g. Headphones, Electronics, Laptops, Graphics Card, CPU).' },
+        brand: { type: isGemini ? 'STRING' : 'string', description: 'Brand filter (e.g. Sony, Logitech, Dell, NVIDIA, AMD).' },
+        features: { type: isGemini ? 'STRING' : 'string', description: 'Key features requested (e.g. active noise cancellation, bluetooth).' },
+        sort_by: { type: isGemini ? 'STRING' : 'string', enum: ['price_high', 'price_low', 'name'], description: 'Sort order: price_high (most expensive first), price_low (cheapest first), name (alphabetical). Use price_high for "highest price", "most expensive" queries.' }
       }
     }
   };
@@ -522,15 +524,17 @@ function getBuyerTools(isGemini = false) {
   const tools = [
     {
       name: 'getBuyerProductRecommendations',
-      description: 'Search and recommend retail catalog products by budget (max_price in PKR), category, brand, or natural language query/features.',
+      description: 'Search and recommend retail catalog products by budget (max_price or min_price in PKR), category, brand, sorting, or natural language query/features. Supports "above X" (min_price) and "under X" (max_price) price filters.',
       parameters: {
         type: T('object'),
         properties: {
           query:     { type: T('string'), description: 'Natural language search term, e.g. "wireless headphones", "gaming monitor".' },
-          max_price: { type: T('number'), description: 'Maximum budget in PKR, e.g. 15000.' },
-          category:  { type: T('string'), description: 'Product category, e.g. Laptops, Headphones, Networking.' },
-          brand:     { type: T('string'), description: 'Brand name, e.g. Sony, Dell, Logitech.' },
-          features:  { type: T('string'), description: 'Key feature requirements, e.g. "noise cancellation", "bluetooth 5.0".' }
+          max_price: { type: T('number'), description: 'Maximum budget in PKR, e.g. 15000. For "under", "below", "less than" queries.' },
+          min_price: { type: T('number'), description: 'Minimum price in PKR, e.g. 200000. For "above", "over", "more than" queries.' },
+          category:  { type: T('string'), description: 'Product category, e.g. Laptops, Headphones, Networking, Graphics Card, CPU.' },
+          brand:     { type: T('string'), description: 'Brand name, e.g. Sony, Dell, Logitech, NVIDIA, AMD.' },
+          features:  { type: T('string'), description: 'Key feature requirements, e.g. "noise cancellation", "bluetooth 5.0".' },
+          sort_by:   { type: T('string'), description: 'Sort: price_high (most expensive first), price_low (cheapest first), name. Use for "highest price", "cheapest" queries.' }
         }
       }
     },
@@ -789,8 +793,14 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
     const products = await getBuyerProductRecommendationsFromDb(pool, args);
     let md = `### 🛍️ Recommended Products for You\n\n`;
     if (args.max_price) md += `*Showing products up to **Rs ${Number(args.max_price).toLocaleString()}***\n\n`;
+    if (args.min_price) md += `*Showing products above **Rs ${Number(args.min_price).toLocaleString()}***\n\n`;
+    if (args.sort_by === 'price_high') md += `*Sorted by highest price first*\n\n`;
+    else if (args.sort_by === 'price_low') md += `*Sorted by lowest price first*\n\n`;
     if (products.length === 0) {
-      md += `Sorry, no products matched your criteria. Try expanding your budget or searching with different keywords!`;
+      let criteria = '';
+      if (args.max_price) criteria += ` under Rs ${Number(args.max_price).toLocaleString()}`;
+      if (args.min_price) criteria += ` above Rs ${Number(args.min_price).toLocaleString()}`;
+      md += `Sorry, no products matched your criteria${criteria}. Try expanding your budget or searching with different keywords!`;
     } else {
       md += products.slice(0, 10).map((p, idx) => {
         const stockStatus = p.available_stock > 0 ? `In Stock (${p.available_stock} available)` : `⚠️ Out of Stock`;
@@ -1731,13 +1741,36 @@ function registerCopilotRoutes(app, pool) {
           }
         }
 
-        // Extract max price from the message
-        const priceMatch = message.match(/(?:under|below|less\s+than|up\s+to|max(?:imum)?|within)\s+(?:rs\.?\s*)?(\d[\d,]*)/i)
-          || message.match(/(?:rs\.?\s*)?(\d[\d,]+)\s+(?:budget|pkr|rupees?)/i);
-        const maxPrice = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : null;
+        // Extract max price from the message (under/below/less than/up to/within)
+        const priceMatch = message.match(/(?:under|below|less\s+than|up\s+to|max(?:imum)?|within)\s+(?:rs\.?\s*)?(\d[\d,]*\s*k?\b)/i)
+          || message.match(/(?:rs\.?\s*)?(\d[\d,]+\s*k?)\s+(?:budget|pkr|rupees?)/i);
+        let maxPrice = null;
+        if (priceMatch) {
+          let val = priceMatch[1].replace(/,/g, '').trim();
+          if (/k$/i.test(val)) val = parseFloat(val) * 1000;
+          maxPrice = parseFloat(val) || null;
+        }
+
+        // Extract min price from the message (above/over/more than/greater than/starting from/at least)
+        const minPriceMatch = message.match(/(?:above|over|more\s+than|greater\s+than|starting\s+from|at\s+least|minimum)\s+(?:rs\.?\s*)?(\d[\d,]*\s*k?\b)/i)
+          || message.match(/(?:rs\.?\s*)?(\d[\d,]+\s*k?)\s+(?:and\s+above|or\s+more|\+)/i);
+        let minPrice = null;
+        if (minPriceMatch) {
+          let val = minPriceMatch[1].replace(/,/g, '').trim();
+          if (/k$/i.test(val)) val = parseFloat(val) * 1000;
+          minPrice = parseFloat(val) || null;
+        }
+
+        // Detect sort intent (highest price, cheapest, most expensive, lowest price)
+        let sortBy = null;
+        if (/\b(highest\s*(?:price|priced)?|most\s+expensive|priciest|costliest)\b/i.test(lowerMsg2)) {
+          sortBy = 'price_high';
+        } else if (/\b(lowest\s*(?:price|priced)?|cheapest|most\s+affordable|budget|least\s+expensive)\b/i.test(lowerMsg2)) {
+          sortBy = 'price_low';
+        }
 
         // Extract category hint
-        const catMatch = lowerMsg2.match(/\b(laptop|laptops|headphone|headphones|mouse|keyboard|monitor|phone|mobile|tablet|camera|printer|speaker|earphone|earbuds|gaming|networking|cable|router|switch|ssd|hard\s*disk|storage)\b/i);
+        const catMatch = lowerMsg2.match(/\b(laptop|laptops|headphone|headphones|mouse|keyboard|monitor|phone|mobile|tablet|camera|printer|speaker|earphone|earbuds|gaming|networking|cable|router|switch|ssd|hard\s*disk|storage|gpu|graphics\s*card|cpu|processor)\b/i);
         const category = visualCategory || (catMatch ? catMatch[1] : null);
 
         // Extract brand hint
@@ -1746,9 +1779,10 @@ function registerCopilotRoutes(app, pool) {
 
         // Strip budget/price phrasing from query so it doesn't pollute keyword search
         const strippedMessage = message
-          .replace(/(?:under|below|less\s+than|up\s+to|max(?:imum)?|within|at\s+most)\s+(?:rs\.?\s*)?\d[\d,]*/gi, '')
-          .replace(/(?:rs\.?\s*)?\d[\d,]+\s+(?:budget|pkr|rupees?)/gi, '')
-          .replace(/\b(?:suggest|show|find|recommend|list|give|me|some|products?|items?|best|good|pkr|rupees?|rs)\b/gi, '')
+          .replace(/(?:under|below|less\s+than|up\s+to|max(?:imum)?|within|at\s+most)\s+(?:rs\.?\s*)?\d[\d,]*\s*k?\b/gi, '')
+          .replace(/(?:above|over|more\s+than|greater\s+than|starting\s+from|at\s+least|minimum)\s+(?:rs\.?\s*)?\d[\d,]*\s*k?\b/gi, '')
+          .replace(/(?:rs\.?\s*)?\d[\d,]+\s*k?\s+(?:budget|pkr|rupees?|and\s+above|or\s+more)/gi, '')
+          .replace(/\b(?:suggest|show|find|recommend|list|give|me|some|products?|items?|best|good|pkr|rupees?|rs|highest|lowest|cheapest|most\s+expensive|price|priced|top)\b/gi, '')
           .replace(/\s{2,}/g, ' ')
           .trim();
 
@@ -1762,8 +1796,10 @@ function registerCopilotRoutes(app, pool) {
           products = await getBuyerProductRecommendationsFromDb(pool, {
             query: searchQuery,
             max_price: maxPrice,
+            min_price: minPrice,
             category,
-            brand
+            brand,
+            sort_by: sortBy
           });
 
           // If visual search returned 0 results but we have an exact catalog name, retry with that name directly
@@ -1771,8 +1807,10 @@ function registerCopilotRoutes(app, pool) {
             products = await getBuyerProductRecommendationsFromDb(pool, {
               query: visualCatalogName,
               max_price: maxPrice,
+              min_price: minPrice,
               category: null,
-              brand: null
+              brand: null,
+              sort_by: sortBy
             });
           }
 
@@ -1781,8 +1819,10 @@ function registerCopilotRoutes(app, pool) {
             products = await getBuyerProductRecommendationsFromDb(pool, {
               query: '',
               max_price: maxPrice,
+              min_price: minPrice,
               category,
-              brand
+              brand,
+              sort_by: sortBy
             });
           }
         }
@@ -1790,12 +1830,18 @@ function registerCopilotRoutes(app, pool) {
         let md = `### 🛍️ ${attached_image ? '📷 Visual Search Results' : 'Recommended Products for You'}\n\n`;
         if (attached_image && usedVisionEngine) md += `*Analyzed via **${usedVisionEngine}**:*\n\n`;
         if (maxPrice) md += `*Showing products up to **Rs ${maxPrice.toLocaleString()}***\n\n`;
+        if (minPrice) md += `*Showing products above **Rs ${minPrice.toLocaleString()}***\n\n`;
+        if (sortBy === 'price_high') md += `*Sorted by highest price first*\n\n`;
+        else if (sortBy === 'price_low') md += `*Sorted by lowest price first*\n\n`;
 
         if (products.length === 0) {
           if (attached_image) {
             md += `ℹ️ No matching products found in the store catalog for this image. Try uploading a photo of electronics, cables, or hardware items available in our store!`;
           } else {
-            md += `Sorry, no products matched your criteria${maxPrice ? ` under Rs ${maxPrice.toLocaleString()}` : ''}. Try adjusting your budget or searching with different keywords!`;
+            let criteria = '';
+            if (maxPrice) criteria += ` under Rs ${maxPrice.toLocaleString()}`;
+            if (minPrice) criteria += ` above Rs ${minPrice.toLocaleString()}`;
+            md += `Sorry, no products matched your criteria${criteria}. Try adjusting your budget or searching with different keywords!`;
           }
         } else {
           md += products.slice(0, 10).map((p, idx) => {
@@ -1809,10 +1855,12 @@ function registerCopilotRoutes(app, pool) {
         }
 
         // ── Fast-path return: image search or explicit product search with results ──
-        // Only return immediately if: it's a visual search, OR the regex found clear
-        // product intent (category/brand/price hit) with actual results.
-        const hadExplicitProductIntent = !!(visualQuery || category || brand || maxPrice || searchQuery.trim());
-        if (attached_image || (hadExplicitProductIntent && products.length > 0)) {
+        // Return immediately if: it's a visual search, OR the regex found clear
+        // product intent (category/brand/price/sort hit) with actual results,
+        // OR it's a bare "suggest me" type request (show all products).
+        const hadExplicitProductIntent = !!(visualQuery || category || brand || maxPrice || minPrice || sortBy || searchQuery.trim());
+        const isBareRecommendRequest = /^\s*(suggest|show|recommend|find|list|give)\s*(me)?\s*(some|all|the)?\s*(products?|items?)?\s*$/i.test(message.trim());
+        if (attached_image || (hadExplicitProductIntent && products.length > 0) || (isBareRecommendRequest && products.length > 0)) {
           return res.json({
             success: true,
             action_executed: 'getBuyerProductRecommendations',
