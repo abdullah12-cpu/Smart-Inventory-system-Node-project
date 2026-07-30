@@ -367,8 +367,19 @@ async function initDb() {
         }
         console.log(`[DbInit] Successfully auto-enriched ${unEnriched.rows.length} quotation records with product details & DB list prices.`);
       }
+
+      // Auto-update order items_summary for existing B2B orders generated from quotations
+      await client.query(`
+        UPDATE orders o
+        SET items_summary = q.product_name
+        FROM quotations q
+        WHERE REPLACE(o.order_number, 'ORD-', 'QUO-') = q.quotation_number
+          AND q.product_name IS NOT NULL
+          AND (o.items_summary LIKE 'Wholesale B2B Order generated from%' OR o.items_summary LIKE 'B2B Order Conversion%' OR o.items_summary LIKE 'B2B Order conversion%')
+      `);
+      console.log('[DbInit] Cleaned up order items_summary text with exact quotation product names.');
     } catch (eErr) {
-      console.error('[DbInit] Error enriching quotation records:', eErr.message);
+      console.error('[DbInit] Error enriching quotation/order records:', eErr.message);
     }
 
 
@@ -1285,7 +1296,7 @@ app.put('/api/quotations/:quotation_id/status', async (req, res) => {
               quote.total_amount || 0,
               'PKR',
               new Date().toISOString(),
-              `Wholesale B2B Order generated from ${quote.quotation_number || quotation_id}`,
+              quote.product_name && quote.product_name !== 'Wholesale Batch' ? quote.product_name : (items.length > 0 ? items.map(i => i.name || i.product_name).join(', ') : `B2B Order for ${quote.quotation_number}`),
               JSON.stringify(items),
               quote.customer_email || 'demo@commerceiq.com'
             ]

@@ -1669,7 +1669,12 @@ export default function AdminPortal({ onLogout }) {
                                 {
                                   className: "data-row border-b border-[#E2E8F0]",
                                   children: [
-                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A] max-w-xs truncate", children: o.items_summary || "No items summary" }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A] max-w-xs truncate", children: (() => {
+                          if (o.items_summary && !o.items_summary.startsWith("Wholesale B2B Order generated from") && !o.items_summary.startsWith("B2B Order Conversion") && !o.items_summary.startsWith("B2B Order conversion")) {
+                            return o.items_summary;
+                          }
+                          return o.items_summary || "B2B Order Item";
+                        })() }),
                         /* @__PURE__ */ jsx("td", {
                                     className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", {
                                       children: [
@@ -1772,7 +1777,17 @@ export default function AdminPortal({ onLogout }) {
                                 {
                                   className: "data-row border-b border-[#E2E8F0]",
                                   children: [
-                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A] max-w-xs truncate", children: o.items_summary || "No items summary" }),
+                        /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 font-bold text-[#0F172A] max-w-xs truncate", children: (() => {
+                          if (o.items_summary && !o.items_summary.startsWith("Wholesale B2B Order generated from") && !o.items_summary.startsWith("B2B Order Conversion") && !o.items_summary.startsWith("B2B Order conversion")) {
+                            return o.items_summary;
+                          }
+                          const quoteNo = o.order_number ? o.order_number.replace("ORD-", "QUO-") : "";
+                          const qMatch = (quotations || []).find(q => q.quotation_number === quoteNo || q.quotation_id === quoteNo);
+                          if (qMatch && qMatch.product_name && qMatch.product_name !== "Wholesale Batch") {
+                            return qMatch.product_name;
+                          }
+                          return o.items_summary || "Wholesale B2B Item";
+                        })() }),
                         /* @__PURE__ */ jsx("td", {
                                     className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", {
                                       children: [

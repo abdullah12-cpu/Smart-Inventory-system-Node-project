@@ -96,7 +96,7 @@ async function updateDistributorQuotationStatusInDb(pool, identifier, newStatus)
             quote.total_amount || 0,
             'PKR',
             new Date().toISOString(),
-            `Wholesale B2B Order generated from ${quote.quotation_number || quote.quotation_id}`,
+            quote.product_name && quote.product_name !== 'Wholesale Batch' ? quote.product_name : (items.length > 0 ? items.map(i => i.name || i.product_name).join(', ') : `B2B Order for ${quote.quotation_number}`),
             JSON.stringify(items),
             quote.customer_email || 'asim@commerceiq.com'
           ]
