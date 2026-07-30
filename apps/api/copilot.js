@@ -20,7 +20,8 @@ const {
   getDistributorOrdersFromDb, 
   getDistributorLedgerStatusFromDb,
   createDistributorQuotationInDb,
-  createDistributorDirectOrderInDb
+  createDistributorDirectOrderInDb,
+  payDistributorInvoiceInDb
 } = require('./distributorOperations');
 const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb, trackBuyerOrder, listBuyerOrdersByStatus } = require('./buyerOperations');
 const { vectorSearchProducts, vectorSearchDistributorProducts, isEmbedModelAvailable } = require('./embeddings');
@@ -1727,6 +1728,224 @@ function registerCopilotRoutes(app, pool) {
           });
         }
 
+        // --- Quotation Request Creation from Chatbot Prompt ---
+        const lowerMsg = message.toLowerCase();
+        const isQuoteCreate = /\b(request|create|submit|add|want\s+(?:to\s+)?request|propose|need)\s+(?:a\s+)?(?:quote|qoute|quotation|bid)\b/i.test(lowerMsg)
+          || /\b(quote|qoute|quotation)\s+(?:request|for|with)\b/i.test(lowerMsg)
+          || /\b(?:i\s+want\s+to|can\s+i)\s+.*(?:quote|qoute|quotation)\b/i.test(lowerMsg);
+
+        if (isQuoteCreate && !attached_image) {
+          // Parse target price (e.g. 160000 or 160,000)
+          let targetPrice = null;
+          const priceMatch = message.match(/(?:price|rate|cost|target|must\s+be|at|for)\s*(?:must\s+be\s*)?(?:rs\.?\s*)?([\d,]{4,})/i)
+            || message.match(/\b(?:rs\.?\s*)([\d,]{4,})\b/i)
+            || message.match(/\b(\d{5,})\b/i);
+          if (priceMatch) {
+            targetPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+          }
+
+          // Parse quantity (e.g. 15 or quantity of 15 / qauntity of 15)
+          let qty = 10;
+          const qtyMatch = message.match(/\b(?:qty|quantity|qauntity|units?|pcs)\s*(?:of|=|:)?\s*(\d+)\b/i)
+            || message.match(/\b(\d+)\s*(?:units?|pcs|pieces?|qty)\b/i)
+            || message.match(/\bof\s+(\d+)\b/i);
+          if (qtyMatch) {
+            qty = parseInt(qtyMatch[1]);
+          }
+
+          // Extract product query
+          let prodQuery = message
+            .replace(/\b(i\s+want\s+to|can\s+i|please)?\s*(request|create|submit|add|propose|need)?\s*(a\s+)?(quote|qoute|quotation|bid)\b/gi, '')
+            .replace(/\b(with|and)?\s*(quantity|qauntity|qty|units?|pcs)\s*(of|=|:)?\s*\d+\b/gi, '')
+            .replace(/\b(and)?\s*(each\s+)?(product\s+)?(price|rate|cost|target|at|for)?\s*(must\s+be)?\s*(rs\.?\s*)?[\d,]+\b/gi, '')
+            .replace(/\b(of|for|with|each|product)\b/gi, ' ')
+            .trim();
+
+          let matchedProd = null;
+          if (prodQuery) {
+            try {
+              const words = prodQuery.split(/\s+/).filter(w => w.length >= 2);
+              if (words.length > 0) {
+                const prodRes = await pool.query(
+                  `SELECT * FROM products WHERE status = 'ACTIVE' AND (${words.map((_, i) => `(product_name ILIKE $${i+1} OR sku ILIKE $${i+1})`).join(' OR ')}) ORDER BY product_id ASC LIMIT 1`,
+                  words.map(w => `%${w}%`)
+                );
+                if (prodRes.rows.length > 0) matchedProd = prodRes.rows[0];
+              }
+            } catch (_) {}
+          }
+
+          const prodName = matchedProd ? matchedProd.product_name : (prodQuery || 'Wholesale Item');
+          const sku = matchedProd ? matchedProd.sku : 'SKU-WHOLESALE';
+
+          let baseWholesalePrice = 0;
+          let maxDiscount = 15;
+          let minQty = 1;
+
+          if (matchedProd) {
+            minQty = matchedProd.min_wholesale_qty || 1;
+            maxDiscount = matchedProd.max_discount || 15;
+            const prices = typeof matchedProd.prices === 'string' ? JSON.parse(matchedProd.prices) : matchedProd.prices;
+            baseWholesalePrice = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || 1000);
+          }
+
+          if (!targetPrice && baseWholesalePrice > 0) {
+            targetPrice = baseWholesalePrice;
+          }
+
+          const quote = await createDistributorQuotationInDb(pool, userEmail, req.body.user_name || 'Asim Raza', prodName, qty, targetPrice);
+
+          const calcDiscountPct = (baseWholesalePrice > 0 && quote.unit_price < baseWholesalePrice)
+            ? Math.round(((baseWholesalePrice - quote.unit_price) / baseWholesalePrice) * 100)
+            : 0;
+
+          const isWithinLimit = calcDiscountPct <= maxDiscount;
+
+          const md = `✅ **Quotation Request Created Successfully!**\n\n` +
+            `- **Quotation Number**: **${quote.quotation_number}**\n` +
+            `- **Product**: **${quote.product_name}** (SKU: \`${sku}\`)\n` +
+            `- **Quantity Requested**: **${quote.quantity} units** (MOQ Requirement: ${minQty} unit${minQty > 1 ? 's' : ''})\n` +
+            `- **Requested Unit Price**: **Rs ${Number(quote.unit_price).toLocaleString()}**\n` +
+            (baseWholesalePrice > 0 ? `- **Standard Wholesale Price**: Rs ${Number(baseWholesalePrice).toLocaleString()} (${calcDiscountPct}% discount requested vs ${maxDiscount}% max allowed)\n` : '') +
+            `- **Total Estimated Quotation Value**: **Rs ${Number(quote.total_amount).toLocaleString()}**\n` +
+            `- **Quotation Status**: \`${quote.status}\` (Submitted for Sales Admin Review)\n\n` +
+            (isWithinLimit
+              ? `Your target price of Rs ${Number(quote.unit_price).toLocaleString()} (${calcDiscountPct}% discount) is within the maximum allowed discount limit of ${maxDiscount}%. Your quotation request **${quote.quotation_number}** has been registered.`
+              : `Your requested custom unit price of Rs ${Number(quote.unit_price).toLocaleString()} (${calcDiscountPct}% discount) exceeds the standard max discount threshold of ${maxDiscount}%, but has been submitted as **${quote.quotation_number}** for special management review.`);
+
+          let userQuotations = [];
+          try { userQuotations = await getDistributorQuotationsFromDb(pool, userEmail); } catch (_) {}
+
+          let productsList = [];
+          if (matchedProd) productsList = [matchedProd];
+
+          return res.json({
+            success: true,
+            action_executed: 'createDistributorQuotation',
+            ai_message: md,
+            quotation: quote,
+            quotations: userQuotations.slice(0, 5),
+            products: productsList
+          });
+        }
+
+        // --- Direct B2B Wholesale Order Creation from Chatbot Prompt ---
+        const isDirectOrder = /\b(place|create|buy|direct)\s+(?:a\s+)?(?:direct\s+)?order\b/i.test(lowerMsg)
+          || /\border\s+(\d+)\s+(?:units?|pcs|pieces?)\b/i.test(lowerMsg);
+
+        if (isDirectOrder && !attached_image) {
+          let qty = 10;
+          const qtyMatch = message.match(/\b(?:qty|quantity|qauntity|units?|pcs)\s*(?:of|=|:)?\s*(\d+)\b/i)
+            || message.match(/\b(\d+)\s*(?:units?|pcs|pieces?|qty)\b/i);
+          if (qtyMatch) qty = parseInt(qtyMatch[1]);
+
+          let prodQuery = message
+            .replace(/\b(place|create|buy|direct)?\s*(a\s+)?(direct\s+)?order\b/gi, '')
+            .replace(/\b(with|and)?\s*(quantity|qauntity|qty|units?|pcs)\s*(of|=|:)?\s*\d+\b/gi, '')
+            .replace(/\b(of|for|with)\b/gi, ' ')
+            .trim();
+
+          try {
+            const order = await createDistributorDirectOrderInDb(pool, userEmail, req.body.user_name || 'Asim Raza', prodQuery || 'laptop', qty, 'Karachi Central Depot');
+            const md = `✅ **Direct B2B Wholesale Order Placed Successfully!**\n\n` +
+              `- **Order Number**: **${order.order_number}**\n` +
+              `- **Product**: **${order.product_name}** (${order.sku})\n` +
+              `- **Order Quantity**: ${order.quantity} units\n` +
+              `- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n` +
+              `- **Warehouse Depot**: ${order.warehouse_depot}\n` +
+              `- **Order Status**: \`${order.status}\` (Processing)`;
+            return res.json({ success: true, action_executed: 'createDistributorDirectOrder', ai_message: md, orders: [order] });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `❌ ${err.message}` });
+          }
+        }
+
+        // --- Accept / Reject / Cancel / Approve Quotation ---
+        const isQuoteStatusUpdate = /\b(accept|confirm|reject|cancel|approve)\s+(?:quote|quotation)?\s*([\w-]+)?/i.test(lowerMsg);
+        if (isQuoteStatusUpdate && !attached_image) {
+          const statusMatch = message.match(/\b(accept|confirm|reject|cancel|approve)\b/i);
+          const quoteNumMatch = message.match(/\b(QUO[-_]?\d{4}[-_]?\w+|quo[-_]?\d{4}[-_]?\w+|\w+[-_]\d+)/i);
+          const verb = statusMatch ? statusMatch[1].toLowerCase() : 'accept';
+          const newStatus = (verb === 'accept' || verb === 'approve' || verb === 'confirm') ? 'APPROVED' : 'CANCELLED';
+          const targetQuote = quoteNumMatch ? quoteNumMatch[1] : '';
+
+          try {
+            const updatedQuote = await updateDistributorQuotationStatusInDb(pool, targetQuote || 'QUO', newStatus);
+            let md = `✅ **Quotation ${updatedQuote.quotation_number || updatedQuote.quotation_id} Status Updated!**\n\n` +
+              `- **Quotation Number**: **${updatedQuote.quotation_number || updatedQuote.quotation_id}**\n` +
+              `- **New Status**: \`${updatedQuote.status}\`\n` +
+              `- **Total Value**: Rs ${Number(updatedQuote.total_amount || 0).toLocaleString()}\n`;
+            if (newStatus === 'APPROVED' || newStatus === 'ACCEPTED') {
+              const generatedOrderNumber = (updatedQuote.quotation_number || updatedQuote.quotation_id).replace("QUO-", "ORD-");
+              md += `\n🎉 **B2B Purchase Order Auto-Generated**: **${generatedOrderNumber}** has been automatically created and sent to fulfillment!`;
+            }
+            return res.json({ success: true, action_executed: 'updateDistributorQuotationStatus', ai_message: md, quotation: updatedQuote });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `❌ ${err.message}` });
+          }
+        }
+
+        // --- Check Credit Limit & Financial Ledger Status ---
+        const isLedgerCheck = /\b(credit\s+limit|ledger|financial\s+status|balance|outstanding|payment\s+terms)\b/i.test(lowerMsg);
+        if (isLedgerCheck && !attached_image) {
+          const ledger = await getDistributorLedgerStatusFromDb(pool, userEmail);
+          const md = `### 💳 Distributor Financial Ledger & Credit Status\n\n` +
+            `- **Approved Credit Limit**: **Rs ${Number(ledger.credit_limit_pkr).toLocaleString()}**\n` +
+            `- **Used Credit**: Rs ${Number(ledger.used_credit_pkr).toLocaleString()}\n` +
+            `- **Available Credit Balance**: **Rs ${Number(ledger.available_credit_pkr).toLocaleString()}**\n` +
+            `- **Outstanding Invoices**: ${ledger.outstanding_invoices_count} open\n` +
+            `- **Payment Terms**: ${ledger.payment_terms} (Net 30 Days)\n\n` +
+            `Your account has **Rs ${Number(ledger.available_credit_pkr).toLocaleString()}** available credit for upcoming bulk orders.`;
+          return res.json({ success: true, action_executed: 'getDistributorLedgerStatus', ai_message: md, ledger });
+        }
+
+        // --- Invoice Payment / Settlement ---
+        const isInvoicePayment = /\b(pay|settle)\s+(?:invoice|bill)\b/i.test(lowerMsg) || /\b(invoice\s+payment)\b/i.test(lowerMsg);
+        if (isInvoicePayment && !attached_image) {
+          const invMatch = message.match(/\b(INV[-_]?\d{4}[-_]?\w+|inv[-_]?\d{4}[-_]?\w+)/i);
+          const amtMatch = message.match(/(?:amount|of|pay|rs\.?\s*)?\s*(\d[\d,]*)/i);
+          const targetInv = invMatch ? invMatch[1] : '';
+          const payAmt = amtMatch ? parseFloat(amtMatch[1].replace(/,/g, '')) : null;
+
+          try {
+            const inv = await payDistributorInvoiceInDb(pool, targetInv, payAmt, userEmail);
+            const md = `✅ **Invoice Payment Registered Successfully!**\n\n` +
+              `- **Invoice Number**: **${inv.invoice_number}**\n` +
+              `- **Total Invoice Amount**: Rs ${Number(inv.total_amount).toLocaleString()}\n` +
+              `- **Amount Paid**: Rs ${Number(inv.amount_paid).toLocaleString()}\n` +
+              `- **Invoice Status**: \`${inv.status}\`\n\n` +
+              (inv.status === 'PAID' 
+                ? `🎉 Invoice **${inv.invoice_number}** is fully settled!` 
+                : `Partial payment recorded for **${inv.invoice_number}**.`);
+            return res.json({ success: true, action_executed: 'payDistributorInvoice', ai_message: md, invoice: inv });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `❌ ${err.message}` });
+          }
+        }
+
+        // --- Active Quotations Summary & KPIs ---
+        const isQuotationList = /\b(my\s+quotations|active\s+quotations|view\s+quotes|list\s+quotations|track\s+quotations)\b/i.test(lowerMsg);
+        if (isQuotationList && !attached_image) {
+          const kpis = await getDistributorQuotationKpisFromDb(pool);
+          const userQuotes = await getDistributorQuotationsFromDb(pool, userEmail);
+
+          let md = `### 📋 Active B2B Quotations Overview\n\n` +
+            `- **Total Active Quotes**: **${kpis.active_quotations}**\n` +
+            `- **Total Bid Value**: **Rs ${Number(kpis.total_bid_value).toLocaleString()}**\n` +
+            `- **Pending Acceptance**: ${kpis.pending_acceptance}\n\n` +
+            `**Recent Quotations:**\n`;
+
+          if (userQuotes.length > 0) {
+            md += userQuotes.slice(0, 5).map((q, idx) => 
+              `${idx + 1}. **${q.quotation_number || q.quotation_id}** | Value: **Rs ${Number(q.total_amount || 0).toLocaleString()}** | Status: \`${q.status}\``
+            ).join('\n');
+          } else {
+            md += `No active quotations found on account.`;
+          }
+
+          return res.json({ success: true, action_executed: 'getDistributorQuotations', ai_message: md, quotations: userQuotes.slice(0, 5) });
+        }
+
         // Fetch active quotations for this distributor
         let userQuotations = [];
         try {
@@ -1773,7 +1992,8 @@ function registerCopilotRoutes(app, pool) {
           '2. Emphasize wholesale pricing, Minimum Wholesale Quantity (MOQ), max allowed discount %, and available bulk stock.',
           '3. NEVER offer retail buyer recommendations, personal shopping advise, or consumer promotions.',
           '4. Be professional, direct, and structured. Always specify amounts in PKR.',
-          '5. If the requested product or quote is not found, state clearly: "We do not have an active wholesale offer matching that request."',
+          '5. When a partner requests a quotation or custom volume discount (even if below regular wholesale price, provided it is within the max discount %), explain clearly that custom quote requests can be submitted and calculate the quotation breakdown (unit price x quantity), total PKR value, MOQ, and max discount percentage.',
+          '6. If the requested product is not found in the catalog at all, state clearly: "Product not found in active wholesale catalog."',
           '',
           '## WHOLESALE CATALOG DATA:',
           productContext || 'No matching wholesale products found.',

@@ -327,6 +327,36 @@ async function createDistributorDirectOrderInDb(pool, customerEmail, customerNam
   };
 }
 
+async function payDistributorInvoiceInDb(pool, invoiceIdOrNumber, paymentAmount, customerEmail) {
+  let invQuery = 'SELECT * FROM invoices WHERE invoice_id ILIKE $1 OR invoice_number ILIKE $1';
+  let invRes = await pool.query(invQuery, [`%${invoiceIdOrNumber || ''}%`]);
+
+  if (invRes.rows.length === 0) {
+    const openInvRes = await pool.query("SELECT * FROM invoices WHERE UPPER(status) != 'PAID' ORDER BY id DESC LIMIT 1");
+    if (openInvRes.rows.length > 0) {
+      invRes = openInvRes;
+    } else {
+      throw new Error(`Invoice matching "${invoiceIdOrNumber || 'open'}" not found.`);
+    }
+  }
+
+  const invoice = invRes.rows[0];
+  const totalAmt = parseFloat(invoice.total_amount || 0);
+  const currentPaid = parseFloat(invoice.amount_paid || 0);
+  const remaining = totalAmt - currentPaid;
+  const payAmt = paymentAmount ? parseFloat(paymentAmount) : (remaining > 0 ? remaining : totalAmt);
+  
+  const newAmountPaid = Math.min(totalAmt, currentPaid + payAmt);
+  const newStatus = newAmountPaid >= totalAmt ? 'PAID' : 'PARTIAL';
+
+  const updateRes = await pool.query(
+    'UPDATE invoices SET amount_paid = $1, status = $2 WHERE invoice_id = $3 RETURNING *',
+    [newAmountPaid, newStatus, invoice.invoice_id]
+  );
+
+  return updateRes.rows[0];
+}
+
 module.exports = {
   getDistributorWholesaleProductsFromDb,
   getDistributorQuotationsFromDb,
@@ -340,5 +370,7 @@ module.exports = {
   getDistributorOrdersFromDb,
   getDistributorLedgerStatusFromDb,
   createDistributorQuotationInDb,
-  createDistributorDirectOrderInDb
+  createDistributorDirectOrderInDb,
+  payDistributorInvoiceInDb
 };
+
