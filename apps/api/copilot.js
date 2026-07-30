@@ -893,7 +893,7 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
           (p.short_description ? `- **Specs**: ${p.short_description}\n` : '');
       }).join('\n');
     }
-    return { action_executed: 'getBuyerProductRecommendations', ai_message: md, products: products.slice(0, 10) };
+    return { action_executed: 'getBuyerProductRecommendations', ai_message: md, products: getRelevantCards(products, md || message) };
 
   } else if (name === 'compareBuyerProducts') {
     const result = await compareBuyerProductsInDb(pool, { message, product_a: args.product_a || '', product_b: args.product_b || '' });
@@ -2191,7 +2191,7 @@ function registerCopilotRoutes(app, pool) {
                 success: true,
                 action_executed: 'getDistributorWholesaleRecommendations',
                 ai_message: reply,
-                products: wholesaleProducts.slice(0, 10),
+                products: getRelevantCards(wholesaleProducts, reply || message),
                 quotations: userQuotations.slice(0, 5)
               });
             }
@@ -2216,7 +2216,7 @@ function registerCopilotRoutes(app, pool) {
           success: true,
           action_executed: 'getDistributorWholesaleRecommendations',
           ai_message: fallbackMd,
-          products: wholesaleProducts.slice(0, 10)
+          products: getRelevantCards(wholesaleProducts, fallbackMd || message)
         });
 
       } catch (err) {
@@ -2496,7 +2496,7 @@ function registerCopilotRoutes(app, pool) {
             success: true,
             action_executed: 'getBuyerProductRecommendations',
             ai_message: md,
-            products: products.slice(0, 10)
+            products: getRelevantCards(products, md || message)
           });
         }
 
