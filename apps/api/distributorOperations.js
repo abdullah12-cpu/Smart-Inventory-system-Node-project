@@ -321,12 +321,28 @@ async function counterOfferQuotationInDb(pool, quoteIdentifier, counterUnitPrice
   const maxDisc = quote.max_discount_pct || 15;
   const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
 
-  // Range validation
-  if (newUnitPrice < minPrice) {
-    throw new Error(`Counter unit price Rs ${newUnitPrice.toLocaleString()} is below the minimum allowed price threshold of ${maxDisc}% discount (Minimum allowed: Rs ${minPrice.toLocaleString()}).`);
-  }
-  if (newUnitPrice > origPrice) {
-    throw new Error(`Counter unit price Rs ${newUnitPrice.toLocaleString()} cannot exceed the original wholesale list price (Maximum allowed: Rs ${origPrice.toLocaleString()}).`);
+  const role = counterBy.toUpperCase();
+
+  // Role-Specific Validation Checks
+  if (role === 'ADMIN') {
+    // Admin cannot send counter less than distributor's requested price
+    const distRequestedPrice = parseFloat(quote.unit_price || minPrice);
+    if (newUnitPrice < distRequestedPrice) {
+      throw new Error(`Admin counter offer (Rs ${newUnitPrice.toLocaleString()}) cannot be lower than the price requested by the distributor (Rs ${distRequestedPrice.toLocaleString()}).`);
+    }
+    // Admin cannot send counter higher than original base wholesale price
+    if (newUnitPrice > origPrice) {
+      throw new Error(`Admin counter offer (Rs ${newUnitPrice.toLocaleString()}) cannot exceed the original base wholesale price (Rs ${origPrice.toLocaleString()}).`);
+    }
+  } else {
+    // Distributor cannot send proposal lower than discounted floor price
+    if (newUnitPrice < minPrice) {
+      throw new Error(`Distributor proposed price (Rs ${newUnitPrice.toLocaleString()}) cannot be lower than the minimum allowed discounted price of ${maxDisc}% discount (Minimum floor price: Rs ${minPrice.toLocaleString()}).`);
+    }
+    // Distributor cannot send proposal higher than original base wholesale price
+    if (newUnitPrice > origPrice) {
+      throw new Error(`Distributor proposed price (Rs ${newUnitPrice.toLocaleString()}) cannot exceed the original base wholesale price (Rs ${origPrice.toLocaleString()}).`);
+    }
   }
 
   const qty = parseInt(quote.quantity || 10);

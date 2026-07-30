@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const pool = require('./db');
 const { createProductInDb } = require('./adminOperations');
+const { counterOfferQuotationInDb, buildQuotationDescription } = require('./distributorOperations');
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -1011,31 +1012,31 @@ app.post('/api/quotations', async (req, res) => {
   }
 });
 
-// PUT update quotation status
+// PUT update quotation status / proposal counter offer
 app.put('/api/quotations/:quotation_id/status', async (req, res) => {
   const { quotation_id } = req.params;
-  const { status, total_amount } = req.body;
+  const { status, total_amount, counter_unit_price, counter_by, notes } = req.body;
   if (!status) {
     return res.status(400).json({ success: false, message: 'Required status missing.' });
   }
 
+  const proposedPrice = counter_unit_price !== undefined ? counter_unit_price : total_amount;
+
   try {
-    let result;
-    if (total_amount !== undefined) {
-      result = await pool.query(
-        'UPDATE quotations SET status = $1, total_amount = $2 WHERE quotation_id = $3 RETURNING *',
-        [status, total_amount, quotation_id]
-      );
+    let quote;
+    // If a counter price is provided or status is NEGOTIATING / COUNTER_OFFER_RECEIVED
+    if (proposedPrice !== undefined && proposedPrice !== null && !isNaN(parseFloat(proposedPrice))) {
+      quote = await counterOfferQuotationInDb(pool, quotation_id, proposedPrice, counter_by || 'ADMIN', notes || '');
     } else {
-      result = await pool.query(
-        'UPDATE quotations SET status = $1 WHERE quotation_id = $2 RETURNING *',
+      const result = await pool.query(
+        'UPDATE quotations SET status = $1 WHERE quotation_id = $2 OR quotation_number = $2 RETURNING *',
         [status, quotation_id]
       );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Quotation not found.' });
+      }
+      quote = result.rows[0];
     }
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Quotation not found.' });
-    }
-    const quote = result.rows[0];
 
     // If quotation is APPROVED or ACCEPTED, auto-create corresponding B2B order
     const normStatus = (status || '').toUpperCase();
@@ -1080,8 +1081,8 @@ app.put('/api/quotations/:quotation_id/status', async (req, res) => {
 
     return res.json({ success: true, quotation: quote });
   } catch (err) {
-    console.error('Error updating quotation status:', err);
-    return res.status(500).json({ success: false, message: 'Database error updating quotation status.' });
+    console.error('Error updating quotation status / counter offer:', err.message);
+    return res.status(400).json({ success: false, message: err.message });
   }
 });
 

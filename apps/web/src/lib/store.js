@@ -543,11 +543,19 @@ export function StoreProvider({ children }) {
     [currentUser]
   );
   const updateQuotationStatus = useCallback(
-    async (quoteId, status, totalAmount = undefined) => {
+    async (quoteId, status, totalAmount = undefined, counterBy = undefined) => {
       try {
         const body = { status };
         if (totalAmount !== undefined) {
           body.total_amount = totalAmount;
+          body.counter_unit_price = totalAmount;
+        }
+        if (counterBy) {
+          body.counter_by = counterBy;
+        } else if (currentUser && currentUser.role === "admin") {
+          body.counter_by = "ADMIN";
+        } else {
+          body.counter_by = "DISTRIBUTOR";
         }
 
         const response = await fetch(`/api/quotations/${quoteId}/status`, {
@@ -649,9 +657,14 @@ export function StoreProvider({ children }) {
           if (invRes.ok) setInvoices(await invRes.json());
 
           return true;
+        } else {
+          const errData = await response.json();
+          alert(`❌ ${errData.message || "Failed to update quotation"}`);
+          return false;
         }
       } catch (err) {
         console.error("Error updating quotation status:", err);
+        alert(`❌ ${err.message}`);
       }
       return false;
     },

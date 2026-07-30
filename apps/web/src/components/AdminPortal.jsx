@@ -2106,7 +2106,7 @@ export default function AdminPortal({ onLogout }) {
                                       if (val) {
                                         const parsed = parseFloat(val);
                                         if (!isNaN(parsed) && parsed > 0) {
-                                          updateQuotationStatus(q.quotation_id, "NEGOTIATING", parsed);
+                                          updateQuotationStatus(q.quotation_id, "COUNTER_OFFER_RECEIVED", parsed, "ADMIN");
                                         } else {
                                           alert("Invalid amount entered.");
                                         }

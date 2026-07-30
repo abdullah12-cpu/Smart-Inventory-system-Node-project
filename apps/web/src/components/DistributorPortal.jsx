@@ -676,7 +676,7 @@ export default function DistributorPortal({ onLogout }) {
       try {
         const parsed = parseFloat(counterValue);
         const amt = !isNaN(parsed) && parsed > 0 ? parsed : undefined;
-        await updateQuotationStatus(activeQuote.quotation_id, "NEGOTIATING", amt);
+        await updateQuotationStatus(activeQuote.quotation_id, "COUNTER_OFFER_RECEIVED", amt, "DISTRIBUTOR");
       } catch (err) {
         console.error(err);
       }
