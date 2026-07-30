@@ -2267,10 +2267,14 @@ export default function DistributorPortal({ onLogout }) {
                         msg.products && msg.products.length > 0 && (
                           /* @__PURE__ */ jsx("div", {
                             className: "mt-3 grid grid-cols-1 gap-2.5 w-full",
-                            children: msg.products.map(product => (
-                              /* @__PURE__ */ jsxs("div", {
+                            children: msg.products.map(product => {
+                              const fullProduct = products.find(p => p.product_id === product.product_id || p.sku === product.sku);
+                              const availableQty = fullProduct ? fullProduct.inventory.reduce((sum, inv) => sum + inv.available_quantity, 0) : 0;
+                              const minQty = product.min_wholesale_qty || fullProduct?.min_wholesale_qty || 1;
+                              
+                              return /* @__PURE__ */ jsxs("div", {
                                 key: product.product_id,
-                                className: "bg-white border border-indigo-100 hover:border-indigo-300 rounded-xl p-3 shadow-2xs flex items-center justify-between gap-3 transition-all",
+                                className: "bg-white border border-indigo-100 hover:border-indigo-300 rounded-xl p-3 shadow-2xs flex flex-col gap-2.5 transition-all",
                                 children: [
                                   /* @__PURE__ */ jsxs("div", {
                                     className: "flex items-center gap-3 min-w-0",
@@ -2281,32 +2285,65 @@ export default function DistributorPortal({ onLogout }) {
                                         className: "w-12 h-12 rounded-lg object-cover border border-slate-100 bg-slate-50 shrink-0"
                                       }),
                                       /* @__PURE__ */ jsxs("div", {
-                                        className: "min-w-0",
+                                        className: "min-w-0 flex-1",
                                         children: [
-                                          /* @__PURE__ */ jsx("h4", { className: "text-xs font-bold text-slate-900 truncate", children: product.product_name }),
+                                          /* @__PURE__ */ jsx("h4", { className: "text-xs font-bold text-slate-900 line-clamp-1", children: product.product_name }),
                                           /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-slate-500 font-medium truncate", children: [product.brand || "CIQ", " • ", product.category || "Wholesale"] }),
                                           /* @__PURE__ */ jsxs("div", { className: "text-xs font-extrabold text-indigo-600 mt-0.5", children: [
                                             formatCurrency(product.wholesale_price || product.retail_price * 0.85),
-                                            /* @__PURE__ */ jsxs("span", { className: "text-[9.5px] font-normal text-slate-400 ml-1.5", children: ["MOQ: ", product.min_wholesale_qty || 1, " units"] })
+                                            /* @__PURE__ */ jsxs("span", { className: "text-[9.5px] font-normal text-slate-400 ml-1.5", children: ["MOQ: ", minQty, " units"] })
                                           ] })
                                         ]
                                       })
                                     ]
                                   }),
-                                  /* @__PURE__ */ jsxs("button", {
-                                    type: "button",
-                                    onClick: () => {
-                                      setChatInput(`Order MOQ of ${product.product_name}`);
-                                    },
-                                    className: "px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer border-0 shrink-0 shadow-2xs active:scale-95",
-                                    children: [
-                                      /* @__PURE__ */ jsx(ShoppingBag, { className: "w-3 h-3" }),
-                                      " Order"
-                                    ]
-                                  })
+                                  /* @__PURE__ */ jsxs("div", { className: "flex gap-2", children: [
+                                    /* @__PURE__ */ jsx("button", {
+                                      type: "button",
+                                      onClick: () => {
+                                        if (!fullProduct) {
+                                          alert("Product details not found. Please refresh the page.");
+                                          return;
+                                        }
+                                        if (availableQty <= 0) {
+                                          alert("This product is currently out of stock.");
+                                          return;
+                                        }
+                                        setChatOpen(false);
+                                        setChatMinimized(true);
+                                        handleAddToQuote(fullProduct);
+                                      },
+                                      className: "flex-1 py-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-blue-600 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-[0.98]",
+                                      children: [
+                                        /* @__PURE__ */ jsx(FileText, { className: "w-3 h-3" }),
+                                        " Quote"
+                                      ]
+                                    }),
+                                    /* @__PURE__ */ jsx("button", {
+                                      type: "button",
+                                      onClick: () => {
+                                        if (!fullProduct) {
+                                          alert("Product details not found. Please refresh the page.");
+                                          return;
+                                        }
+                                        if (availableQty <= 0) {
+                                          alert("This product is currently out of stock.");
+                                          return;
+                                        }
+                                        setChatOpen(false);
+                                        setChatMinimized(true);
+                                        handleDirectOrder(fullProduct);
+                                      },
+                                      className: "flex-1 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 hover:border-emerald-300 text-emerald-600 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-[0.98]",
+                                      children: [
+                                        /* @__PURE__ */ jsx(ShoppingBag, { className: "w-3 h-3" }),
+                                        " Order"
+                                      ]
+                                    })
+                                  ] })
                                 ]
-                              })
-                            ))
+                              });
+                            })
                           })
                         ),
 
