@@ -272,9 +272,104 @@ async function initDb() {
       ON CONFLICT (email) DO NOTHING;
     `);
 
-    // Clean up legacy auto-created B2C quotations and unapproved quote request orders
-    await client.query(`DELETE FROM quotations WHERE quotation_number LIKE 'QUO-2026-%'`);
-    await client.query(`DELETE FROM orders WHERE items_summary LIKE 'B2B Order request%' OR (order_type = 'B2B' AND order_number LIKE 'ORD-2026-%' AND status IN ('PENDING', 'REJECTED', 'DRAFT'))`);
+    // Auto-enrich existing quotations with real product details & DB list prices if missing
+    try {
+      const unEnriched = await client.query(
+        `SELECT * FROM quotations WHERE product_name IS NULL OR product_name = 'Wholesale Batch' OR original_unit_price IS NULL OR original_unit_price = 0`
+      );
+      if (unEnriched.rows.length > 0) {
+        const prodRes = await client.query('SELECT * FROM products');
+        const prods = prodRes.rows;
+
+        for (let i = 0; i < unEnriched.rows.length; i++) {
+          const q = unEnriched.rows[i];
+          let items = [];
+          try { items = typeof q.items === 'string' ? JSON.parse(q.items) : (q.items || []); } catch (_) {}
+
+          let pName = 'Wholesale Item';
+          let sku = 'SKU-WHOLESALE';
+          let qty = parseInt(q.quantity || 1);
+          let unitP = parseFloat(q.unit_price || q.total_amount || 1000);
+          let origP = 1000;
+          let maxD = 15;
+
+          if (items.length > 0) {
+            const itemNames = [];
+            const itemSkus = [];
+            let totalQ = 0;
+            let totalOrig = 0;
+            for (const item of items) {
+              const itemQ = parseInt(item.qty || item.quantity || 1);
+              const itemP = parseFloat(item.price || item.unit_price || 0);
+              const matchProd = prods.find(p => p.product_id === item.product_id || p.sku === item.sku || p.product_name === item.name || p.product_name === item.product_name) || prods[i % prods.length];
+              if (matchProd) {
+                itemNames.push(matchProd.product_name);
+                itemSkus.push(matchProd.sku);
+                const prices = typeof matchProd.prices === 'string' ? JSON.parse(matchProd.prices) : (matchProd.prices || {});
+                const baseP = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || itemP || 1000);
+                totalOrig += baseP * itemQ;
+                maxD = matchProd.max_discount !== undefined ? matchProd.max_discount : maxD;
+              } else {
+                itemNames.push(item.name || item.product_name || 'Wholesale Product');
+                itemSkus.push(item.sku || 'SKU-WHOLESALE');
+                totalOrig += (itemP > 0 ? itemP : 1000) * itemQ;
+              }
+              totalQ += itemQ;
+            }
+            pName = itemNames.join(', ');
+            sku = itemSkus.join(', ');
+            qty = totalQ > 0 ? totalQ : 1;
+            origP = totalQ > 0 ? Math.round(totalOrig / totalQ) : Math.round(q.total_amount / qty);
+            unitP = q.total_amount ? Math.round(q.total_amount / qty) : origP;
+          } else if (prods.length > 0) {
+            const matchedP = prods[i % prods.length];
+            pName = matchedP.product_name;
+            sku = matchedP.sku;
+            const prices = typeof matchedP.prices === 'string' ? JSON.parse(matchedP.prices) : (matchedP.prices || {});
+            origP = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || 1000);
+            maxD = matchedP.max_discount !== undefined ? matchedP.max_discount : 15;
+            qty = Math.max(1, Math.round(parseFloat(q.total_amount || 1000) / origP)) || 1;
+            unitP = Math.round(parseFloat(q.total_amount || 1000) / qty);
+          }
+
+          if (unitP > origP) origP = unitP;
+          const minF = Math.round(origP * (1 - maxD / 100));
+
+          const enrichedObj = {
+            quotation_id: q.quotation_id,
+            quotation_number: q.quotation_number,
+            product_name: pName,
+            sku: sku,
+            quantity: qty,
+            unit_price: unitP,
+            original_unit_price: origP,
+            min_price_allowed: minF,
+            max_discount_pct: maxD,
+            total_amount: q.total_amount,
+            status: q.status,
+            last_counter_by: q.last_counter_by || 'DISTRIBUTOR'
+          };
+          const desc = buildQuotationDescription(enrichedObj);
+
+          await client.query(
+            `UPDATE quotations SET
+              product_name = $1,
+              sku = $2,
+              quantity = $3,
+              unit_price = $4,
+              original_unit_price = $5,
+              min_price_allowed = $6,
+              max_discount_pct = $7,
+              description = $8
+             WHERE quotation_id = $9`,
+            [pName, sku, qty, unitP, origP, minF, maxD, desc, q.quotation_id]
+          );
+        }
+        console.log(`[DbInit] Successfully auto-enriched ${unEnriched.rows.length} quotation records with product details & DB list prices.`);
+      }
+    } catch (eErr) {
+      console.error('[DbInit] Error enriching quotation records:', eErr.message);
+    }
 
 
 
@@ -992,23 +1087,143 @@ app.post('/api/quotations', async (req, res) => {
   }
 
   try {
+    let items = [];
+    try {
+      items = typeof q.items === 'string' ? JSON.parse(q.items) : (q.items || []);
+    } catch (_) { items = []; }
+
+    let prodName = q.product_name;
+    let sku = q.sku;
+    let qty = parseInt(q.quantity || 0);
+    let unitPrice = parseFloat(q.unit_price || 0);
+    let origPrice = parseFloat(q.original_unit_price || 0);
+    let maxDisc = parseInt(q.max_discount_pct || 15);
+    let minFloor = parseFloat(q.min_price_allowed || 0);
+
+    if (items.length > 0) {
+      const itemNames = [];
+      const itemSkus = [];
+      let calcQty = 0;
+      let calcOrigPriceTotal = 0;
+      let calcOfferedTotal = 0;
+
+      for (const item of items) {
+        const itemQty = parseInt(item.qty || item.quantity || 1);
+        const itemPrice = parseFloat(item.price || item.unit_price || 0);
+        const itemSearch = item.product_id || item.sku || item.name || item.product_name;
+
+        let dbProd = null;
+        if (itemSearch) {
+          const pRes = await pool.query(
+            'SELECT * FROM products WHERE product_id = $1 OR sku = $1 OR product_name ILIKE $2 LIMIT 1',
+            [itemSearch, `%${itemSearch}%`]
+          );
+          if (pRes.rows.length > 0) dbProd = pRes.rows[0];
+        }
+
+        const name = dbProd ? dbProd.product_name : (item.name || item.product_name || 'Wholesale Item');
+        const itemSkuStr = dbProd ? dbProd.sku : (item.sku || 'SKU-WHOLESALE');
+        itemNames.push(name);
+        itemSkus.push(itemSkuStr);
+        calcQty += itemQty;
+
+        let itemBasePrice = 0;
+        if (dbProd && dbProd.prices) {
+          const prices = typeof dbProd.prices === 'string' ? JSON.parse(dbProd.prices) : dbProd.prices;
+          itemBasePrice = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || itemPrice || 1000);
+          maxDisc = dbProd.max_discount !== undefined ? dbProd.max_discount : maxDisc;
+        } else {
+          itemBasePrice = itemPrice > 0 ? itemPrice : 1000;
+        }
+
+        calcOrigPriceTotal += itemBasePrice * itemQty;
+        calcOfferedTotal += (itemPrice > 0 ? itemPrice : itemBasePrice) * itemQty;
+      }
+
+      prodName = itemNames.join(', ');
+      sku = itemSkus.join(', ');
+      qty = calcQty > 0 ? calcQty : 1;
+      origPrice = calcQty > 0 ? Math.round(calcOrigPriceTotal / calcQty) : 1000;
+      unitPrice = calcQty > 0 ? Math.round(calcOfferedTotal / calcQty) : (q.total_amount ? Math.round(q.total_amount / qty) : 1000);
+      minFloor = Math.round(origPrice * (1 - maxDisc / 100));
+    }
+
+    if (!prodName) prodName = 'Wholesale Batch';
+    if (!sku) sku = 'SKU-WHOLESALE';
+    if (!qty || qty <= 0) qty = 1;
+    if (!unitPrice || unitPrice <= 0) unitPrice = q.total_amount ? Math.round(q.total_amount / qty) : 1000;
+    if (!origPrice || origPrice <= 0) origPrice = unitPrice;
+    if (!minFloor || minFloor <= 0) minFloor = Math.round(origPrice * (1 - maxDisc / 100));
+
+    const initialHistory = [{
+      action: 'CREATED',
+      by: 'DISTRIBUTOR',
+      unit_price: unitPrice,
+      total_amount: q.total_amount,
+      timestamp: new Date().toISOString()
+    }];
+
+    const quoteObj = {
+      quotation_id: q.quotation_id,
+      quotation_number: q.quotation_number,
+      product_name: prodName,
+      sku: sku,
+      quantity: qty,
+      unit_price: unitPrice,
+      original_unit_price: origPrice,
+      min_price_allowed: minFloor,
+      max_discount_pct: maxDisc,
+      total_amount: q.total_amount,
+      status: q.status || 'DRAFT',
+      customer_email: q.customer_email || 'partner@commerceiq.com',
+      customer_name: q.customer_name || 'Authorized Wholesale Partner',
+      last_counter_by: 'DISTRIBUTOR',
+      counter_history: JSON.stringify(initialHistory)
+    };
+
+    quoteObj.description = buildQuotationDescription(quoteObj);
+
     await pool.query(
-      `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at, items)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO quotations (
+        quotation_id, quotation_number, status, total_amount, valid_until, created_at, items,
+        product_name, sku, quantity, unit_price, original_unit_price, min_price_allowed,
+        max_discount_pct, customer_email, customer_name, last_counter_by, counter_history, description
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      ON CONFLICT (quotation_id) DO UPDATE SET
+        product_name = EXCLUDED.product_name,
+        sku = EXCLUDED.sku,
+        quantity = EXCLUDED.quantity,
+        unit_price = EXCLUDED.unit_price,
+        original_unit_price = EXCLUDED.original_unit_price,
+        min_price_allowed = EXCLUDED.min_price_allowed,
+        max_discount_pct = EXCLUDED.max_discount_pct,
+        description = EXCLUDED.description`,
       [
-        q.quotation_id,
-        q.quotation_number,
-        q.status || 'DRAFT',
-        q.total_amount,
+        quoteObj.quotation_id,
+        quoteObj.quotation_number,
+        quoteObj.status,
+        quoteObj.total_amount,
         q.valid_until || new Date(Date.now() + 15*24*60*60*1000).toISOString(),
         q.created_at || new Date().toISOString(),
-        q.items ? (typeof q.items === 'string' ? q.items : JSON.stringify(q.items)) : null
+        q.items ? (typeof q.items === 'string' ? q.items : JSON.stringify(q.items)) : null,
+        quoteObj.product_name,
+        quoteObj.sku,
+        quoteObj.quantity,
+        quoteObj.unit_price,
+        quoteObj.original_unit_price,
+        quoteObj.min_price_allowed,
+        quoteObj.max_discount_pct,
+        quoteObj.customer_email,
+        quoteObj.customer_name,
+        quoteObj.last_counter_by,
+        quoteObj.counter_history,
+        quoteObj.description
       ]
     );
     return res.status(201).json({ success: true });
   } catch (err) {
     console.error('Error creating quotation:', err);
-    return res.status(500).json({ success: false, message: 'Database error creating quotation.' });
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
