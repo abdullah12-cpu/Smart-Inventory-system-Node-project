@@ -267,7 +267,7 @@ export default function BuyerChatbotWidget() {
   };
 
   const handleAddToCart = (product) => {
-    addToCart(product, 1);
+    addToCart(product.product_id);
     setAddedItemIds(prev => [...prev, product.product_id]);
     setTimeout(() => {
       setAddedItemIds(prev => prev.filter(id => id !== product.product_id));
