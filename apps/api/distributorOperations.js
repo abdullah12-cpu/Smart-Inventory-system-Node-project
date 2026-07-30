@@ -337,7 +337,7 @@ async function counterOfferQuotationInDb(pool, quoteIdentifier, counterUnitPrice
   } else {
     // Distributor cannot send proposal lower than discounted floor price
     if (newUnitPrice < minPrice) {
-      throw new Error(`Distributor proposed price (Rs ${newUnitPrice.toLocaleString()}) cannot be lower than the minimum allowed discounted price of ${maxDisc}% discount (Minimum floor price: Rs ${minPrice.toLocaleString()}).`);
+      throw new Error(`Distributor proposed price (Rs ${newUnitPrice.toLocaleString()}) cannot be lower than the minimum allowed floor price set by vendor (Minimum floor price: Rs ${minPrice.toLocaleString()}).`);
     }
     // Distributor cannot send proposal higher than original base wholesale price
     if (newUnitPrice > origPrice) {

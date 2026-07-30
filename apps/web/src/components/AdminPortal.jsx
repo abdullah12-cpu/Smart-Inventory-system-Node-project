@@ -2026,7 +2026,7 @@ export default function AdminPortal({ onLogout }) {
                           className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
                 /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Quote # & Partner" }),
                 /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Product Details & SKU" }),
-                /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "DB Base Price (Floor)" }),
+                /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "DB Base Price" }),
                 /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Offered Price (Total)" }),
                 /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider", children: "Status" }),
                 /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[10px] font-bold text-[#64748B] uppercase tracking-wider text-center", children: "Actions" })
@@ -2066,8 +2066,6 @@ export default function AdminPortal({ onLogout }) {
                           )
                         }) : quotations.map((q) => {
                           const origPrice = parseFloat(q.original_unit_price || q.unit_price || 1000);
-                          const maxDisc = q.max_discount_pct !== undefined && q.max_discount_pct !== null ? parseInt(q.max_discount_pct) : 0;
-                          const minFloor = q.min_price_allowed ? parseFloat(q.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
                           const unitP = parseFloat(q.unit_price || (q.total_amount / (q.quantity || 1)));
                           return /* @__PURE__ */ jsxs(
                             "tr",
@@ -2082,10 +2080,7 @@ export default function AdminPortal({ onLogout }) {
                                   /* @__PURE__ */ jsx("div", { className: "font-bold text-[#0F172A]", children: q.product_name || q.item || "Wholesale Batch" }),
                                   /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B]", children: [`SKU: ${q.sku || "SKU-WHOLESALE"}`, " • ", `Qty: ${q.quantity || 1} units`] })
                                 ] }),
-                                /* @__PURE__ */ jsxs("td", { className: "px-6 py-3.5", children: [
-                                  /* @__PURE__ */ jsxs("div", { className: "font-bold text-blue-600", children: ["Base: Rs ", origPrice.toLocaleString()] }),
-                                  /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-slate-500 font-semibold", children: ["Floor: Rs ", minFloor.toLocaleString(), ` (${maxDisc}% max)`] })
-                                ] }),
+                                /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5", children: /* @__PURE__ */ jsxs("div", { className: "font-bold text-blue-600", children: ["Base: Rs ", origPrice.toLocaleString()] }) }),
                                 /* @__PURE__ */ jsxs("td", { className: "px-6 py-3.5", children: [
                                   /* @__PURE__ */ jsxs("div", { className: "font-extrabold text-[#0F172A]", children: ["Offered: Rs ", unitP.toLocaleString()] }),
                                   /* @__PURE__ */ jsxs("div", { className: "text-[10px] text-[#64748B]", children: ["Total: Rs ", Number(q.total_amount).toLocaleString()] })
