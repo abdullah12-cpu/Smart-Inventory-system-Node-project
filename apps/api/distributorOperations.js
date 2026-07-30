@@ -181,34 +181,69 @@ async function getDistributorLedgerStatusFromDb(pool, customerEmail) {
   return defaultLedger;
 }
 
+function buildQuotationDescription(quote) {
+  const prodName = quote.product_name || quote.item || 'Wholesale Item';
+  const sku = quote.sku || 'SKU-WHOLESALE';
+  const qty = quote.quantity || 1;
+  const unitPrice = parseFloat(quote.unit_price || 0);
+  const origPrice = parseFloat(quote.original_unit_price || unitPrice || 1000);
+  const maxDisc = quote.max_discount_pct || 15;
+  const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
+  const totalAmt = parseFloat(quote.total_amount || unitPrice * qty);
+  const status = quote.status || 'DRAFT';
+  const lastCounter = quote.last_counter_by || 'DISTRIBUTOR';
+
+  const discountPct = origPrice > 0 ? Math.round(((origPrice - unitPrice) / origPrice) * 100) : 0;
+
+  return [
+    `📋 **Quotation Item Breakdown & Specification:**`,
+    `- **Quotation Number**: **${quote.quotation_number || quote.quotation_id}**`,
+    `- **Product Name**: **${prodName}** (SKU: \`${sku}\`)`,
+    `- **Order Quantity**: ${qty} units`,
+    `- **Original List Price**: Rs ${origPrice.toLocaleString()} / unit`,
+    `- **Max Allowed Discount**: ${maxDisc}% (Minimum Allowed Price: Rs ${minPrice.toLocaleString()})`,
+    `- **Offered Unit Price**: **Rs ${unitPrice.toLocaleString()} / unit** (${discountPct}% discount)`,
+    `- **Total Quotation Amount**: **Rs ${totalAmt.toLocaleString()}**`,
+    `- **Quotation Status**: \`${status}\``,
+    `- **Last Counter Proposed By**: **${lastCounter}**`
+  ].join('\n');
+}
+
 async function createDistributorQuotationInDb(pool, customerEmail, customerName, productNameOrSku, quantity = 10, targetPrice = null) {
   const email = customerEmail || 'asim@commerceiq.com';
   const name = customerName || 'Authorized Wholesale Partner';
   const qty = parseInt(quantity) || 10;
 
-  // Find product by name or SKU
   let product = null;
   if (productNameOrSku) {
     const prodRes = await pool.query(
       'SELECT * FROM products WHERE product_name ILIKE $1 OR sku ILIKE $1 LIMIT 1',
       [`%${productNameOrSku}%`]
     );
-    if (prodRes.rows.length > 0) {
-      product = prodRes.rows[0];
-    }
+    if (prodRes.rows.length > 0) product = prodRes.rows[0];
   }
 
   const prodName = product ? product.product_name : (productNameOrSku || 'Wholesale Batch');
   const sku = product ? product.sku : 'SKU-WHOLESALE';
 
-  let unitPrice = 0;
-  if (targetPrice && parseFloat(targetPrice) > 0) {
-    unitPrice = parseFloat(targetPrice);
-  } else if (product && product.prices) {
+  let origUnitPrice = 0;
+  let maxDiscountPct = product ? (product.max_discount || 15) : 15;
+  if (product && product.prices) {
     const prices = typeof product.prices === 'string' ? JSON.parse(product.prices) : product.prices;
-    unitPrice = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || 1000);
+    origUnitPrice = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || 1000);
   } else {
-    unitPrice = 1500;
+    origUnitPrice = 1500;
+  }
+
+  const minPriceAllowed = Math.round(origUnitPrice * (1 - maxDiscountPct / 100));
+  let unitPrice = targetPrice && parseFloat(targetPrice) > 0 ? parseFloat(targetPrice) : origUnitPrice;
+
+  // Validation Checks
+  if (unitPrice < minPriceAllowed) {
+    throw new Error(`Proposed unit price Rs ${unitPrice.toLocaleString()} is below the minimum allowed price threshold of ${maxDiscountPct}% discount (Minimum allowed: Rs ${minPriceAllowed.toLocaleString()}).`);
+  }
+  if (unitPrice > origUnitPrice) {
+    throw new Error(`Proposed unit price Rs ${unitPrice.toLocaleString()} cannot exceed the original wholesale list price (Maximum allowed: Rs ${origUnitPrice.toLocaleString()}).`);
   }
 
   const totalAmount = unitPrice * qty;
@@ -216,26 +251,127 @@ async function createDistributorQuotationInDb(pool, customerEmail, customerName,
   const quoteNumber = `QUO-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   const validUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  const res = await pool.query(
-    `INSERT INTO quotations (quotation_id, quotation_number, status, total_amount, valid_until, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING *`,
-    [quoteId, quoteNumber, 'DRAFT', totalAmount, validUntil, new Date().toISOString()]
-  );
+  const initialHistory = [{
+    action: 'CREATED',
+    by: 'DISTRIBUTOR',
+    unit_price: unitPrice,
+    total_amount: totalAmount,
+    timestamp: new Date().toISOString()
+  }];
 
-  return {
-    quotation_id: res.rows[0].quotation_id,
-    quotation_number: res.rows[0].quotation_number,
+  const quoteObj = {
+    quotation_id: quoteId,
+    quotation_number: quoteNumber,
     product_name: prodName,
     sku: sku,
     quantity: qty,
     unit_price: unitPrice,
+    original_unit_price: origUnitPrice,
+    min_price_allowed: minPriceAllowed,
+    max_discount_pct: maxDiscountPct,
     total_amount: totalAmount,
-    status: 'DRAFT',
+    status: 'COUNTER_OFFER_RECEIVED',
     valid_until: validUntil,
     customer_name: name,
-    customer_email: email
+    customer_email: email,
+    last_counter_by: 'DISTRIBUTOR',
+    counter_history: JSON.stringify(initialHistory)
   };
+
+  quoteObj.description = buildQuotationDescription(quoteObj);
+
+  const res = await pool.query(
+    `INSERT INTO quotations (
+      quotation_id, quotation_number, status, total_amount, valid_until, created_at,
+      product_name, sku, quantity, unit_price, original_unit_price, min_price_allowed,
+      max_discount_pct, customer_email, customer_name, last_counter_by, counter_history, description
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+     RETURNING *`,
+    [
+      quoteObj.quotation_id, quoteObj.quotation_number, quoteObj.status, quoteObj.total_amount,
+      quoteObj.valid_until, new Date().toISOString(), quoteObj.product_name, quoteObj.sku,
+      quoteObj.quantity, quoteObj.unit_price, quoteObj.original_unit_price, quoteObj.min_price_allowed,
+      quoteObj.max_discount_pct, quoteObj.customer_email, quoteObj.customer_name, quoteObj.last_counter_by,
+      quoteObj.counter_history, quoteObj.description
+    ]
+  );
+
+  return res.rows[0];
+}
+
+async function counterOfferQuotationInDb(pool, quoteIdentifier, counterUnitPrice, counterBy = 'DISTRIBUTOR', notes = '') {
+  const findRes = await pool.query(
+    'SELECT * FROM quotations WHERE quotation_id ILIKE $1 OR quotation_number ILIKE $1 ORDER BY id DESC LIMIT 1',
+    [`%${quoteIdentifier}%`]
+  );
+
+  let quote;
+  if (findRes.rows.length === 0) {
+    const recentRes = await pool.query('SELECT * FROM quotations ORDER BY id DESC LIMIT 1');
+    if (recentRes.rows.length === 0) {
+      throw new Error(`Quotation matching "${quoteIdentifier}" not found.`);
+    }
+    quote = recentRes.rows[0];
+  } else {
+    quote = findRes.rows[0];
+  }
+
+  const newUnitPrice = parseFloat(counterUnitPrice);
+  const origPrice = parseFloat(quote.original_unit_price || quote.unit_price || 1000);
+  const maxDisc = quote.max_discount_pct || 15;
+  const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
+
+  // Range validation
+  if (newUnitPrice < minPrice) {
+    throw new Error(`Counter unit price Rs ${newUnitPrice.toLocaleString()} is below the minimum allowed price threshold of ${maxDisc}% discount (Minimum allowed: Rs ${minPrice.toLocaleString()}).`);
+  }
+  if (newUnitPrice > origPrice) {
+    throw new Error(`Counter unit price Rs ${newUnitPrice.toLocaleString()} cannot exceed the original wholesale list price (Maximum allowed: Rs ${origPrice.toLocaleString()}).`);
+  }
+
+  const qty = parseInt(quote.quantity || 10);
+  const newTotal = newUnitPrice * qty;
+  const newStatus = 'COUNTER_OFFER_RECEIVED';
+
+  let historyArr = [];
+  try {
+    historyArr = typeof quote.counter_history === 'string' ? JSON.parse(quote.counter_history) : (quote.counter_history || []);
+  } catch (_) { historyArr = []; }
+
+  historyArr.push({
+    action: 'COUNTER_OFFER',
+    by: counterBy.toUpperCase(),
+    unit_price: newUnitPrice,
+    total_amount: newTotal,
+    notes: notes || `Counter offer of Rs ${newUnitPrice.toLocaleString()} submitted by ${counterBy}`,
+    timestamp: new Date().toISOString()
+  });
+
+  const updatedData = {
+    ...quote,
+    unit_price: newUnitPrice,
+    total_amount: newTotal,
+    status: newStatus,
+    last_counter_by: counterBy.toUpperCase(),
+    counter_history: JSON.stringify(historyArr)
+  };
+
+  const newDescription = buildQuotationDescription(updatedData);
+
+  const res = await pool.query(
+    `UPDATE quotations SET
+      unit_price = $1,
+      total_amount = $2,
+      status = $3,
+      last_counter_by = $4,
+      counter_history = $5,
+      description = $6
+     WHERE quotation_id = $7
+     RETURNING *`,
+    [newUnitPrice, newTotal, newStatus, counterBy.toUpperCase(), JSON.stringify(historyArr), newDescription, quote.quotation_id]
+  );
+
+  return res.rows[0];
 }
 
 async function createDistributorDirectOrderInDb(pool, customerEmail, customerName, productNameOrSku, quantity = 10, warehouseDepot = 'Karachi Central Depot') {
@@ -371,6 +507,8 @@ module.exports = {
   getDistributorLedgerStatusFromDb,
   createDistributorQuotationInDb,
   createDistributorDirectOrderInDb,
-  payDistributorInvoiceInDb
+  payDistributorInvoiceInDb,
+  counterOfferQuotationInDb,
+  buildQuotationDescription
 };
 

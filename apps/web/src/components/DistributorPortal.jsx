@@ -386,12 +386,14 @@ export default function DistributorPortal({ onLogout }) {
       });
       if (response.ok) {
         const data = await response.json();
+        const act = data.action_executed || '';
+        const showProducts = act === 'getDistributorWholesaleRecommendations' || act === 'searchProducts';
         setChatMessages((prev) => [
           ...prev,
           { 
             sender: "ai", 
             text: data.ai_message || "Processed.",
-            products: data.products || [],
+            products: showProducts ? (data.products || []) : [],
             orders: data.orders || []
           }
         ]);

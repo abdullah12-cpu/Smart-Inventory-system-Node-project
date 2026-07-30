@@ -21,7 +21,9 @@ const {
   getDistributorLedgerStatusFromDb,
   createDistributorQuotationInDb,
   createDistributorDirectOrderInDb,
-  payDistributorInvoiceInDb
+  payDistributorInvoiceInDb,
+  counterOfferQuotationInDb,
+  buildQuotationDescription
 } = require('./distributorOperations');
 const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb, trackBuyerOrder, listBuyerOrdersByStatus } = require('./buyerOperations');
 const { vectorSearchProducts, vectorSearchDistributorProducts, isEmbedModelAvailable } = require('./embeddings');
@@ -1713,10 +1715,116 @@ function registerCopilotRoutes(app, pool) {
       try {
         const userEmail = req.body.user_email || 'partner@commerceiq.com';
 
+
         // --- Live Order Tracking for Distributors ---
-        const isOrderTrack = /\b(where is my order|track(\s+my)?\s+order|order\s+status|find\s+my\s+order|show\s+.*orders)\b/i.test(message)
+        const isOrderTrack = /\b(where is my order|track(\s+my)?\s+order|order\s+status|find\s+my\s+order|show\s+.*orders|my\s+.*order)/i.test(message)
           || /\b(ord[-_]?\d{4}[-_]?\d+)\b/i.test(message);
         if (isOrderTrack && !attached_image) {
+
+          // ── Date-based order tracking ──────────────────────────────
+          // Supports: "31st July", "July 31", "31 July", "31/07", "31-07-2026", "2026-07-31", "today", "yesterday"
+          const monthMap = { jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,may:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,sep:9,september:9,oct:10,october:10,nov:11,november:11,dec:12,december:12 };
+          let trackDate = null;
+
+          // "today" / "yesterday"
+          if (/\btoday\b/i.test(message)) {
+            trackDate = new Date();
+          } else if (/\byesterday\b/i.test(message)) {
+            trackDate = new Date(Date.now() - 86400000);
+          }
+
+          if (!trackDate) {
+            // "31st July", "31 July", "1st Aug", "2nd August 2026"
+            const dmMatch = message.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s*(\d{4})?\b/i);
+            if (dmMatch) {
+              const d = parseInt(dmMatch[1]);
+              const m = monthMap[dmMatch[2].toLowerCase()];
+              const y = dmMatch[3] ? parseInt(dmMatch[3]) : new Date().getFullYear();
+              if (m && d >= 1 && d <= 31) trackDate = new Date(y, m - 1, d);
+            }
+          }
+
+          if (!trackDate) {
+            // "July 31", "August 1 2026"
+            const mdMatch = message.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?\s*,?\s*(\d{4})?\b/i);
+            if (mdMatch) {
+              const m = monthMap[mdMatch[1].toLowerCase()];
+              const d = parseInt(mdMatch[2]);
+              const y = mdMatch[3] ? parseInt(mdMatch[3]) : new Date().getFullYear();
+              if (m && d >= 1 && d <= 31) trackDate = new Date(y, m - 1, d);
+            }
+          }
+
+          if (!trackDate) {
+            // "31/07/2026", "31-07-2026", "31/07"
+            const numMatch = message.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+            if (numMatch) {
+              const d = parseInt(numMatch[1]);
+              const m = parseInt(numMatch[2]);
+              const y = numMatch[3] ? (numMatch[3].length === 2 ? 2000 + parseInt(numMatch[3]) : parseInt(numMatch[3])) : new Date().getFullYear();
+              if (m >= 1 && m <= 12 && d >= 1 && d <= 31) trackDate = new Date(y, m - 1, d);
+            }
+          }
+
+          if (!trackDate) {
+            // "2026-07-31" (ISO format)
+            const isoMatch = message.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+            if (isoMatch) {
+              trackDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+            }
+          }
+
+          // If a date was found, query orders for that date
+          if (trackDate && !isNaN(trackDate.getTime())) {
+            const dateStr = trackDate.toISOString().split('T')[0]; // e.g. "2026-07-31"
+            const displayDate = trackDate.toLocaleDateString('en-PK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            try {
+              const dateResult = await pool.query(
+                `SELECT * FROM orders WHERE CAST(order_date AS DATE) = $1 ORDER BY order_date DESC LIMIT 30`,
+                [dateStr]
+              );
+
+              if (dateResult.rows.length === 0) {
+                return res.json({
+                  success: true,
+                  action_executed: 'trackOrdersByDate',
+                  ai_message: `📅 **No orders found for ${displayDate}**\n\nThere are no orders placed on this date. Try:\n- *"Track my July 30 orders"*\n- *"Show all my orders"*\n- *"Track order ORD-2026-XXXX"*`,
+                  orders: []
+                });
+              }
+
+              let md = `### 📅 Orders for ${displayDate}\n\n` +
+                `Found **${dateResult.rows.length}** order${dateResult.rows.length > 1 ? 's' : ''} on this date:\n\n` +
+                `| # | Order Number | Product / Items | Status | Amount |\n` +
+                `|---|---|---|---|---|\n`;
+
+              dateResult.rows.forEach((o, idx) => {
+                let productName = o.items_summary || o.product_name || 'N/A';
+                if (productName.length > 50) productName = productName.substring(0, 47) + '...';
+                const status = (o.status || 'PENDING').toUpperCase();
+                const statusEmoji = status === 'DELIVERED' ? '✅' : status === 'SHIPPED' ? '🚚' : status === 'PROCESSING' ? '⚙️' : status === 'CONFIRMED' ? '📋' : status === 'CANCELLED' ? '❌' : '⏳';
+                md += `| ${idx + 1} | **${o.order_number || o.order_id}** | ${productName} | ${statusEmoji} ${status} | Rs ${Number(o.total_amount || 0).toLocaleString()} |\n`;
+              });
+
+              md += `\n💬 To see details for a specific order, say: *"Track order ORD-XXXX"*`;
+
+              return res.json({
+                success: true,
+                action_executed: 'trackOrdersByDate',
+                ai_message: md,
+                orders: dateResult.rows
+              });
+            } catch (dbErr) {
+              return res.json({
+                success: true,
+                ai_message: `❌ Error fetching orders for ${displayDate}: ${dbErr.message}`,
+                orders: []
+              });
+            }
+          }
+
+          // ── Fallback: Order ID/Number based tracking ───────────────
           const ordMatch = message.match(/\b(ORD[-_]?\d{4}[-_]?\w+|ord[-_]?\d{4}[-_]?\w+)/i);
           const order_id_query = ordMatch ? ordMatch[1] : '';
           const trackResult = await trackBuyerOrder(pool, { order_id_query });
@@ -1735,7 +1843,6 @@ function registerCopilotRoutes(app, pool) {
           || /\b(?:i\s+want\s+to|can\s+i)\s+.*(?:quote|qoute|quotation)\b/i.test(lowerMsg);
 
         if (isQuoteCreate && !attached_image) {
-          // Parse target price (e.g. 160000 or 160,000)
           let targetPrice = null;
           const priceMatch = message.match(/(?:price|rate|cost|target|must\s+be|at|for)\s*(?:must\s+be\s*)?(?:rs\.?\s*)?([\d,]{4,})/i)
             || message.match(/\b(?:rs\.?\s*)([\d,]{4,})\b/i)
@@ -1744,7 +1851,6 @@ function registerCopilotRoutes(app, pool) {
             targetPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
           }
 
-          // Parse quantity (e.g. 15 or quantity of 15 / qauntity of 15)
           let qty = 10;
           const qtyMatch = message.match(/\b(?:qty|quantity|qauntity|units?|pcs)\s*(?:of|=|:)?\s*(\d+)\b/i)
             || message.match(/\b(\d+)\s*(?:units?|pcs|pieces?|qty)\b/i)
@@ -1753,7 +1859,6 @@ function registerCopilotRoutes(app, pool) {
             qty = parseInt(qtyMatch[1]);
           }
 
-          // Extract product query
           let prodQuery = message
             .replace(/\b(i\s+want\s+to|can\s+i|please)?\s*(request|create|submit|add|propose|need)?\s*(a\s+)?(quote|qoute|quotation|bid)\b/gi, '')
             .replace(/\b(with|and)?\s*(quantity|qauntity|qty|units?|pcs)\s*(of|=|:)?\s*\d+\b/gi, '')
@@ -1761,72 +1866,69 @@ function registerCopilotRoutes(app, pool) {
             .replace(/\b(of|for|with|each|product)\b/gi, ' ')
             .trim();
 
-          let matchedProd = null;
-          if (prodQuery) {
-            try {
-              const words = prodQuery.split(/\s+/).filter(w => w.length >= 2);
-              if (words.length > 0) {
-                const prodRes = await pool.query(
-                  `SELECT * FROM products WHERE status = 'ACTIVE' AND (${words.map((_, i) => `(product_name ILIKE $${i+1} OR sku ILIKE $${i+1})`).join(' OR ')}) ORDER BY product_id ASC LIMIT 1`,
-                  words.map(w => `%${w}%`)
-                );
-                if (prodRes.rows.length > 0) matchedProd = prodRes.rows[0];
-              }
-            } catch (_) {}
+          try {
+            const quote = await createDistributorQuotationInDb(pool, userEmail, req.body.user_name || 'Asim Raza', prodQuery || 'Wholesale Item', qty, targetPrice);
+
+            const md = `✅ **Quotation Proposal Created & Submitted to Admin!**\n\n` +
+              `${quote.description}\n\n` +
+              `🔔 **Notification**: Both Admin and Distributor have been notified of this proposal. Status will remain \`${quote.status}\` until final approval by Admin.`;
+
+            let userQuotations = [];
+            try { userQuotations = await getDistributorQuotationsFromDb(pool, null); } catch (_) {}
+
+            return res.json({
+              success: true,
+              action_executed: 'createDistributorQuotation',
+              ai_message: md,
+              quotation: quote,
+              quotations: userQuotations.slice(0, 8)
+            });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `❌ **Price Range Validation Error**: ${err.message}` });
+          }
+        }
+
+        // --- Counter Offer Proposal Submission ---
+        const isCounterOffer = /\b(counter|counter\s+offer|counter\s+proposal|propose\s+counter|offer|bid|negotiate)\b/i.test(lowerMsg);
+        if (isCounterOffer && !attached_image) {
+          const priceMatch = message.match(/(?:price|rate|cost|target|counter|offer|at|for)\s*(?:rs\.?\s*)?([\d,]{4,})/i)
+            || message.match(/\b(?:rs\.?\s*)([\d,]{4,})\b/i)
+            || message.match(/\b(\d{5,})\b/i);
+          const quoteNumMatch = message.match(/\b(QUO[-_]?\d{4}[-_]?\w+|quo[-_]?\d{4}[-_]?\w+|\w+[-_]\d+)/i);
+
+          const counterPrice = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : null;
+          const quoteId = quoteNumMatch ? quoteNumMatch[1] : '';
+
+          if (!counterPrice) {
+            return res.json({
+              success: true,
+              ai_message: `⚠️ Please specify a target counter price in PKR (e.g., *"Counter offer Rs 165,000 for QUO-2026-1001"*).`
+            });
           }
 
-          const prodName = matchedProd ? matchedProd.product_name : (prodQuery || 'Wholesale Item');
-          const sku = matchedProd ? matchedProd.sku : 'SKU-WHOLESALE';
+          try {
+            const quote = await counterOfferQuotationInDb(pool, quoteId, counterPrice, 'DISTRIBUTOR', `Counter proposal of Rs ${counterPrice.toLocaleString()} submitted via Copilot`);
 
-          let baseWholesalePrice = 0;
-          let maxDiscount = 15;
-          let minQty = 1;
+            const md = `📩 **Counter Offer Proposal Sent Successfully!**\n\n` +
+              `${quote.description}\n\n` +
+              `🔔 **Notification Sent to Admin**: Admin has been notified that a counter offer of **Rs ${counterPrice.toLocaleString()}** was proposed. The quotation status will remain \`${quote.status}\` pending Admin approval.`;
 
-          if (matchedProd) {
-            minQty = matchedProd.min_wholesale_qty || 1;
-            maxDiscount = matchedProd.max_discount || 15;
-            const prices = typeof matchedProd.prices === 'string' ? JSON.parse(matchedProd.prices) : matchedProd.prices;
-            baseWholesalePrice = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || 1000);
+            let userQuotations = [];
+            try { userQuotations = await getDistributorQuotationsFromDb(pool, null); } catch (_) {}
+
+            return res.json({
+              success: true,
+              action_executed: 'counterOfferQuotation',
+              ai_message: md,
+              quotation: quote,
+              quotations: userQuotations.slice(0, 8)
+            });
+          } catch (err) {
+            return res.json({
+              success: true,
+              ai_message: `❌ **Counter Offer Price Validation Error**: ${err.message}`
+            });
           }
-
-          if (!targetPrice && baseWholesalePrice > 0) {
-            targetPrice = baseWholesalePrice;
-          }
-
-          const quote = await createDistributorQuotationInDb(pool, userEmail, req.body.user_name || 'Asim Raza', prodName, qty, targetPrice);
-
-          const calcDiscountPct = (baseWholesalePrice > 0 && quote.unit_price < baseWholesalePrice)
-            ? Math.round(((baseWholesalePrice - quote.unit_price) / baseWholesalePrice) * 100)
-            : 0;
-
-          const isWithinLimit = calcDiscountPct <= maxDiscount;
-
-          const md = `✅ **Quotation Request Created Successfully!**\n\n` +
-            `- **Quotation Number**: **${quote.quotation_number}**\n` +
-            `- **Product**: **${quote.product_name}** (SKU: \`${sku}\`)\n` +
-            `- **Quantity Requested**: **${quote.quantity} units** (MOQ Requirement: ${minQty} unit${minQty > 1 ? 's' : ''})\n` +
-            `- **Requested Unit Price**: **Rs ${Number(quote.unit_price).toLocaleString()}**\n` +
-            (baseWholesalePrice > 0 ? `- **Standard Wholesale Price**: Rs ${Number(baseWholesalePrice).toLocaleString()} (${calcDiscountPct}% discount requested vs ${maxDiscount}% max allowed)\n` : '') +
-            `- **Total Estimated Quotation Value**: **Rs ${Number(quote.total_amount).toLocaleString()}**\n` +
-            `- **Quotation Status**: \`${quote.status}\` (Submitted for Sales Admin Review)\n\n` +
-            (isWithinLimit
-              ? `Your target price of Rs ${Number(quote.unit_price).toLocaleString()} (${calcDiscountPct}% discount) is within the maximum allowed discount limit of ${maxDiscount}%. Your quotation request **${quote.quotation_number}** has been registered.`
-              : `Your requested custom unit price of Rs ${Number(quote.unit_price).toLocaleString()} (${calcDiscountPct}% discount) exceeds the standard max discount threshold of ${maxDiscount}%, but has been submitted as **${quote.quotation_number}** for special management review.`);
-
-          let userQuotations = [];
-          try { userQuotations = await getDistributorQuotationsFromDb(pool, userEmail); } catch (_) {}
-
-          let productsList = [];
-          if (matchedProd) productsList = [matchedProd];
-
-          return res.json({
-            success: true,
-            action_executed: 'createDistributorQuotation',
-            ai_message: md,
-            quotation: quote,
-            quotations: userQuotations.slice(0, 5),
-            products: productsList
-          });
         }
 
         // --- Direct B2B Wholesale Order Creation from Chatbot Prompt ---
@@ -1924,10 +2026,12 @@ function registerCopilotRoutes(app, pool) {
         }
 
         // --- Active Quotations Summary & KPIs ---
-        const isQuotationList = /\b(my\s+quotations|active\s+quotations|view\s+quotes|list\s+quotations|track\s+quotations)\b/i.test(lowerMsg);
+        const isQuotationList = /\b(my\s+quotation|active\s+quotation|view\s+quot|list\s+quot|track\s+quot|check\s+.*quot|show\s+.*quot|status\s+.*quot|quot.*status|quot.*list|quot.*check)\b/i.test(lowerMsg)
+          || /\b(qoutation|qoutations|qoute\s+status|quotation\s+status)\b/i.test(lowerMsg);
         if (isQuotationList && !attached_image) {
           const kpis = await getDistributorQuotationKpisFromDb(pool);
-          const userQuotes = await getDistributorQuotationsFromDb(pool, userEmail);
+          // Fetch ALL quotations (not filtered by email) so we see everything
+          const userQuotes = await getDistributorQuotationsFromDb(pool, null);
 
           let md = `### 📋 Active B2B Quotations Overview\n\n` +
             `- **Total Active Quotes**: **${kpis.active_quotations}**\n` +
@@ -1936,14 +2040,14 @@ function registerCopilotRoutes(app, pool) {
             `**Recent Quotations:**\n`;
 
           if (userQuotes.length > 0) {
-            md += userQuotes.slice(0, 5).map((q, idx) => 
-              `${idx + 1}. **${q.quotation_number || q.quotation_id}** | Value: **Rs ${Number(q.total_amount || 0).toLocaleString()}** | Status: \`${q.status}\``
+            md += userQuotes.slice(0, 8).map((q, idx) => 
+              `${idx + 1}. **${q.quotation_number || q.quotation_id}** | Value: **Rs ${Number(q.total_amount || 0).toLocaleString()}** | Status: \`${q.status}\` | Date: ${new Date(q.created_at || Date.now()).toLocaleDateString()}`
             ).join('\n');
           } else {
-            md += `No active quotations found on account.`;
+            md += `No active quotations found.`;
           }
 
-          return res.json({ success: true, action_executed: 'getDistributorQuotations', ai_message: md, quotations: userQuotes.slice(0, 5) });
+          return res.json({ success: true, action_executed: 'getDistributorQuotations', ai_message: md, quotations: userQuotes.slice(0, 8) });
         }
 
         // Fetch active quotations for this distributor
@@ -1978,9 +2082,44 @@ function registerCopilotRoutes(app, pool) {
         }).join('\n');
 
         // Format Quotation Context
-        const quotationContext = userQuotations.slice(0, 5).map((q, i) =>
-          `${i + 1}. Quote #${q.quotation_number || q.quotation_id} | Customer: ${q.customer_email || 'N/A'} | Status: ${q.status} | Total Amount: Rs ${Number(q.total_amount || 0).toLocaleString()} | Date: ${new Date(q.created_at || Date.now()).toLocaleDateString()}`
+        const quotationContext = userQuotations.slice(0, 8).map((q, i) =>
+          `${i + 1}. Quote #${q.quotation_number || q.quotation_id} | Product: ${q.item || q.product_name || 'N/A'} | Status: ${q.status} | Qty: ${q.quantity || 'N/A'} | Unit Price: Rs ${Number(q.unit_price || 0).toLocaleString()} | Total: Rs ${Number(q.total_amount || 0).toLocaleString()} | Valid Until: ${q.valid_until || 'N/A'} | Date: ${new Date(q.created_at || Date.now()).toLocaleDateString()}`
         ).join('\n');
+
+        // Fetch recent B2B orders for this distributor
+        let userOrders = [];
+        try {
+          userOrders = await getDistributorOrdersFromDb(pool, userEmail);
+        } catch (_) {}
+
+        // Format Order Context
+        const orderContext = userOrders.slice(0, 8).map((o, i) => {
+          const status = (o.status || 'PENDING').toUpperCase();
+          const dateStr = o.order_date ? new Date(o.order_date).toLocaleDateString() : 'N/A';
+          return `${i + 1}. Order #${o.order_number || o.order_id} | Items: ${o.items_summary || 'N/A'} | Status: ${status} | Total: Rs ${Number(o.total_amount || 0).toLocaleString()} | Date: ${dateStr} | Type: ${o.order_type || 'B2B'}`;
+        }).join('\n');
+
+        // Fetch invoices for this distributor
+        let userInvoices = [];
+        try {
+          const invRes = await pool.query(
+            `SELECT * FROM invoices ORDER BY id DESC LIMIT 10`
+          );
+          userInvoices = invRes.rows;
+        } catch (_) {}
+
+        // Format Invoice Context
+        const invoiceContext = userInvoices.slice(0, 8).map((inv, i) => {
+          const remaining = parseFloat(inv.total_amount || 0) - parseFloat(inv.amount_paid || 0);
+          return `${i + 1}. Invoice #${inv.invoice_number} | Order: ${inv.order_number || 'N/A'} | Product: ${inv.product_name || inv.items_summary || 'N/A'} | Total: Rs ${Number(inv.total_amount || 0).toLocaleString()} | Paid: Rs ${Number(inv.amount_paid || 0).toLocaleString()} | Remaining: Rs ${Number(remaining).toLocaleString()} | Status: ${inv.status} | Due: ${inv.due_date || 'N/A'} | Issued: ${inv.issue_date || 'N/A'}`;
+        }).join('\n');
+
+        // Fetch ledger for context
+        let ledgerContext = '';
+        try {
+          const ledger = await getDistributorLedgerStatusFromDb(pool, userEmail);
+          ledgerContext = `Credit Limit: Rs ${Number(ledger.credit_limit_pkr).toLocaleString()} | Used: Rs ${Number(ledger.used_credit_pkr).toLocaleString()} | Available: Rs ${Number(ledger.available_credit_pkr).toLocaleString()} | Outstanding Invoices: ${ledger.outstanding_invoices_count} | Terms: ${ledger.payment_terms}`;
+        } catch (_) {}
 
         const historyContext = (history || []).slice(-6).map(m => `${m.sender === 'user' ? 'Distributor Partner' : 'Assistant'}: ${m.text || ''}`).join('\n');
 
@@ -1988,18 +2127,30 @@ function registerCopilotRoutes(app, pool) {
           'You are CIQ Distributor Copilot, an AI assistant for B2B wholesale partners.',
           '',
           '## STRICT B2B RULES:',
-          '1. Answer ONLY based on the WHOLESALE DATA and ACTIVE QUOTATIONS below.',
+          '1. Answer based on ALL the DATA SECTIONS below: wholesale catalog, quotations, orders, invoices, and ledger.',
           '2. Emphasize wholesale pricing, Minimum Wholesale Quantity (MOQ), max allowed discount %, and available bulk stock.',
-          '3. NEVER offer retail buyer recommendations, personal shopping advise, or consumer promotions.',
+          '3. NEVER offer retail buyer recommendations, personal shopping advice, or consumer promotions.',
           '4. Be professional, direct, and structured. Always specify amounts in PKR.',
           '5. When a partner requests a quotation or custom volume discount (even if below regular wholesale price, provided it is within the max discount %), explain clearly that custom quote requests can be submitted and calculate the quotation breakdown (unit price x quantity), total PKR value, MOQ, and max discount percentage.',
-          '6. If the requested product is not found in the catalog at all, state clearly: "Product not found in active wholesale catalog."',
+          '6. When asked about orders, provide order number, product/items, status, amount, and date from the ORDERS section.',
+          '7. When asked about invoices or payments, provide invoice number, amount, paid/remaining, status, and due date from the INVOICES section.',
+          '8. When asked about credit limit, balance, or ledger, use the FINANCIAL LEDGER section.',
+          '9. If the requested data is not found in any section, state clearly what was not found.',
           '',
           '## WHOLESALE CATALOG DATA:',
           productContext || 'No matching wholesale products found.',
           '',
           '## DISTRIBUTOR ACTIVE QUOTATIONS:',
           quotationContext || 'No active quotations found for your account.',
+          '',
+          '## RECENT B2B ORDERS:',
+          orderContext || 'No recent B2B orders found.',
+          '',
+          '## INVOICES & PAYMENTS:',
+          invoiceContext || 'No invoices found.',
+          '',
+          '## FINANCIAL LEDGER:',
+          ledgerContext || 'Ledger data unavailable.',
           '',
           '## RECENT CONVERSATION:',
           historyContext || 'No previous messages.',

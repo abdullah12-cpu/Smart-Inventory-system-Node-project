@@ -226,6 +226,18 @@ async function initDb() {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS min_wholesale_qty INTEGER DEFAULT 1;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS max_discount INTEGER DEFAULT 10;
       ALTER TABLE quotations ADD COLUMN IF NOT EXISTS items JSONB;
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS product_name TEXT;
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sku VARCHAR(100);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1;
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS unit_price NUMERIC(15,2);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS original_unit_price NUMERIC(15,2);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS min_price_allowed NUMERIC(15,2);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS max_discount_pct INTEGER DEFAULT 15;
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS last_counter_by VARCHAR(50);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS counter_history JSONB;
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS description TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
       ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
