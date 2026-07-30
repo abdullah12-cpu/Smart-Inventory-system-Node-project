@@ -25,7 +25,8 @@ import {
   Trash2,
   Camera,
   ShoppingBag,
-  X
+  X,
+  Truck
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useStore } from "@/lib/store";
