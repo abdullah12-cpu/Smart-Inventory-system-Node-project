@@ -107,7 +107,7 @@ function saveBuyerSession(email, data) {
 }
 
 const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline stating: "I can only assist with registered catalog inventory, supplier management, and order operations." Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.';
-const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an AI partner assistant for wholesale distributors. You assist distributors with checking wholesale pricing, stock availability, quotations, orders, and partner account info. You are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If the user asks for administrator operations, you MUST decline, stating: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required." Keep your answers concise, helpful, and partner-focused.';
+const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an intelligent AI partner assistant for wholesale distributors. You help distributors with: (1) discovering wholesale products with pricing, MOQ, stock levels, and discounts (2) tracking ALL their orders or specific orders (3) viewing quotations and submitting quote requests (4) checking credit limits and financial ledger status (5) placing direct B2B orders. \n\nWhen distributors ask to "show all orders", "list my orders", "my recent orders" or similar queries WITHOUT mentioning a specific order ID, you MUST show them ALL their orders in a structured table format. Never ask for an order ID when they clearly want to see all orders.\n\nWhen they ask about products (e.g., "show me keyboard", "list products", "what products do you have"), IMMEDIATELY show them the available wholesale products matching their query. Do NOT ask clarification questions if product data exists in the context.\n\nYou are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If asked for admin operations, decline with: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required."\n\nBe proactive, helpful, concise, and business-focused. Always prioritize showing data over asking clarification questions when the intent is clear.';
 const BUYER_SYSTEM_PROMPT = 'You are CIQ Personal Shopping Assistant, an AI assistant helping retail buyers discover products in the store. You strictly assist buyers with discovering retail products, filtering by budget limits in PKR, natural language specs, stock availability, and personal recommendations ("getBuyerProductRecommendations"). You are strictly prohibited from performing administrator tasks or distributor wholesale functions. If asked for admin or distributor operations, decline stating: "❌ As a Personal Shopping Assistant, I can only help you discover retail products and answer catalog shopping questions." Keep your answers friendly, structured, enthusiastic, and concise.';
 
 
@@ -1710,9 +1710,30 @@ function registerCopilotRoutes(app, pool) {
     const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/i.test(lowerMsg);
     if (isGreeting && lowerMsg.split(/\s+/).length <= 3) {
       const botName = role === 'DISTRIBUTOR' ? 'CIQ Distributor Copilot' : role === 'BUYER' ? 'CIQ Personal Shopping Assistant' : 'CIQ Admin Copilot';
+      
+      let greetingMsg = `Hello ${displayName}! I am your ${botName}.`;
+      
+      if (role === 'DISTRIBUTOR') {
+        greetingMsg += ` I can help you:\n\n` +
+          `• **Check wholesale prices** and stock availability\n` +
+          `• **View all your orders** or track specific orders\n` +
+          `• **Manage quotations** and submit quote requests\n` +
+          `• **Check credit limit** and financial ledger\n` +
+          `• **Place direct B2B orders** for wholesale products\n\n` +
+          `Try:\n` +
+          `- *"Show me all products"*\n` +
+          `- *"List all my orders"*\n` +
+          `- *"Check my credit limit"*\n` +
+          `- *"Show me keyboards"*`;
+      } else if (role === 'BUYER') {
+        greetingMsg += ` How can I help you find the perfect products today?`;
+      } else {
+        greetingMsg += ` How can I assist you today?`;
+      }
+      
       return res.json({
         success: true,
-        ai_message: `Hello ${displayName}! I am your ${botName}. How can I assist you today?`
+        ai_message: greetingMsg
       });
     }
 
@@ -1830,9 +1851,60 @@ function registerCopilotRoutes(app, pool) {
             }
           }
 
-          // ── Fallback: Order ID/Number based tracking ───────────────
+          // ── Fallback: Order ID/Number based tracking OR show all orders ───────────────
           const ordMatch = message.match(/\b(ORD[-_]?\d{4}[-_]?\w+|ord[-_]?\d{4}[-_]?\w+)/i);
           const order_id_query = ordMatch ? ordMatch[1] : '';
+          
+          // If user says "show all orders", "list all orders", "my orders" etc. without specific ID, fetch all
+          const isShowAll = /\b(show|list|get|view|display|see|all|my)\s+(all\s+)?(my\s+)?(orders?|purchases?)\b/i.test(message) && !ordMatch;
+          
+          if (isShowAll) {
+            // Fetch all orders for distributor
+            try {
+              const allOrdersResult = await pool.query(
+                `SELECT * FROM orders ORDER BY order_date DESC LIMIT 50`
+              );
+              
+              if (allOrdersResult.rows.length === 0) {
+                return res.json({
+                  success: true,
+                  action_executed: 'listAllOrders',
+                  ai_message: `📋 **No Orders Found**\n\nYou don't have any orders yet. Start by:\n- *"Show me wholesale products"*\n- *"Place an order for 10 keyboards"*\n- *"Request a quotation"*`,
+                  orders: []
+                });
+              }
+              
+              let md = `### 📋 All Your Orders (${allOrdersResult.rows.length} Total)\n\n` +
+                `| # | Order Number | Product / Items | Status | Amount | Date |\n` +
+                `|---|---|---|---|---|---|\n`;
+              
+              allOrdersResult.rows.forEach((o, idx) => {
+                let productName = o.items_summary || o.product_name || 'N/A';
+                if (productName.length > 40) productName = productName.substring(0, 37) + '...';
+                const status = (o.status || 'PENDING').toUpperCase();
+                const statusEmoji = status === 'DELIVERED' ? '✅' : status === 'SHIPPED' ? '🚚' : status === 'PROCESSING' ? '⚙️' : status === 'CONFIRMED' ? '📋' : status === 'CANCELLED' ? '❌' : '⏳';
+                const orderDate = o.order_date ? new Date(o.order_date).toLocaleDateString('en-PK', {month: 'short', day: 'numeric'}) : 'Recent';
+                md += `| ${idx + 1} | **${o.order_number || o.order_id}** | ${productName} | ${statusEmoji} ${status} | Rs ${Number(o.total_amount || 0).toLocaleString()} | ${orderDate} |\n`;
+              });
+              
+              md += `\n💬 To see details for a specific order, say: *"Track order ${allOrdersResult.rows[0].order_number || 'ORD-XXXX'}"*`;
+              
+              return res.json({
+                success: true,
+                action_executed: 'listAllOrders',
+                ai_message: md,
+                orders: allOrdersResult.rows
+              });
+            } catch (dbErr) {
+              return res.json({
+                success: true,
+                ai_message: `❌ Error fetching orders: ${dbErr.message}`,
+                orders: []
+              });
+            }
+          }
+          
+          // Otherwise, try to track specific order by ID
           const trackResult = await trackBuyerOrder(pool, { order_id_query });
           return res.json({
             success: true,
@@ -2063,6 +2135,12 @@ function registerCopilotRoutes(app, pool) {
         } catch (_) {}
 
         // Vector search for wholesale products
+        // Strip common filler words first so keyword search gets a clean product term
+        const cleanedQuery = message
+          .replace(/\b(show|display|list|find|get|give|me|the|a|an|some|all|please|can you|could you|i want|i need|tell me about|what is|what are|do you have|available)\b/gi, ' ')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
         let wholesaleProducts = [];
         const embedAvailable = await isEmbedModelAvailable();
         if (embedAvailable && message) {
@@ -2073,10 +2151,18 @@ function registerCopilotRoutes(app, pool) {
           }
         }
 
-        // Fallback to keyword search if vector search returns 0 products
+        // Fallback to keyword search using cleaned query
         if (wholesaleProducts.length === 0) {
           try {
-            wholesaleProducts = await getDistributorWholesaleProductsFromDb(pool, message);
+            // Use cleaned query for keyword match; if nothing left, fetch full catalog
+            wholesaleProducts = await getDistributorWholesaleProductsFromDb(pool, cleanedQuery || null);
+          } catch (_) {}
+        }
+
+        // Last resort: return full catalog so LLM has something to show
+        if (wholesaleProducts.length === 0) {
+          try {
+            wholesaleProducts = await getDistributorWholesaleProductsFromDb(pool, null);
           } catch (_) {}
         }
 
@@ -2089,7 +2175,7 @@ function registerCopilotRoutes(app, pool) {
 
         // Format Quotation Context
         const quotationContext = userQuotations.slice(0, 8).map((q, i) =>
-          `${i + 1}. Quote #${q.quotation_number || q.quotation_id} | Product: ${q.item || q.product_name || 'N/A'} | Status: ${q.status} | Qty: ${q.quantity || 'N/A'} | Unit Price: Rs ${Number(q.unit_price || 0).toLocaleString()} | Total: Rs ${Number(q.total_amount || 0).toLocaleString()} | Valid Until: ${q.valid_until || 'N/A'} | Date: ${new Date(q.created_at || Date.now()).toLocaleDateString()}`
+          `${i + 1}. Quote #${q.quotation_number || q.quotation_id} | Product: ${q.product_name || 'N/A'} | Status: ${q.status} | Qty: ${q.quantity || 'N/A'} | Unit Price: Rs ${Number(q.unit_price || 0).toLocaleString()} | Total: Rs ${Number(q.total_amount || 0).toLocaleString()} | Valid Until: ${q.valid_until || 'N/A'} | Date: ${new Date(q.created_at || Date.now()).toLocaleDateString()}`
         ).join('\n');
 
         // Fetch recent B2B orders for this distributor
@@ -2134,14 +2220,15 @@ function registerCopilotRoutes(app, pool) {
           '',
           '## STRICT B2B RULES:',
           '1. Answer based on ALL the DATA SECTIONS below: wholesale catalog, quotations, orders, invoices, and ledger.',
-          '2. Emphasize wholesale pricing, Minimum Wholesale Quantity (MOQ), max allowed discount %, and available bulk stock.',
-          '3. NEVER offer retail buyer recommendations, personal shopping advice, or consumer promotions.',
-          '4. Be professional, direct, and structured. Always specify amounts in PKR.',
-          '5. When a partner requests a quotation or custom volume discount (even if below regular wholesale price, provided it is within the max discount %), explain clearly that custom quote requests can be submitted and calculate the quotation breakdown (unit price x quantity), total PKR value, MOQ, and max discount percentage.',
-          '6. When asked about orders, provide order number, product/items, status, amount, and date from the ORDERS section.',
-          '7. When asked about invoices or payments, provide invoice number, amount, paid/remaining, status, and due date from the INVOICES section.',
-          '8. When asked about credit limit, balance, or ledger, use the FINANCIAL LEDGER section.',
-          '9. If the requested data is not found in any section, state clearly what was not found.',
+          '2. When the partner asks to "show", "list", "find", or "search" for products — IMMEDIATELY show the products from the WHOLESALE CATALOG DATA section. Do NOT ask for clarification.',
+          '3. Emphasize wholesale pricing, Minimum Wholesale Quantity (MOQ), max allowed discount %, and available bulk stock.',
+          '4. NEVER offer retail buyer recommendations, personal shopping advice, or consumer promotions.',
+          '5. Be professional, direct, and structured. Always specify amounts in PKR.',
+          '6. When a partner requests a quotation or custom volume discount, calculate: unit price × quantity = total PKR value, show MOQ and max discount %.',
+          '7. When asked about orders, provide order number, product/items, status, amount, and date from the ORDERS section.',
+          '8. When asked about invoices or payments, provide invoice number, amount, paid/remaining, status, and due date from the INVOICES section.',
+          '9. When asked about credit limit, balance, or ledger, use the FINANCIAL LEDGER section.',
+          '10. If data is not found in any section, say so clearly. NEVER ask for clarification when product data is already provided below.',
           '',
           '## WHOLESALE CATALOG DATA:',
           productContext || 'No matching wholesale products found.',
@@ -2164,7 +2251,7 @@ function registerCopilotRoutes(app, pool) {
           '## DISTRIBUTOR QUESTION:',
           message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500),
           '',
-          'Provide a clear, professional B2B wholesale response:'
+          'Provide a clear, professional B2B wholesale response. If products are in the catalog above, list them directly with price, MOQ, and stock:'
         ].join('\n');
 
         // Call Ollama endpoint (Remote PC -> Local Mac)

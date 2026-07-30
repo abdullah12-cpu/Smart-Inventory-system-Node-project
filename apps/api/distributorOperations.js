@@ -1,5 +1,5 @@
 async function getDistributorWholesaleProductsFromDb(pool, identifier) {
-  let query = 'SELECT product_id, sku, barcode, product_name, brand, category, prices, inventory, min_wholesale_qty, max_discount, status FROM products WHERE status = $1';
+  let query = 'SELECT product_id, sku, barcode, product_name, brand, category, prices, inventory, min_wholesale_qty, max_discount, status, image_url FROM products WHERE status = $1';
   let params = ['ACTIVE'];
 
   if (identifier) {
@@ -7,9 +7,36 @@ async function getDistributorWholesaleProductsFromDb(pool, identifier) {
     params.push(`%${identifier}%`);
   }
 
-  query += ' LIMIT 20';
+  query += ' ORDER BY category ASC, product_name ASC LIMIT 20';
   const res = await pool.query(query, params);
-  return res.rows;
+
+  return res.rows.map(r => {
+    let prices = {};
+    let inventory = [];
+    try { prices    = typeof r.prices    === 'string' ? JSON.parse(r.prices)    : (r.prices    || {}); } catch (_) {}
+    try { inventory = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : (r.inventory || []); } catch (_) {}
+
+    const availableStock = inventory.reduce((sum, i) => sum + (i.available_quantity || 0), 0);
+    const retailPrice    = parseFloat(prices.RETAIL      || 0);
+    const wholesalePrice = parseFloat(prices.DISTRIBUTOR || prices.WHOLESALE || Math.round(retailPrice * 0.85) || 0);
+
+    return {
+      product_id:        r.product_id,
+      sku:               r.sku,
+      product_name:      r.product_name,
+      brand:             r.brand || '',
+      category:          r.category || '',
+      image_url:         r.image_url || '',
+      retail_price:      retailPrice,
+      wholesale_price:   wholesalePrice,
+      distributor_price: wholesalePrice,   // alias kept for backward-compat
+      min_wholesale_qty: parseInt(r.min_wholesale_qty || 1),
+      max_discount:      parseInt(r.max_discount || 0),
+      available_stock:   availableStock,
+      inventory,
+      prices,
+    };
+  });
 }
 
 async function getDistributorQuotationsFromDb(pool, customerEmail) {
@@ -125,7 +152,7 @@ async function getDistributorQuotationKpisFromDb(pool) {
 
 async function getDistributorQuotationsByProductFromDb(pool, productName) {
   const res = await pool.query(
-    'SELECT * FROM quotations WHERE item ILIKE $1 OR quotation_id ILIKE $1 ORDER BY created_at DESC LIMIT 20',
+    'SELECT * FROM quotations WHERE product_name ILIKE $1 OR sku ILIKE $1 OR quotation_number ILIKE $1 ORDER BY created_at DESC LIMIT 20',
     [`%${productName}%`]
   );
   return res.rows;

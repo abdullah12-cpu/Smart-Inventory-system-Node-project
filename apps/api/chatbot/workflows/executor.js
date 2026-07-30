@@ -182,9 +182,10 @@ async function executeAdminTool(pool, name, args, message, attached_image) {
 async function executeDistributorTool(pool, name, args) {
   if (name === 'getDistributorWholesaleProducts') {
     const rows = await distributorOps.getDistributorWholesaleProductsFromDb(pool, args ? args.identifier : null);
-    const md = "### 📦 Wholesale Product Catalog & Stock\n\n| SKU | Product Name | Wholesale Price | Minimum Order Qty | Available Stock |\n|---|---|---|---|---|\n" +
-      rows.map(r => `| ${r.sku} | ${r.product_name} | Rs ${Number(r.distributor_price || r.price).toLocaleString()} | ${r.min_wholesale_qty || 10} units | ${(r.karachi_stock || 0) + (r.lahore_stock || 0)} units |`).join("\n");
-    return { action_executed: name, ai_message: md };
+    if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No wholesale products found${args?.identifier ? ` matching "${args.identifier}"` : ''}.` };
+    const md = "### 📦 Wholesale Product Catalog & Stock\n\n| SKU | Product Name | Category | Wholesale Price | MOQ | Available Stock |\n|---|---|---|---|---|---|\n" +
+      rows.map(r => `| ${r.sku} | ${r.product_name} | ${r.category || 'N/A'} | Rs ${Number(r.wholesale_price || r.distributor_price || 0).toLocaleString()} | ${r.min_wholesale_qty || 1} units | ${r.available_stock || 0} units |`).join("\n");
+    return { action_executed: name, ai_message: md, products: rows };
   }
   if (name === 'getDistributorQuotations') {
     const rows = await distributorOps.getDistributorQuotationsFromDb(pool, args ? args.identifier : null);
@@ -195,13 +196,18 @@ async function executeDistributorTool(pool, name, args) {
   }
   if (name === 'getDistributorOrders') {
     const rows = await distributorOps.getDistributorOrdersFromDb(pool, args ? args.identifier : null);
-    const md = "### 🚚 Distributor B2B Purchase Orders\n\n| Order # | Date | Status | Warehouse Depot | Total Amount |\n|---|---|---|---|---|\n" +
-      rows.map(r => `| ${r.order_number || r.id || 'ORD-PO-4812'} | ${r.order_date || 'Recent'} | ${r.status || 'PROCESSING'} | ${r.warehouse_depot || 'Karachi Central'} | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
+    if (rows.length === 0) return { action_executed: name, ai_message: `ℹ️ No B2B orders found.` };
+    const md = "### 🚚 Distributor B2B Purchase Orders\n\n| Order # | Date | Status | Items Summary | Total Amount |\n|---|---|---|---|---|\n" +
+      rows.map(r => `| ${r.order_number || r.order_id} | ${r.order_date ? new Date(r.order_date).toLocaleDateString() : 'N/A'} | ${r.status || 'PENDING'} | ${r.items_summary || 'N/A'} | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join("\n");
     return { action_executed: name, ai_message: md };
   }
   if (name === 'getDistributorLedgerStatus') {
     const ledger = await distributorOps.getDistributorLedgerStatusFromDb(pool);
-    const md = `### 💳 Distributor Financial Ledger & Credit Status\n\n- **Approved Credit Limit**: Rs ${Number(ledger.credit_limit || 2500000).toLocaleString()}\n- **Used Credit**: Rs ${Number(ledger.used_credit || 450000).toLocaleString()}\n- **Available Credit Balance**: Rs ${Number(ledger.remaining_credit || 2050000).toLocaleString()}\n- **Outstanding Invoices**: ${ledger.open_invoices || 1} open (${ledger.payment_terms || 'NET-30'} Terms)`;
+    const md = `### 💳 Distributor Financial Ledger & Credit Status\n\n` +
+      `- **Approved Credit Limit**: **Rs ${Number(ledger.credit_limit_pkr || 2500000).toLocaleString()}**\n` +
+      `- **Used Credit**: Rs ${Number(ledger.used_credit_pkr || 0).toLocaleString()}\n` +
+      `- **Available Credit Balance**: **Rs ${Number(ledger.available_credit_pkr || 2500000).toLocaleString()}**\n` +
+      `- **Outstanding Invoices**: ${ledger.outstanding_invoices_count || 0} open (${ledger.payment_terms || 'NET-30'} Terms)`;
     return { action_executed: name, ai_message: md };
   }
   if (name === 'createDistributorQuotation') {
