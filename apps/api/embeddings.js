@@ -12,15 +12,56 @@
  *   backfillEmbeddings(pool)                   → void      (fill missing on startup)
  */
 
-const OLLAMA_BASE = 'http://localhost:11434';
 const EMBED_MODEL = 'nomic-embed-text';
 const EMBED_DIMS  = 768;
+
+/**
+ * Dynamically resolves working Ollama base URL (Remote PC via OLLAMA_URL -> Local Mac)
+ */
+async function getWorkingOllamaBase() {
+  const remoteUrl = process.env.OLLAMA_URL;
+  if (remoteUrl && remoteUrl !== 'http://localhost:11434') {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`${remoteUrl}/api/tags`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if ((data.models || []).some(m => m.name.includes(EMBED_MODEL))) {
+          return remoteUrl;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Fallback to local Mac Ollama
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`http://localhost:11434/api/tags`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if ((data.models || []).some(m => m.name.includes(EMBED_MODEL))) {
+        return 'http://localhost:11434';
+      }
+    }
+  } catch (_) {}
+
+  return null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Generate embedding vector from text via Ollama
 // ─────────────────────────────────────────────────────────────────────────────
 async function generateEmbedding(text) {
-  const res = await fetch(`${OLLAMA_BASE}/api/embed`, {
+  const baseUrl = await getWorkingOllamaBase();
+  if (!baseUrl) {
+    throw new Error('No working Ollama instance found with nomic-embed-text');
+  }
+
+  const res = await fetch(`${baseUrl}/api/embed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: EMBED_MODEL, input: text })
@@ -187,6 +228,86 @@ async function vectorSearchProducts(pool, query, opts = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 4b. Vector similarity search for Wholesale Distributors
+//     Returns products ranked by cosine similarity with B2B metadata (MOQ, max discount, wholesale tier prices)
+// ─────────────────────────────────────────────────────────────────────────────
+async function vectorSearchDistributorProducts(pool, query, opts = {}) {
+  const {
+    limit      = 15,
+    max_price  = null,
+    min_price  = null,
+    category   = null,
+    brand      = null,
+    threshold  = 0.20,
+  } = opts;
+
+  let queryVector;
+  try {
+    queryVector = await generateEmbedding(query);
+  } catch (err) {
+    console.error('[Embeddings] Distributor query embedding failed:', err.message);
+    return [];
+  }
+
+  const vectorLiteral = `[${queryVector.join(',')}]`;
+
+  const conditions = [`status = 'ACTIVE'`, `embedding IS NOT NULL`];
+  const params     = [vectorLiteral];
+  let   idx        = 2;
+
+  if (category) { conditions.push(`LOWER(category) LIKE $${idx}`); params.push(`%${category.toLowerCase()}%`); idx++; }
+  if (brand)    { conditions.push(`LOWER(brand) LIKE $${idx}`);    params.push(`%${brand.toLowerCase()}%`);    idx++; }
+
+  const whereClause = conditions.join(' AND ');
+
+  const sql = `
+    SELECT *,
+           1 - (embedding <=> $1::vector) AS similarity
+    FROM   products
+    WHERE  ${whereClause}
+      AND  1 - (embedding <=> $1::vector) >= ${threshold}
+    ORDER  BY similarity DESC
+    LIMIT  $${idx}
+  `;
+  params.push(limit);
+
+  try {
+    const result = await pool.query(sql, params);
+
+    return result.rows.map(r => {
+      let prices    = {};
+      let inventory = [];
+      try { prices    = typeof r.prices    === 'string' ? JSON.parse(r.prices)    : r.prices    || {}; } catch (_) {}
+      try { inventory = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory || []; } catch (_) {}
+
+      const availableStock = inventory.reduce((sum, i) => sum + (i.available_quantity || i.quantity || 0), 0);
+      const retailPrice = prices.RETAIL !== undefined ? parseFloat(prices.RETAIL) : 0;
+      const wholesalePrice = prices.WHOLESALE !== undefined ? parseFloat(prices.WHOLESALE) : Math.round(retailPrice * 0.85);
+
+      return {
+        product_id:        r.product_id,
+        sku:               r.sku,
+        product_name:      r.product_name,
+        short_description: r.short_description || '',
+        brand:             r.brand,
+        category:          r.category,
+        retail_price:      retailPrice,
+        wholesale_price:   wholesalePrice,
+        min_wholesale_qty: r.min_wholesale_qty || 1,
+        max_discount:      r.max_discount || 0,
+        prices,
+        image_url:         r.image_url,
+        available_stock:   availableStock,
+        similarity:        parseFloat(r.similarity).toFixed(3)
+      };
+    });
+  } catch (err) {
+    console.error('[Embeddings] Distributor vector search failed:', err.message);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 5. Startup backfill — embed all products that have no embedding yet
 //    Runs once on server start, non-blocking (fire-and-forget)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,14 +347,8 @@ async function backfillEmbeddings(pool) {
 // Check if Ollama embed model is available
 // ─────────────────────────────────────────────────────────────────────────────
 async function isEmbedModelAvailable() {
-  try {
-    const res  = await fetch(`${OLLAMA_BASE}/api/tags`);
-    if (!res.ok) return false;
-    const data = await res.json();
-    return (data.models || []).some(m => m.name.includes('nomic-embed-text'));
-  } catch (_) {
-    return false;
-  }
+  const baseUrl = await getWorkingOllamaBase();
+  return !!baseUrl;
 }
 
 module.exports = {
@@ -241,6 +356,7 @@ module.exports = {
   buildProductText,
   upsertProductEmbedding,
   vectorSearchProducts,
+  vectorSearchDistributorProducts,
   backfillEmbeddings,
   isEmbedModelAvailable,
 };

@@ -23,7 +23,63 @@ const {
   createDistributorDirectOrderInDb
 } = require('./distributorOperations');
 const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb, trackBuyerOrder, listBuyerOrdersByStatus } = require('./buyerOperations');
-const { vectorSearchProducts, isEmbedModelAvailable } = require('./embeddings');
+const { vectorSearchProducts, vectorSearchDistributorProducts, isEmbedModelAvailable } = require('./embeddings');
+
+// ─── Ollama config & dynamic resolution (Remote PC -> Local Mac fallback) ──────
+const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_CHAT_MODEL = process.env.OLLAMA_CHAT_MODEL || 'qwen2.5:14b';
+const OLLAMA_LOCAL_MODEL = process.env.OLLAMA_LOCAL_MODEL || 'qwen2.5:3b';
+
+async function getOllamaChatEndpoint() {
+  const remoteUrl = process.env.OLLAMA_URL;
+
+  // 1. Try Remote PC first (e.g. ngrok / PC IP)
+  if (remoteUrl && remoteUrl !== 'http://localhost:11434') {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`${remoteUrl}/api/tags`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const tagData = await res.json();
+        const models = tagData.models || [];
+        const match = models.find(m => m.name.includes(OLLAMA_CHAT_MODEL)) ||
+                      models.find(m => /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision|embed/i.test(m.name));
+        if (match) {
+          console.log(`[Ollama RAG] 🌐 Connected to Remote PC (${remoteUrl}) → Using model: ${match.name}`);
+          return { baseUrl: remoteUrl, modelName: match.name, isRemote: true };
+        }
+      }
+    } catch (err) {
+      console.warn(`[Ollama RAG] ⚠️ Remote PC (${remoteUrl}) unreachable: ${err.message}. Falling back to Mac local...`);
+    }
+  }
+
+  // 2. Fallback to Mac Local Ollama
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch('http://localhost:11434/api/tags', { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const tagData = await res.json();
+      const models = tagData.models || [];
+      const match = models.find(m => m.name.includes(OLLAMA_LOCAL_MODEL)) ||
+                    models.find(m => m.name.includes('qwen2.5:3b')) ||
+                    models.find(m => /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision|embed/i.test(m.name));
+      if (match) {
+        console.log(`[Ollama RAG] 💻 Running on Local Mac → Using model: ${match.name}`);
+        return { baseUrl: 'http://localhost:11434', modelName: match.name, isRemote: false };
+      }
+    }
+  } catch (_) {
+    console.warn('[Ollama RAG] ❌ Local Mac Ollama is not running.');
+  }
+
+  return null;
+}
 
 // ─── Buyer session memory (in-process, per user email) ───────────────────────
 // Stores: { lastProducts, lastCategory, lastMinPrice, lastMaxPrice, lastSortBy, lastQuery }
@@ -1651,6 +1707,146 @@ function registerCopilotRoutes(app, pool) {
       });
     }
 
+    // 1.4 DISTRIBUTOR Role direct handler (Wholesale Products, Quotations, Ledger & B2B RAG)
+    if (role === 'DISTRIBUTOR') {
+      try {
+        const userEmail = req.body.user_email || 'partner@commerceiq.com';
+
+        // --- Live Order Tracking for Distributors ---
+        const isOrderTrack = /\b(where is my order|track(\s+my)?\s+order|order\s+status|find\s+my\s+order|show\s+.*orders)\b/i.test(message)
+          || /\b(ord[-_]?\d{4}[-_]?\d+)\b/i.test(message);
+        if (isOrderTrack && !attached_image) {
+          const ordMatch = message.match(/\b(ORD[-_]?\d{4}[-_]?\w+|ord[-_]?\d{4}[-_]?\w+)/i);
+          const order_id_query = ordMatch ? ordMatch[1] : '';
+          const trackResult = await trackBuyerOrder(pool, { order_id_query });
+          return res.json({
+            success: true,
+            action_executed: 'trackBuyerOrder',
+            ai_message: trackResult.ai_message,
+            orders: trackResult.orders
+          });
+        }
+
+        // Fetch active quotations for this distributor
+        let userQuotations = [];
+        try {
+          userQuotations = await getDistributorQuotationsFromDb(pool, userEmail);
+        } catch (_) {}
+
+        // Vector search for wholesale products
+        let wholesaleProducts = [];
+        const embedAvailable = await isEmbedModelAvailable();
+        if (embedAvailable && message) {
+          try {
+            wholesaleProducts = await vectorSearchDistributorProducts(pool, message, { limit: 10, threshold: 0.18 });
+          } catch (e) {
+            console.error('[Distributor RAG] Vector search error:', e.message);
+          }
+        }
+
+        // Fallback to keyword search if vector search returns 0 products
+        if (wholesaleProducts.length === 0) {
+          try {
+            wholesaleProducts = await getDistributorWholesaleProductsFromDb(pool, message);
+          } catch (_) {}
+        }
+
+        // Format Wholesale Products Context
+        const productContext = wholesaleProducts.map((p, i) => {
+          const wholesalePriceStr = p.wholesale_price ? `Rs ${Number(p.wholesale_price).toLocaleString()}` : `Rs ${Number(p.retail_price * 0.85).toLocaleString()}`;
+          const retailPriceStr = p.retail_price ? `Rs ${Number(p.retail_price).toLocaleString()}` : 'N/A';
+          return `${i + 1}. "${p.product_name}" (SKU: ${p.sku}) | Category: ${p.category || 'General'} | Wholesale Price: ${wholesalePriceStr} | Retail Price: ${retailPriceStr} | MOQ: ${p.min_wholesale_qty || 1} units | Max Discount: ${p.max_discount || 0}% | Stock: ${p.available_stock > 0 ? `${p.available_stock} available` : 'Out of Stock'}`;
+        }).join('\n');
+
+        // Format Quotation Context
+        const quotationContext = userQuotations.slice(0, 5).map((q, i) =>
+          `${i + 1}. Quote #${q.quotation_number || q.quotation_id} | Customer: ${q.customer_email || 'N/A'} | Status: ${q.status} | Total Amount: Rs ${Number(q.total_amount || 0).toLocaleString()} | Date: ${new Date(q.created_at || Date.now()).toLocaleDateString()}`
+        ).join('\n');
+
+        const historyContext = (history || []).slice(-6).map(m => `${m.sender === 'user' ? 'Distributor Partner' : 'Assistant'}: ${m.text || ''}`).join('\n');
+
+        const distributorRagPrompt = [
+          'You are CIQ Distributor Copilot, an AI assistant for B2B wholesale partners.',
+          '',
+          '## STRICT B2B RULES:',
+          '1. Answer ONLY based on the WHOLESALE DATA and ACTIVE QUOTATIONS below.',
+          '2. Emphasize wholesale pricing, Minimum Wholesale Quantity (MOQ), max allowed discount %, and available bulk stock.',
+          '3. NEVER offer retail buyer recommendations, personal shopping advise, or consumer promotions.',
+          '4. Be professional, direct, and structured. Always specify amounts in PKR.',
+          '5. If the requested product or quote is not found, state clearly: "We do not have an active wholesale offer matching that request."',
+          '',
+          '## WHOLESALE CATALOG DATA:',
+          productContext || 'No matching wholesale products found.',
+          '',
+          '## DISTRIBUTOR ACTIVE QUOTATIONS:',
+          quotationContext || 'No active quotations found for your account.',
+          '',
+          '## RECENT CONVERSATION:',
+          historyContext || 'No previous messages.',
+          '',
+          '## DISTRIBUTOR QUESTION:',
+          message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500),
+          '',
+          'Provide a clear, professional B2B wholesale response:'
+        ].join('\n');
+
+        // Call Ollama endpoint (Remote PC -> Local Mac)
+        const endpoint = await getOllamaChatEndpoint();
+        if (endpoint) {
+          const resOllama = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: endpoint.modelName,
+              messages: [
+                { role: 'system', content: distributorRagPrompt },
+                { role: 'user', content: message }
+              ],
+              options: { temperature: 0.2 }
+            })
+          });
+
+          if (resOllama.ok) {
+            const data = await resOllama.json();
+            const reply = data.choices?.[0]?.message?.content?.trim();
+            if (reply) {
+              return res.json({
+                success: true,
+                action_executed: 'getDistributorWholesaleRecommendations',
+                ai_message: reply,
+                products: wholesaleProducts.slice(0, 10),
+                quotations: userQuotations.slice(0, 5)
+              });
+            }
+          }
+        }
+
+        // Fallback markdown response
+        let fallbackMd = `### 🏢 Wholesale Partner Response\n\n`;
+        if (wholesaleProducts.length > 0) {
+          fallbackMd += wholesaleProducts.map((p, idx) => {
+            const wsPrice = p.wholesale_price ? `Rs ${Number(p.wholesale_price).toLocaleString()}` : `Rs ${Number(p.retail_price * 0.85).toLocaleString()}`;
+            return `**${idx + 1}. ${p.product_name}** (SKU: \`${p.sku}\`)\n` +
+              `- **Wholesale Price**: **${wsPrice}** | **Retail Price**: Rs ${p.retail_price.toLocaleString()}\n` +
+              `- **Minimum Order Qty (MOQ)**: ${p.min_wholesale_qty || 1} units | **Max Discount**: ${p.max_discount || 0}%\n` +
+              `- **Available Stock**: ${p.available_stock > 0 ? `${p.available_stock} units` : 'Out of Stock'}\n`;
+          }).join('\n');
+        } else {
+          fallbackMd += `No active wholesale catalog items found matching your query. Please contact account management for custom bulk quotes.`;
+        }
+
+        return res.json({
+          success: true,
+          action_executed: 'getDistributorWholesaleRecommendations',
+          ai_message: fallbackMd,
+          products: wholesaleProducts.slice(0, 10)
+        });
+
+      } catch (err) {
+        return res.json({ success: true, ai_message: `❌ Distributor RAG Error: ${err.message}` });
+      }
+    }
+
     // 1.5 BUYER Role direct handler (Order Tracking, Visual Search, Comparison & Product Recommendations)
     if (role === 'BUYER') {
       try {
@@ -1742,7 +1938,7 @@ function registerCopilotRoutes(app, pool) {
           ].join('\n');
 
           try {
-            const ollamaRes = await fetch('http://localhost:11434/api/generate', {
+            const ollamaRes = await fetch(`${OLLAMA_BASE}/api/generate`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -2074,29 +2270,22 @@ function registerCopilotRoutes(app, pool) {
           'Respond naturally based ONLY on the product data above. If the customer asks about a product not in the list, say "We don\'t carry that in our store currently."',
         ].join('\n');
 
-        // 5. Call local Ollama model with the RAG prompt
+        // 5. Call local Ollama model with the RAG prompt (Remote PC -> Local Mac fallback)
         try {
-          const ollamaTagRes = await fetch('http://localhost:11434/api/tags');
-          if (ollamaTagRes.ok) {
-            const tagData = await ollamaTagRes.json();
-            // Pick any non-vision chat model available (qwen, mistral, llama, phi, gemma…)
-            const chatModel = (tagData.models || []).find(m =>
-              /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision/i.test(m.name)
-            );
-            if (chatModel) {
-              console.log(`[Buyer RAG] Using Ollama model: ${chatModel.name}`);
-              const ollamaRagRes = await fetch('http://localhost:11434/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  model: chatModel.name,
-                  messages: [
-                    { role: 'system', content: ragSystemPrompt },
-                    { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
-                  ],
-                  options: { temperature: 0.3 }
-                })
-              });
+          const endpoint = await getOllamaChatEndpoint();
+          if (endpoint) {
+            const ollamaRagRes = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: endpoint.modelName,
+                messages: [
+                  { role: 'system', content: ragSystemPrompt },
+                  { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
+                ],
+                options: { temperature: 0.3 }
+              })
+            });
               if (ollamaRagRes.ok) {
                 const ollamaData = await ollamaRagRes.json();
                 const ragText = ollamaData.choices?.[0]?.message?.content?.trim();
@@ -2123,10 +2312,7 @@ function registerCopilotRoutes(app, pool) {
                 const errText = await ollamaRagRes.text();
                 console.error('[Buyer RAG] Ollama HTTP error:', ollamaRagRes.status, errText);
               }
-            } else {
-              console.warn('[Buyer RAG] No suitable chat model found in Ollama. Install one with: ollama pull llama3.2');
             }
-          }
         } catch (ollamaErr) {
           console.error('[Buyer RAG] Ollama connection error:', ollamaErr.message);
         }
@@ -2179,19 +2365,11 @@ function registerCopilotRoutes(app, pool) {
       });
     }
 
-    // 0. Try local Ollama model first if running on local system
+    // 0. Try Ollama model (Remote PC -> Local Mac fallback)
     try {
-      const probeRes = await fetch('http://localhost:11434/api/tags');
-      if (probeRes.ok) {
-        const probeData = await probeRes.json();
-        const models = probeData.models || [];
-        let modelName = 'qwen2.5:3b';
-        if (models.length > 0) {
-          const hasQwen = models.some(m => m.name.startsWith('qwen2.5:3b'));
-          if (!hasQwen) {
-            modelName = models[0].name;
-          }
-        }
+      const endpoint = await getOllamaChatEndpoint();
+      if (endpoint) {
+        const modelName = endpoint.modelName;
 
         const messages = [
           {
@@ -2208,7 +2386,7 @@ function registerCopilotRoutes(app, pool) {
           }
         ];
 
-        const response = await fetch('http://localhost:11434/v1/chat/completions', {
+        const response = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
