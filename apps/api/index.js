@@ -1065,13 +1065,15 @@ app.get('/api/quotations', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM quotations ORDER BY id DESC');
     const quotations = result.rows.map(row => ({
-      quotation_id: row.quotation_id,
-      quotation_number: row.quotation_number,
-      status: row.status,
-      total_amount: parseFloat(row.total_amount),
-      valid_until: row.valid_until,
-      created_at: row.created_at,
-      items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items
+      ...row,
+      total_amount: parseFloat(row.total_amount || 0),
+      unit_price: parseFloat(row.unit_price || 0),
+      original_unit_price: parseFloat(row.original_unit_price || 0),
+      min_price_allowed: parseFloat(row.min_price_allowed || 0),
+      quantity: parseInt(row.quantity || 1),
+      max_discount_pct: parseInt(row.max_discount_pct || 15),
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || []),
+      counter_history: typeof row.counter_history === 'string' ? JSON.parse(row.counter_history) : (row.counter_history || [])
     }));
     return res.json(quotations);
   } catch (err) {

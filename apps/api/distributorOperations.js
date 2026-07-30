@@ -270,7 +270,7 @@ async function createDistributorQuotationInDb(pool, customerEmail, customerName,
     min_price_allowed: minPriceAllowed,
     max_discount_pct: maxDiscountPct,
     total_amount: totalAmount,
-    status: 'COUNTER_OFFER_RECEIVED',
+    status: 'PENDING',  // Changed from COUNTER_OFFER_RECEIVED to PENDING for new quotes
     valid_until: validUntil,
     customer_name: name,
     customer_email: email,

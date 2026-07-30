@@ -707,6 +707,257 @@ module.exports = {
   getOrdersByProductFromDb,
   getOrdersAwaitingShipmentFromDb,
   shipOrderInDb,
-  shipAllOrdersInDb
+  shipAllOrdersInDb,
+  // Quotations
+  getAllQuotationsFromDb,
+  getQuotationsByStatusFromDb,
+  getPendingQuotationsFromDb,
+  getQuotationByIdFromDb,
+  approveQuotationInDb,
+  rejectQuotationInDb,
+  sendCounterOfferToDistributorInDb,
+  getQuotationKpisFromDb,
+  getQuotationsByCustomerFromDb,
+  getHighValueQuotationsFromDb
 };
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QUOTATION MANAGEMENT FUNCTIONS (ADMIN)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getAllQuotationsFromDb(pool, limit = 50) {
+  const res = await pool.query(
+    'SELECT * FROM quotations ORDER BY created_at DESC LIMIT $1',
+    [limit]
+  );
+  return res.rows;
+}
+
+async function getQuotationsByStatusFromDb(pool, status) {
+  const normStatus = status.toUpperCase().replace(/\s+/g, '_');
+  const res = await pool.query(
+    'SELECT * FROM quotations WHERE UPPER(status) = $1 ORDER BY created_at DESC LIMIT 50',
+    [normStatus]
+  );
+  return res.rows;
+}
+
+async function getPendingQuotationsFromDb(pool) {
+  const res = await pool.query(
+    `SELECT * FROM quotations 
+     WHERE UPPER(status) IN ('PENDING', 'UNDER_REVIEW', 'COUNTER_OFFER_RECEIVED', 'NEGOTIATING')
+     ORDER BY created_at ASC LIMIT 50`
+  );
+  return res.rows;
+}
+
+async function getQuotationByIdFromDb(pool, identifier) {
+  const res = await pool.query(
+    'SELECT * FROM quotations WHERE quotation_id ILIKE $1 OR quotation_number ILIKE $1 LIMIT 1',
+    [`%${identifier}%`]
+  );
+  if (res.rows.length === 0) {
+    throw new Error(`Quotation "${identifier}" not found.`);
+  }
+  return res.rows[0];
+}
+
+async function approveQuotationInDb(pool, identifier, approvedUnitPrice = null) {
+  const quote = await getQuotationByIdFromDb(pool, identifier);
+  
+  const finalUnitPrice = approvedUnitPrice 
+    ? parseFloat(approvedUnitPrice) 
+    : parseFloat(quote.unit_price);
+  
+  const origPrice = parseFloat(quote.original_unit_price || quote.unit_price);
+  const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : origPrice * 0.85;
+  
+  // Validation: Admin approved price should be between min_price and original_price
+  if (finalUnitPrice < minPrice) {
+    throw new Error(`Approved price Rs ${finalUnitPrice.toLocaleString()} is below minimum allowed price Rs ${minPrice.toLocaleString()}.`);
+  }
+  if (finalUnitPrice > origPrice) {
+    throw new Error(`Approved price Rs ${finalUnitPrice.toLocaleString()} cannot exceed original price Rs ${origPrice.toLocaleString()}.`);
+  }
+  
+  const qty = parseInt(quote.quantity || 10);
+  const newTotal = finalUnitPrice * qty;
+  
+  let historyArr = [];
+  try {
+    historyArr = typeof quote.counter_history === 'string' ? JSON.parse(quote.counter_history) : (quote.counter_history || []);
+  } catch (_) { historyArr = []; }
+  
+  historyArr.push({
+    action: 'APPROVED',
+    by: 'ADMIN',
+    unit_price: finalUnitPrice,
+    total_amount: newTotal,
+    notes: `Quote approved by Admin at Rs ${finalUnitPrice.toLocaleString()} per unit`,
+    timestamp: new Date().toISOString()
+  });
+  
+  const res = await pool.query(
+    `UPDATE quotations SET
+      unit_price = $1,
+      total_amount = $2,
+      status = 'APPROVED',
+      last_counter_by = 'ADMIN',
+      counter_history = $3
+     WHERE quotation_id = $4
+     RETURNING *`,
+    [finalUnitPrice, newTotal, JSON.stringify(historyArr), quote.quotation_id]
+  );
+  
+  // Auto-create B2B order
+  const orderNumber = (quote.quotation_number || quote.quotation_id).replace("QUO-", "ORD-");
+  const orderId = `ord-b2b-${Date.now()}`;
+  const items = [{
+    product_id: quote.product_id || 'wholesale-item',
+    sku: quote.sku || 'SKU-WHOLESALE',
+    name: quote.product_name || 'Wholesale Order',
+    qty: qty,
+    price: finalUnitPrice
+  }];
+  
+  await pool.query(
+    `INSERT INTO orders (
+      order_id, order_number, order_type, status, subtotal, discount_total, 
+      tax_total, total_amount, currency, order_date, items_summary, items, customer_email
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    [
+      orderId,
+      orderNumber,
+      'B2B',
+      'CONFIRMED',
+      newTotal,
+      0,
+      0,
+      newTotal,
+      'PKR',
+      new Date().toISOString(),
+      `B2B Order from approved quotation ${quote.quotation_number}`,
+      JSON.stringify(items),
+      quote.customer_email || 'distributor@commerceiq.com'
+    ]
+  );
+  
+  return res.rows[0];
+}
+
+async function rejectQuotationInDb(pool, identifier, reason = '') {
+  const quote = await getQuotationByIdFromDb(pool, identifier);
+  
+  let historyArr = [];
+  try {
+    historyArr = typeof quote.counter_history === 'string' ? JSON.parse(quote.counter_history) : (quote.counter_history || []);
+  } catch (_) { historyArr = []; }
+  
+  historyArr.push({
+    action: 'REJECTED',
+    by: 'ADMIN',
+    notes: reason || 'Quotation rejected by admin',
+    timestamp: new Date().toISOString()
+  });
+  
+  const res = await pool.query(
+    `UPDATE quotations SET
+      status = 'REJECTED',
+      last_counter_by = 'ADMIN',
+      counter_history = $1
+     WHERE quotation_id = $2
+     RETURNING *`,
+    [JSON.stringify(historyArr), quote.quotation_id]
+  );
+  
+  return res.rows[0];
+}
+
+async function sendCounterOfferToDistributorInDb(pool, identifier, counterUnitPrice, notes = '') {
+  const quote = await getQuotationByIdFromDb(pool, identifier);
+  
+  const newUnitPrice = parseFloat(counterUnitPrice);
+  const origPrice = parseFloat(quote.original_unit_price || quote.unit_price);
+  const distRequestedPrice = parseFloat(quote.unit_price);
+  
+  // Admin counter validation: should be between distributor's request and original price
+  if (newUnitPrice < distRequestedPrice) {
+    throw new Error(`Admin counter offer Rs ${newUnitPrice.toLocaleString()} cannot be lower than distributor's requested price Rs ${distRequestedPrice.toLocaleString()}.`);
+  }
+  if (newUnitPrice > origPrice) {
+    throw new Error(`Admin counter offer Rs ${newUnitPrice.toLocaleString()} cannot exceed original base price Rs ${origPrice.toLocaleString()}.`);
+  }
+  
+  const qty = parseInt(quote.quantity || 10);
+  const newTotal = newUnitPrice * qty;
+  
+  let historyArr = [];
+  try {
+    historyArr = typeof quote.counter_history === 'string' ? JSON.parse(quote.counter_history) : (quote.counter_history || []);
+  } catch (_) { historyArr = []; }
+  
+  historyArr.push({
+    action: 'COUNTER_OFFER',
+    by: 'ADMIN',
+    unit_price: newUnitPrice,
+    total_amount: newTotal,
+    notes: notes || `Admin counter offer: Rs ${newUnitPrice.toLocaleString()} per unit`,
+    timestamp: new Date().toISOString()
+  });
+  
+  const res = await pool.query(
+    `UPDATE quotations SET
+      unit_price = $1,
+      total_amount = $2,
+      status = 'COUNTER_OFFER_SENT',
+      last_counter_by = 'ADMIN',
+      counter_history = $3
+     WHERE quotation_id = $4
+     RETURNING *`,
+    [newUnitPrice, newTotal, JSON.stringify(historyArr), quote.quotation_id]
+  );
+  
+  return res.rows[0];
+}
+
+async function getQuotationKpisFromDb(pool) {
+  const totalRes = await pool.query('SELECT COUNT(*) as total, COALESCE(SUM(total_amount), 0) as total_value FROM quotations');
+  const pendingRes = await pool.query(
+    `SELECT COUNT(*) as count FROM quotations 
+     WHERE UPPER(status) IN ('PENDING', 'UNDER_REVIEW', 'COUNTER_OFFER_RECEIVED', 'NEGOTIATING')`
+  );
+  const approvedRes = await pool.query("SELECT COUNT(*) as count FROM quotations WHERE UPPER(status) = 'APPROVED'");
+  const rejectedRes = await pool.query("SELECT COUNT(*) as count FROM quotations WHERE UPPER(status) = 'REJECTED'");
+  
+  const statusRes = await pool.query(
+    'SELECT status, COUNT(*) as count, SUM(total_amount) as amount FROM quotations GROUP BY status ORDER BY count DESC'
+  );
+  
+  return {
+    total_quotations: parseInt(totalRes.rows[0]?.total || 0),
+    total_value: parseFloat(totalRes.rows[0]?.total_value || 0),
+    pending_review: parseInt(pendingRes.rows[0]?.count || 0),
+    approved: parseInt(approvedRes.rows[0]?.count || 0),
+    rejected: parseInt(rejectedRes.rows[0]?.count || 0),
+    by_status: statusRes.rows
+  };
+}
+
+async function getQuotationsByCustomerFromDb(pool, customerEmail) {
+  const res = await pool.query(
+    'SELECT * FROM quotations WHERE customer_email ILIKE $1 ORDER BY created_at DESC LIMIT 30',
+    [`%${customerEmail}%`]
+  );
+  return res.rows;
+}
+
+async function getHighValueQuotationsFromDb(pool, minAmount = 100000) {
+  const res = await pool.query(
+    'SELECT * FROM quotations WHERE total_amount >= $1 ORDER BY total_amount DESC LIMIT 30',
+    [parseFloat(minAmount)]
+  );
+  return res.rows;
+}
 
