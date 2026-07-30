@@ -2066,7 +2066,7 @@ export default function AdminPortal({ onLogout }) {
                           )
                         }) : quotations.map((q) => {
                           const origPrice = parseFloat(q.original_unit_price || q.unit_price || 1000);
-                          const maxDisc = q.max_discount_pct || 15;
+                          const maxDisc = q.max_discount_pct !== undefined && q.max_discount_pct !== null ? parseInt(q.max_discount_pct) : 0;
                           const minFloor = q.min_price_allowed ? parseFloat(q.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
                           const unitP = parseFloat(q.unit_price || (q.total_amount / (q.quantity || 1)));
                           return /* @__PURE__ */ jsxs(
@@ -2098,17 +2098,6 @@ export default function AdminPortal({ onLogout }) {
                                   /* @__PURE__ */ jsxs("span", { className: "text-[9px] text-slate-400 font-medium", children: ["Last: ", q.last_counter_by || "DISTRIBUTOR"] })
                                 ] }) }),
                                 /* @__PURE__ */ jsxs("td", { className: "px-6 py-3.5 text-center flex justify-center gap-1.5", children: [
-                                  /* @__PURE__ */ jsx("button", {
-                                    onClick: () => {
-                                      setActiveAdminQuote(q);
-                                      setAdminCounterUnitPrice(unitP.toString());
-                                      setAdminCounterNotes("");
-                                      setAdminCounterError("");
-                                      setAdminQuoteModalOpen(true);
-                                    },
-                                    className: "px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-2xs",
-                                    children: "Review & Counter"
-                                  }),
                                   (q.status !== "APPROVED" && q.status !== "ACCEPTED" && q.status !== "REJECTED") && /* @__PURE__ */ jsxs(Fragment, { children: [
                                     /* @__PURE__ */ jsx("button", {
                                       onClick: async () => {
@@ -2116,8 +2105,31 @@ export default function AdminPortal({ onLogout }) {
                                           await updateQuotationStatus(q.quotation_id, "APPROVED");
                                         }
                                       },
-                                      className: "px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-2xs",
+                                      className: "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-2xs",
                                       children: "Approve"
+                                    }),
+                                    /* @__PURE__ */ jsx("button", {
+                                      onClick: async () => {
+                                        const val = prompt(`Propose counter-offer for quotation ${q.quotation_number}\n\nProduct: ${q.product_name || 'Item'}\nBase Wholesale Price: Rs ${origPrice.toLocaleString()}\nDistributor Requested Unit Price: Rs ${unitP.toLocaleString()}\n\nEnter Admin Counter Unit Price (PKR):`, unitP);
+                                        if (val) {
+                                          const parsed = parseFloat(val);
+                                          if (!isNaN(parsed) && parsed > 0) {
+                                            if (parsed < unitP) {
+                                              alert(`Admin counter offer (Rs ${parsed.toLocaleString()}) cannot be lower than the price requested by distributor (Rs ${unitP.toLocaleString()}).`);
+                                              return;
+                                            }
+                                            if (parsed > origPrice) {
+                                              alert(`Admin counter offer (Rs ${parsed.toLocaleString()}) cannot exceed original base wholesale price (Rs ${origPrice.toLocaleString()}).`);
+                                              return;
+                                            }
+                                            await updateQuotationStatus(q.quotation_id, "COUNTER_OFFER_RECEIVED", parsed, "ADMIN");
+                                          } else {
+                                            alert("Invalid amount entered.");
+                                          }
+                                        }
+                                      },
+                                      className: "px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-2xs",
+                                      children: "Counter"
                                     }),
                                     /* @__PURE__ */ jsx("button", {
                                       onClick: async () => {
@@ -2125,10 +2137,13 @@ export default function AdminPortal({ onLogout }) {
                                           await updateQuotationStatus(q.quotation_id, "REJECTED");
                                         }
                                       },
-                                      className: "px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-2xs",
+                                      className: "px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors border-0 shadow-2xs",
                                       children: "Reject"
                                     })
-                                  ] })
+                                  ] }),
+                                  q.status === "APPROVED" && /* @__PURE__ */ jsx("span", { className: "text-[#10B981] font-bold text-[10px]", children: "Approved & Ready" }),
+                                  q.status === "ACCEPTED" && /* @__PURE__ */ jsx("span", { className: "text-emerald-600 font-bold text-[10px]", children: "Accepted by Distributor" }),
+                                  q.status === "REJECTED" && /* @__PURE__ */ jsx("span", { className: "text-rose-600 font-bold text-[10px]", children: "Rejected" })
                                 ] })
                               ]
                             },
@@ -3094,180 +3109,6 @@ export default function AdminPortal({ onLogout }) {
                     })
                     ]
                   })
-                  ]
-                })
-              });
-            })(),
-            adminQuoteModalOpen && activeAdminQuote && (() => {
-              const q = activeAdminQuote;
-              const qty = parseInt(q.quantity || 1);
-              const origPrice = parseFloat(q.original_unit_price || q.unit_price || 1000);
-              const maxDisc = q.max_discount_pct || 15;
-              const minFloor = q.min_price_allowed ? parseFloat(q.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
-              const currentPrice = parseFloat(q.unit_price || (q.total_amount / qty));
-              const distRequestedPrice = currentPrice;
-              const discountPct = origPrice > 0 ? Math.round(((origPrice - currentPrice) / origPrice) * 100) : 0;
-              const proposedUnit = parseFloat(adminCounterUnitPrice || currentPrice);
-              const proposedTotal = proposedUnit * qty;
-
-              let historyArr = [];
-              try {
-                historyArr = typeof q.counter_history === "string" ? JSON.parse(q.counter_history) : (q.counter_history || []);
-              } catch (_) {}
-
-              return /* @__PURE__ */ jsx(Modal, {
-                open: adminQuoteModalOpen,
-                onClose: () => {
-                  setAdminQuoteModalOpen(false);
-                  setActiveAdminQuote(null);
-                  setAdminCounterError("");
-                },
-                title: `Quotation Review & Counter Negotiation: ${q.quotation_number}`,
-                children: /* @__PURE__ */ jsxs("div", {
-                  className: "flex flex-col gap-5 text-xs", children: [
-                    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4", children: [
-                      /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-2 shadow-2xs", children: [
-                        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between border-b border-slate-200 pb-2 mb-1", children: [
-                          /* @__PURE__ */ jsx("span", { className: "font-extrabold text-slate-800 text-xs uppercase tracking-wider", children: "📦 DB Master Product Record" }),
-                          /* @__PURE__ */ jsx("span", { className: "px-2 py-0.5 bg-blue-100 text-blue-700 font-bold rounded text-[10px]", children: "Database Baseline" })
-                        ] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-slate-500", children: "Product Name:" }), /* @__PURE__ */ jsx("span", { className: "font-bold text-slate-900", children: q.product_name || "Wholesale Item" })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-slate-500", children: "SKU Code:" }), /* @__PURE__ */ jsx("span", { className: "font-mono font-bold text-slate-700", children: q.sku || "SKU-WHOLESALE" })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-slate-500", children: "Requested Quantity:" }), /* @__PURE__ */ jsxs("span", { className: "font-bold text-slate-900", children: [qty, " units"] })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-slate-500", children: "DB Base List Price:" }), /* @__PURE__ */ jsxs("span", { className: "font-extrabold text-blue-600", children: ["Rs ", origPrice.toLocaleString(), " / unit"] })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-slate-500", children: "Max Discount Limit:" }), /* @__PURE__ */ jsxs("span", { className: "font-bold text-amber-600", children: [maxDisc, "% max"] })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-slate-500", children: "Min Allowed Floor Price:" }), /* @__PURE__ */ jsxs("span", { className: "font-bold text-slate-800", children: ["Rs ", minFloor.toLocaleString(), " / unit"] })] })
-                      ] }),
-                      /* @__PURE__ */ jsxs("div", { className: "bg-amber-50/70 border border-amber-200 rounded-xl p-4 flex flex-col gap-2 shadow-2xs", children: [
-                        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between border-b border-amber-200 pb-2 mb-1", children: [
-                          /* @__PURE__ */ jsx("span", { className: "font-extrabold text-amber-900 text-xs uppercase tracking-wider", children: "💼 Distributor Proposal" }),
-                          /* @__PURE__ */ jsx(Badge, { text: q.status, variant: "warning" })
-                        ] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-amber-800", children: "Partner Email:" }), /* @__PURE__ */ jsx("span", { className: "font-bold text-slate-900", children: q.customer_email || "partner@commerceiq.com" })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-amber-800", children: "Requested Unit Price:" }), /* @__PURE__ */ jsxs("span", { className: "font-extrabold text-amber-900", children: ["Rs ", currentPrice.toLocaleString(), " / unit"] })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-amber-800", children: "Discount vs Base Price:" }), /* @__PURE__ */ jsxs("span", { className: "font-bold text-amber-700", children: [discountPct, "% requested"] })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-amber-800", children: "Total Proposal Value:" }), /* @__PURE__ */ jsxs("span", { className: "font-extrabold text-slate-900", children: ["Rs ", Number(q.total_amount).toLocaleString()] })] }),
-                        /* @__PURE__ */ jsxs("div", { className: "flex justify-between", children: [/* @__PURE__ */ jsx("span", { className: "text-amber-800", children: "Last Counter Author:" }), /* @__PURE__ */ jsx("span", { className: "font-bold text-slate-800", children: q.last_counter_by || "DISTRIBUTOR" })] })
-                      ] })
-                    ] }),
-
-                    /* @__PURE__ */ jsxs("div", { className: "bg-blue-50 border border-blue-200 rounded-xl p-3.5 text-blue-900 flex flex-col gap-1", children: [
-                      /* @__PURE__ */ jsx("div", { className: "font-bold text-xs flex items-center gap-1", children: "🛡️ Enforced Admin Price Bounds:" }),
-                      /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-blue-800 space-y-0.5", children: [
-                        /* @__PURE__ */ jsxs("div", { children: ["• Minimum Admin Counter Allowed: ", /* @__PURE__ */ jsxs("b", { children: ["Rs ", distRequestedPrice.toLocaleString(), " / unit"] }), " (cannot counter below distributor's requested price)"] }),
-                        /* @__PURE__ */ jsxs("div", { children: ["• Maximum Admin Counter Allowed: ", /* @__PURE__ */ jsxs("b", { children: ["Rs ", origPrice.toLocaleString(), " / unit"] }), " (cannot exceed DB base wholesale price)"] })
-                      ] })
-                    ] }),
-
-                    adminCounterError && /* @__PURE__ */ jsxs("div", { className: "bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-700 text-xs font-bold flex items-center gap-2", children: [
-                      /* @__PURE__ */ jsx("span", { children: "❌" }),
-                      adminCounterError
-                    ] }),
-
-                    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-3 shadow-2xs", children: [
-                      /* @__PURE__ */ jsx("h4", { className: "font-bold text-slate-900 text-xs uppercase tracking-wider", children: "Propose Admin Counter Offer" }),
-                      /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-3", children: [
-                        /* @__PURE__ */ jsxs("div", { children: [
-                          /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-slate-600 uppercase mb-1", children: "Admin Counter Unit Price (PKR)" }),
-                          /* @__PURE__ */ jsx("input", {
-                            type: "number",
-                            value: adminCounterUnitPrice,
-                            onChange: (e) => {
-                              setAdminCounterUnitPrice(e.target.value);
-                              setAdminCounterError("");
-                            },
-                            placeholder: `Min Rs ${distRequestedPrice.toLocaleString()} - Max Rs ${origPrice.toLocaleString()}`,
-                            className: "w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold focus:outline-none focus:border-blue-500 shadow-2xs bg-white"
-                          })
-                        ] }),
-                        /* @__PURE__ */ jsxs("div", { children: [
-                          /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-slate-600 uppercase mb-1", children: "Calculated Total (PKR)" }),
-                          /* @__PURE__ */ jsxs("div", { className: "w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs font-extrabold text-slate-900", children: [
-                            "Rs ",
-                            isNaN(proposedTotal) ? 0 : proposedTotal.toLocaleString(),
-                            ` (${qty} units)`
-                          ] })
-                        ] })
-                      ] }),
-                      /* @__PURE__ */ jsxs("div", { children: [
-                        /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-slate-600 uppercase mb-1", children: "Admin Negotiation Remarks / Counter Terms" }),
-                        /* @__PURE__ */ jsx("textarea", {
-                          value: adminCounterNotes,
-                          onChange: (e) => setAdminCounterNotes(e.target.value),
-                          placeholder: "Add counter offer rationale or volume discount conditions...",
-                          className: "w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-blue-500 shadow-2xs min-h-[50px] bg-white"
-                        })
-                      ] })
-                    ] }),
-
-                    historyArr.length > 0 && /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-2", children: [
-                      /* @__PURE__ */ jsx("h4", { className: "font-bold text-slate-800 text-xs uppercase tracking-wider", children: "📜 Negotiation Conversation & Counter History Log" }),
-                      /* @__PURE__ */ jsx("div", { className: "space-y-2 max-h-40 overflow-y-auto pr-1", children: historyArr.map((h, idx) => (
-                        /* @__PURE__ */ jsxs("div", { className: "bg-white border border-slate-200 rounded-lg p-2.5 flex justify-between items-start text-[11px]", children: [
-                          /* @__PURE__ */ jsxs("div", { children: [
-                            /* @__PURE__ */ jsxs("div", { className: "font-bold text-slate-800", children: [
-                              /* @__PURE__ */ jsx("span", { className: `px-1.5 py-0.5 rounded text-[9.5px] font-extrabold mr-1.5 ${h.by === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-800'}`, children: h.by }),
-                              `Offered Unit Price: Rs ${Number(h.unit_price || 0).toLocaleString()} (Total: Rs ${Number(h.total_amount || 0).toLocaleString()})`
-                            ] }),
-                            h.notes && /* @__PURE__ */ jsx("div", { className: "text-slate-500 mt-0.5", children: h.notes })
-                          ] }),
-                          /* @__PURE__ */ jsx("span", { className: "text-[10px] text-slate-400 shrink-0 ml-2", children: h.timestamp ? new Date(h.timestamp).toLocaleTimeString() : '' })
-                        ] }, idx)
-                      )) })
-                    ] }),
-
-                    /* @__PURE__ */ jsxs("div", { className: "flex justify-end gap-2.5 pt-2 border-t border-slate-200", children: [
-                      /* @__PURE__ */ jsx("button", {
-                        type: "button",
-                        onClick: () => {
-                          setAdminQuoteModalOpen(false);
-                          setActiveAdminQuote(null);
-                          setAdminCounterError("");
-                        },
-                        className: "px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs cursor-pointer border-0",
-                        children: "Cancel"
-                      }),
-                      /* @__PURE__ */ jsx("button", {
-                        type: "button",
-                        onClick: async () => {
-                          const price = parseFloat(adminCounterUnitPrice);
-                          if (isNaN(price) || price <= 0) {
-                            setAdminCounterError("Please enter a valid counter unit price.");
-                            return;
-                          }
-                          if (price < distRequestedPrice) {
-                            setAdminCounterError(`Admin counter offer (Rs ${price.toLocaleString()}) cannot be lower than the price requested by the distributor (Rs ${distRequestedPrice.toLocaleString()}).`);
-                            return;
-                          }
-                          if (price > origPrice) {
-                            setAdminCounterError(`Admin counter offer (Rs ${price.toLocaleString()}) cannot exceed original base wholesale price (Rs ${origPrice.toLocaleString()}).`);
-                            return;
-                          }
-
-                          const res = await updateQuotationStatus(q.quotation_id, "COUNTER_OFFER_RECEIVED", price, "ADMIN", adminCounterNotes);
-                          if (res) {
-                            setAdminQuoteModalOpen(false);
-                            setActiveAdminQuote(null);
-                            setAdminCounterError("");
-                            setAdminCounterNotes("");
-                          }
-                        },
-                        className: "px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-xs cursor-pointer border-0 shadow-sm",
-                        children: "Send Admin Counter Offer"
-                      }),
-                      /* @__PURE__ */ jsx("button", {
-                        type: "button",
-                        onClick: async () => {
-                          if (confirm(`Approve quotation ${q.quotation_number} at Rs ${Number(q.total_amount).toLocaleString()}?`)) {
-                            await updateQuotationStatus(q.quotation_id, "APPROVED");
-                            setAdminQuoteModalOpen(false);
-                            setActiveAdminQuote(null);
-                          }
-                        },
-                        className: "px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer border-0 shadow-sm",
-                        children: "Approve Quotation"
-                      })
-                    ] })
                   ]
                 })
               });

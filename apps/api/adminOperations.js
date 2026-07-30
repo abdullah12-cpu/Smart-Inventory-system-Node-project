@@ -707,18 +707,7 @@ module.exports = {
   getOrdersByProductFromDb,
   getOrdersAwaitingShipmentFromDb,
   shipOrderInDb,
-  shipAllOrdersInDb,
-  // Quotations
-  getAllQuotationsFromDb,
-  getQuotationsByStatusFromDb,
-  getPendingQuotationsFromDb,
-  getQuotationByIdFromDb,
-  approveQuotationInDb,
-  rejectQuotationInDb,
-  sendCounterOfferToDistributorInDb,
-  getQuotationKpisFromDb,
-  getQuotationsByCustomerFromDb,
-  getHighValueQuotationsFromDb
+  shipAllOrdersInDb
 };
 
 

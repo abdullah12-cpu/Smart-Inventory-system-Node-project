@@ -187,7 +187,7 @@ function buildQuotationDescription(quote) {
   const qty = quote.quantity || 1;
   const unitPrice = parseFloat(quote.unit_price || 0);
   const origPrice = parseFloat(quote.original_unit_price || unitPrice || 1000);
-  const maxDisc = quote.max_discount_pct || 15;
+  const maxDisc = quote.max_discount_pct !== undefined && quote.max_discount_pct !== null ? parseInt(quote.max_discount_pct) : 0;
   const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
   const totalAmt = parseFloat(quote.total_amount || unitPrice * qty);
   const status = quote.status || 'DRAFT';
@@ -227,7 +227,7 @@ async function createDistributorQuotationInDb(pool, customerEmail, customerName,
   const sku = product ? product.sku : 'SKU-WHOLESALE';
 
   let origUnitPrice = 0;
-  let maxDiscountPct = product ? (product.max_discount || 15) : 15;
+  let maxDiscountPct = product && product.max_discount !== undefined && product.max_discount !== null ? parseInt(product.max_discount) : 0;
   if (product && product.prices) {
     const prices = typeof product.prices === 'string' ? JSON.parse(product.prices) : product.prices;
     origUnitPrice = parseFloat(prices.DISTRIBUTOR || prices.RETAIL || 1000);
@@ -318,7 +318,7 @@ async function counterOfferQuotationInDb(pool, quoteIdentifier, counterUnitPrice
 
   const newUnitPrice = parseFloat(counterUnitPrice);
   const origPrice = parseFloat(quote.original_unit_price || quote.unit_price || 1000);
-  const maxDisc = quote.max_discount_pct || 15;
+  const maxDisc = quote.max_discount_pct !== undefined && quote.max_discount_pct !== null ? parseInt(quote.max_discount_pct) : 0;
   const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : Math.round(origPrice * (1 - maxDisc / 100));
 
   const role = counterBy.toUpperCase();
