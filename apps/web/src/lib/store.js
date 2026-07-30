@@ -50,7 +50,13 @@ export function StoreProvider({ children }) {
   useEffect(() => {
     const fetchAllData = async () => {
       try {
-        const prodRes = await fetch("/api/products");
+        // Build product query with distributor filtering
+        let prodUrl = "/api/products";
+        if (portal === "distributor" && currentUser?.warehouse_region) {
+          prodUrl += `?portal=distributor&warehouse_region=${currentUser.warehouse_region}`;
+        }
+        
+        const prodRes = await fetch(prodUrl);
         if (prodRes.ok) setProducts(await prodRes.json());
 
         const whRes = await fetch("/api/warehouses");
@@ -84,7 +90,7 @@ export function StoreProvider({ children }) {
       }
     };
     fetchAllData();
-  }, []);
+  }, [portal, currentUser?.warehouse_region]);
   const markNotificationRead = useCallback((id) => {
     setNotifications(
       (prev) => prev.map((n) => n.notification_id === id ? { ...n, is_read: true } : n)

@@ -713,11 +713,23 @@ app.get('/api/auth/application-status', async (req, res) => {
   }
 });
 
-// GET all products
+// GET all products (optionally filtered by category or warehouse for distributors)
 app.get('/api/products', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM products ORDER BY id ASC');
-    const products = result.rows.map(row => ({
+    const { category, portal, warehouse_region } = req.query;
+    let query = 'SELECT * FROM products WHERE status = \'ACTIVE\'';
+    const params = [];
+    
+    // Filter by category if specified
+    if (category) {
+      query += ' AND category ILIKE $' + (params.length + 1);
+      params.push(`%${category}%`);
+    }
+    
+    query += ' ORDER BY category ASC, product_name ASC';
+    
+    const result = await pool.query(query, params);
+    let products = result.rows.map(row => ({
       product_id: row.product_id,
       sku: row.sku,
       barcode: row.barcode,
@@ -738,6 +750,15 @@ app.get('/api/products', async (req, res) => {
       inventory: typeof row.inventory === 'string' ? JSON.parse(row.inventory) : row.inventory,
       image_url: row.image_url || ''
     }));
+    
+    // Filter by warehouse if distributor portal and warehouse_region is provided
+    if (portal === 'distributor' && warehouse_region) {
+      products = products.filter(product => {
+        const inventory = product.inventory || [];
+        return inventory.some(inv => inv.warehouse_id === warehouse_region && inv.available_quantity > 0);
+      });
+    }
+    
     return res.json(products);
   } catch (err) {
     console.error('Error fetching products:', err);
