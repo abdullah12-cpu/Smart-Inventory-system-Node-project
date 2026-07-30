@@ -281,20 +281,25 @@ const MOCK_REMINDERS = [
 ];
 function QuoteStatusBadge({ status }) {
   const styles = {
-    DRAFT: "bg-slate-100 text-slate-700 border-slate-200",
-    SENT: "bg-blue-50 text-blue-700 border-blue-200",
-    NEGOTIATING: "bg-amber-50 text-amber-700 border-amber-200",
-    ACCEPTED: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    REJECTED: "bg-red-50 text-red-700 border-red-200",
-    EXPIRED: "bg-stone-50 text-stone-700 border-stone-200",
-    CONVERTED: "bg-purple-50 text-purple-700 border-purple-200"
+    DRAFT: "bg-slate-100 text-slate-700 border-slate-200 font-bold",
+    SENT: "bg-blue-50 text-blue-700 border-blue-200 font-bold",
+    NEGOTIATING: "bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-2xs animate-pulse",
+    COUNTER_OFFER_RECEIVED: "bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-2xs animate-pulse",
+    ACCEPTED: "bg-emerald-50 text-emerald-700 border-emerald-200 font-bold",
+    APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200 font-bold",
+    REJECTED: "bg-red-50 text-red-700 border-red-200 font-bold",
+    EXPIRED: "bg-stone-50 text-stone-700 border-stone-200 font-bold",
+    CONVERTED: "bg-purple-50 text-purple-700 border-purple-200 font-bold"
   };
+  let label = status;
+  if (status === "COUNTER_OFFER_RECEIVED" || status === "NEGOTIATING") {
+    label = "NEGOTIATING";
+  }
   return /* @__PURE__ */ jsx(
     "span",
     {
-      className: `px-2.5 py-1 rounded-full text-[10px] font-bold border ${styles[status] || styles.DRAFT}`,
-      children: status
+      className: `px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider border ${styles[status] || styles.NEGOTIATING}`,
+      children: label
     }
   );
 }
@@ -668,22 +673,26 @@ export default function DistributorPortal({ onLogout }) {
     setTimeout(() => setLimitIncreaseToast(""), 3e3);
   };
   const handleSubmitCounter = async () => {
-    setIsCounterMode(false);
-    setQuoteDetailsOpen(false);
-    setCounterValue("");
-
     if (activeQuote) {
+      const parsed = parseFloat(counterValue);
+      if (isNaN(parsed) || parsed <= 0) {
+        alert("Please enter a valid counter offer unit price (PKR).");
+        return;
+      }
       try {
-        const parsed = parseFloat(counterValue);
-        const amt = !isNaN(parsed) && parsed > 0 ? parsed : undefined;
-        await updateQuotationStatus(activeQuote.quotation_id, "COUNTER_OFFER_RECEIVED", amt, "DISTRIBUTOR");
+        const success = await updateQuotationStatus(activeQuote.quotation_id, "COUNTER_OFFER_RECEIVED", parsed, "DISTRIBUTOR");
+        if (success) {
+          setIsCounterMode(false);
+          setQuoteDetailsOpen(false);
+          setCounterValue("");
+          setActionToast("Counter offer submitted to vendor!");
+          setTimeout(() => setActionToast(""), 3e3);
+        }
       } catch (err) {
         console.error(err);
+        alert("Counter offer failed: " + (err.message || err));
       }
     }
-
-    setActionToast("Counter offer submitted for review.");
-    setTimeout(() => setActionToast(""), 3e3);
   };
   const handleAcceptQuote = async () => {
     setQuoteDetailsOpen(false);
@@ -1439,19 +1448,37 @@ export default function DistributorPortal({ onLogout }) {
               /* @__PURE__ */ jsx("div", { className: "text-xl font-bold text-[#0F172A]", children: formatCurrency(activeQuote.total_amount) })
             ] })
           ] }),
+          (activeQuote.status === "COUNTER_OFFER_RECEIVED" || activeQuote.status === "NEGOTIATING") && /* @__PURE__ */ jsxs("div", {
+            className: "bg-amber-100/90 border border-amber-300 rounded-xl p-4 flex flex-col gap-1 text-amber-900 shadow-2xs animate-fade-up", children: [
+              /* @__PURE__ */ jsxs("div", { className: "font-extrabold text-xs flex items-center gap-1.5", children: [
+                /* @__PURE__ */ jsx("span", { children: "🤝" }),
+                "Active Negotiation — Vendor Counter Offer Received"
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "text-xs text-amber-900 font-bold", children: [
+                "Offered Unit Price: ",
+                /* @__PURE__ */ jsxs("span", { className: "text-blue-700 font-extrabold", children: ["Rs ", (activeQuote.unit_price || (activeQuote.total_amount / (activeQuote.quantity || 1))).toLocaleString(), " / unit"] }),
+                ` (Total: Rs ${Number(activeQuote.total_amount).toLocaleString()})`
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-amber-800 mt-0.5", children: [
+                "Product: ",
+                /* @__PURE__ */ jsx("b", { children: activeQuote.product_name || activeQuote.item || "Wholesale Product" }),
+                activeQuote.sku ? ` (SKU: ${activeQuote.sku})` : ""
+              ] })
+            ]
+          }),
           isCounterMode ? /* @__PURE__ */ jsxs("div", { className: "bg-amber-50 border border-amber-200 rounded-lg p-5 animate-fade-up", children: [
             /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-amber-900 mb-4", children: "Propose Counter Offer" }),
             /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
               /* @__PURE__ */ jsxs("div", { children: [
-                /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1", children: "Proposed Value (Rs)" }),
+                /* @__PURE__ */ jsx("label", { className: "block text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1", children: "Proposed Unit Price (Rs / unit)" }),
                 /* @__PURE__ */ jsx(
                   "input",
                   {
                     type: "number",
                     value: counterValue,
                     onChange: (e) => setCounterValue(e.target.value),
-                    placeholder: "e.g. 1400000",
-                    className: "w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-white focus:outline-none focus:border-amber-500 shadow-sm"
+                    placeholder: `Base: Rs ${(activeQuote.original_unit_price || 1000).toLocaleString()}`,
+                    className: "w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-white focus:outline-none focus:border-amber-500 shadow-sm font-bold text-slate-900"
                   }
                 )
               ] }),
@@ -1460,20 +1487,20 @@ export default function DistributorPortal({ onLogout }) {
                 /* @__PURE__ */ jsx(
                   "textarea",
                   {
-                    placeholder: "Add context for this counter offer...",
+                    placeholder: "Add rationale for this counter proposal...",
                     className: "w-full px-3 py-2 border border-amber-300 rounded-lg text-xs bg-white focus:outline-none focus:border-amber-500 shadow-sm min-h-[60px]"
                   }
                 )
               ] })
             ] })
           ] }) : /* @__PURE__ */ jsxs("div", { className: "bg-slate-50 border border-slate-200 rounded-lg p-4 animate-fade-up", children: [
-            /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-[#0F172A] mb-3", children: "Line Items" }),
+            /* @__PURE__ */ jsx("h4", { className: "font-bold text-sm text-[#0F172A] mb-3", children: "Line Items & Specification" }),
             /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
               Array.isArray(activeQuote.items) && activeQuote.items.length > 0 ? (
                 activeQuote.items.map((item, idx) => {
                   const qty = parseInt(item.qty || item.quantity || 1);
-                  const price = parseFloat(item.price || 0);
-                  const name = item.name || item.product_name || "B2B Bulk Item";
+                  const price = parseFloat(item.price || activeQuote.unit_price || 0);
+                  const name = item.name || item.product_name || activeQuote.product_name || "B2B Bulk Item";
                   return /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center text-xs", children: [
                     /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: `${name} x ${qty}` }),
                     /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: formatCurrency(price * qty) })
@@ -1481,7 +1508,7 @@ export default function DistributorPortal({ onLogout }) {
                 })
               ) : (
                 /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center text-xs", children: [
-                  /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: "B2B Bulk Replenishment (Virtual Item) x 1" }),
+                  /* @__PURE__ */ jsx("span", { className: "text-[#64748B]", children: `${activeQuote.product_name || "B2B Bulk Item"} x ${activeQuote.quantity || 1}` }),
                   /* @__PURE__ */ jsx("span", { className: "font-bold text-[#0F172A]", children: formatCurrency(activeQuote.total_amount) })
                 ] })
               )
@@ -1513,7 +1540,7 @@ export default function DistributorPortal({ onLogout }) {
                 children: "Close"
               }
             ),
-            (activeQuote.status === "SENT" || activeQuote.status === "NEGOTIATING" || activeQuote.status === "APPROVED") && /* @__PURE__ */ jsxs(Fragment, { children: [
+            (activeQuote.status === "SENT" || activeQuote.status === "NEGOTIATING" || activeQuote.status === "COUNTER_OFFER_RECEIVED" || activeQuote.status === "DRAFT" || activeQuote.status === "APPROVED") && /* @__PURE__ */ jsxs(Fragment, { children: [
               /* @__PURE__ */ jsx(
                 "button",
                 {
