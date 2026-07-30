@@ -1626,7 +1626,7 @@ async function handleAnalyticalQuery(pool, sqlQuery) {
 // Falls back to top ragProducts if nothing scores above 0.
 function getRelevantCards(ragProducts, llmText, maxCards = 6) {
   if (!ragProducts || ragProducts.length === 0) return [];
-  const lower = llmText.toLowerCase();
+  const lower = (llmText || '').toLowerCase();
 
   const scored = ragProducts.map(p => {
     let score = 0;
@@ -1643,8 +1643,14 @@ function getRelevantCards(ragProducts, llmText, maxCards = 6) {
   const relevant = scored.filter(p => p._score > 0).sort((a, b) => b._score - a._score);
   if (relevant.length > 0) return relevant.slice(0, maxCards);
 
-  // Nothing matched text — return top-scored ragProducts (most semantically relevant)
-  return ragProducts.slice(0, maxCards);
+  // Only return product cards if user explicitly inquired about products/catalog/stock
+  const isCatalogQuery = /\b(catalog|products?|stock|wholesale price|items?|inventory|buy|purchase|rate)\b/i.test(lower);
+  if (isCatalogQuery) {
+    return ragProducts.slice(0, maxCards);
+  }
+
+  // Return empty array for non-product prompts (order tracking, quotation status, greetings, ledger)
+  return [];
 }
 
 function registerCopilotRoutes(app, pool) {
