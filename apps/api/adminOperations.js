@@ -761,7 +761,8 @@ async function approveQuotationInDb(pool, identifier, approvedUnitPrice = null) 
     : parseFloat(quote.unit_price);
   
   const origPrice = parseFloat(quote.original_unit_price || quote.unit_price);
-  const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : origPrice * 0.85;
+  const maxDisc = quote.max_discount_pct !== undefined && quote.max_discount_pct !== null ? parseInt(quote.max_discount_pct) : 0;
+  const minPrice = quote.min_price_allowed ? parseFloat(quote.min_price_allowed) : origPrice * (1 - maxDisc / 100);
   
   // Validation: Admin approved price should be between min_price and original_price
   if (finalUnitPrice < minPrice) {
