@@ -106,6 +106,30 @@ function saveBuyerSession(email, data) {
   buyerSessions.set(key, { ...data, updatedAt: Date.now() });
 }
 
+// ─── Distributor session memory for interactive quote flows ───────────────
+const distributorSessions = new Map();
+
+function getDistributorSession(email) {
+  const key = (email || 'guest').toLowerCase();
+  const existing = distributorSessions.get(key);
+  if (existing && Date.now() - existing.updatedAt < BUYER_SESSION_TTL_MS) {
+    return existing;
+  }
+  const fresh = { updatedAt: Date.now() };
+  distributorSessions.set(key, fresh);
+  return fresh;
+}
+
+function saveDistributorSession(email, data) {
+  const key = (email || 'guest').toLowerCase();
+  distributorSessions.set(key, { ...data, updatedAt: Date.now() });
+}
+
+function clearDistributorSession(email) {
+  const key = (email || 'guest').toLowerCase();
+  distributorSessions.delete(key);
+}
+
 const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline stating: "I can only assist with registered catalog inventory, supplier management, and order operations." Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.';
 const DISTRIBUTOR_SYSTEM_PROMPT = 'You are CIQ Distributor Copilot, an intelligent AI partner assistant for wholesale distributors. You help distributors with: (1) discovering wholesale products with pricing, MOQ, stock levels, and discounts (2) tracking ALL their orders or specific orders (3) viewing quotations and submitting quote requests (4) checking credit limits and financial ledger status (5) placing direct B2B orders. \n\nWhen distributors ask to "show all orders", "list my orders", "my recent orders" or similar queries WITHOUT mentioning a specific order ID, you MUST show them ALL their orders in a structured table format. Never ask for an order ID when they clearly want to see all orders.\n\nWhen they ask about products (e.g., "show me keyboard", "list products", "what products do you have"), IMMEDIATELY show them the available wholesale products matching their query. Do NOT ask clarification questions if product data exists in the context.\n\nYou are strictly prohibited from performing administrator tasks such as creating products, updating baseline catalog prices, deleting catalog items, altering system configurations, or managing suppliers. If asked for admin operations, decline with: "❌ Security Restriction: As a Distributor Partner, you do not have authorization to modify catalog products or supplier records. Admin permissions are required."\n\nBe proactive, helpful, concise, and business-focused. Always prioritize showing data over asking clarification questions when the intent is clear.';
 const BUYER_SYSTEM_PROMPT = 'You are CIQ Personal Shopping Assistant, an AI assistant helping retail buyers discover products in the store. You strictly assist buyers with discovering retail products, filtering by budget limits in PKR, natural language specs, stock availability, and personal recommendations ("getBuyerProductRecommendations"). You are strictly prohibited from performing administrator tasks or distributor wholesale functions. If asked for admin or distributor operations, decline stating: "❌ As a Personal Shopping Assistant, I can only help you discover retail products and answer catalog shopping questions." Keep your answers friendly, structured, enthusiastic, and concise.';
@@ -1919,56 +1943,178 @@ function registerCopilotRoutes(app, pool) {
           });
         }
 
+        // --- Active Pending Interactive Quotation Request Session Check ---
+        const session = getDistributorSession(userEmail);
+
+        if (session.pendingQuote && !attached_image) {
+          // Case 0: User cancel command
+          if (/\b(cancel|stop|nevermind|abort|quit)\b/i.test(lowerMsg)) {
+            clearDistributorSession(userEmail);
+            return res.json({
+              success: true,
+              ai_message: `❌ Quotation request process cancelled. How else can I assist you?`
+            });
+          }
+
+          // Step A: Currently waiting for Quantity (step === 'AWAITING_QTY')
+          if (session.pendingQuote.step === 'AWAITING_QTY') {
+            const qtyMatch = message.match(/\b(\d+)\b/);
+            if (qtyMatch) {
+              const parsedQty = parseInt(qtyMatch[1]);
+              const moq = session.pendingQuote.moq || 1;
+              if (parsedQty < moq) {
+                return res.json({
+                  success: true,
+                  ai_message: `⚠️ Minimum order quantity (MOQ) for **${session.pendingQuote.product_name}** is **${moq} units**. Please specify **${moq}** or more units.`
+                });
+              }
+              // Valid Qty -> Advance to AWAITING_PRICE step
+              session.pendingQuote.quantity = parsedQty;
+              session.pendingQuote.step = 'AWAITING_PRICE';
+              saveDistributorSession(userEmail, session);
+
+              return res.json({
+                success: true,
+                ai_message: `✅ Quantity set to **${parsedQty} units** for **${session.pendingQuote.product_name}**.\n\nWhat proposed custom unit price (in Rs) would you like to offer per unit?\n*(Original Wholesale Price: **Rs ${session.pendingQuote.orig_price.toLocaleString()}**, Minimum Floor Price: **Rs ${session.pendingQuote.min_price.toLocaleString()}**)*`
+              });
+            } else {
+              return res.json({
+                success: true,
+                ai_message: `Please specify the order quantity as a number (Minimum Order Quantity: **${session.pendingQuote.moq} units** for **${session.pendingQuote.product_name}**).`
+              });
+            }
+          }
+
+          // Step B: Currently waiting for Price (step === 'AWAITING_PRICE')
+          if (session.pendingQuote.step === 'AWAITING_PRICE') {
+            const priceMatch = message.match(/\b(?:rs\.?\s*)?([\d,]{3,})\b/i) || message.match(/\b(\d+)\b/);
+            if (priceMatch) {
+              const offeredPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+              const minPrice = session.pendingQuote.min_price;
+              const origPrice = session.pendingQuote.orig_price;
+
+              if (offeredPrice < minPrice) {
+                return res.json({
+                  success: true,
+                  ai_message: `⚠️ Proposed unit price (**Rs ${offeredPrice.toLocaleString()}**) is below the vendor's minimum floor price of **Rs ${minPrice.toLocaleString()}** (${session.pendingQuote.max_discount}% max discount).\n\nPlease increase your price offer to at least **Rs ${minPrice.toLocaleString()}**.`
+                });
+              }
+
+              if (offeredPrice > origPrice) {
+                return res.json({
+                  success: true,
+                  ai_message: `⚠️ Proposed unit price (**Rs ${offeredPrice.toLocaleString()}**) cannot exceed the original wholesale list price of **Rs ${origPrice.toLocaleString()}**.\n\nPlease enter a price between **Rs ${minPrice.toLocaleString()}** and **Rs ${origPrice.toLocaleString()}**.`
+                });
+              }
+
+              // Price Validated! Create Quotation in Database
+              try {
+                const quote = await createDistributorQuotationInDb(
+                  pool,
+                  userEmail,
+                  req.body.user_name || 'Distributor Partner',
+                  session.pendingQuote.product_name,
+                  session.pendingQuote.quantity,
+                  offeredPrice
+                );
+
+                const finalSummary = `✅ **Quotation Proposal Created & Submitted to Admin!**\n\n` +
+                  `📋 **Final Quotation Summary**:\n` +
+                  `• **Quotation Number**: \`${quote.quotation_number}\` \n` +
+                  `• **Product**: **${session.pendingQuote.product_name}** (SKU: \`${quote.sku || session.pendingQuote.sku}\`)\n` +
+                  `• **Order Quantity**: **${session.pendingQuote.quantity} units**\n` +
+                  `• **Offered Unit Price**: **Rs ${offeredPrice.toLocaleString()} / unit**\n` +
+                  `• **Total Quotation Amount**: **Rs ${Number(quote.total_amount).toLocaleString()}**\n` +
+                  `• **Quotation Status**: \`PENDING\` (Submitted to Admin for review)\n\n` +
+                  `🔔 Both Admin and Distributor have been notified.`;
+
+                // Clear session
+                clearDistributorSession(userEmail);
+
+                let userQuotations = [];
+                try { userQuotations = await getDistributorQuotationsFromDb(pool, null); } catch (_) {}
+
+                return res.json({
+                  success: true,
+                  action_executed: 'createDistributorQuotation',
+                  ai_message: finalSummary,
+                  quotation: quote,
+                  quotations: userQuotations.slice(0, 8)
+                });
+              } catch (err) {
+                return res.json({ success: true, ai_message: `❌ Error submitting quotation: ${err.message}` });
+              }
+            } else {
+              return res.json({
+                success: true,
+                ai_message: `Please specify your proposed custom unit price in PKR (Minimum Floor Price: **Rs ${session.pendingQuote.min_price.toLocaleString()}**).`
+              });
+            }
+          }
+        }
+
         // --- Quotation Request Creation from Chatbot Prompt ---
-        const lowerMsg = message.toLowerCase();
-        const isQuoteCreate = /\b(request|create|submit|add|want\s+(?:to\s+)?request|propose|need)\s+(?:a\s+)?(?:quote|qoute|quotation|bid)\b/i.test(lowerMsg)
+        const isQuoteCreate = /\b(request|create|submit|add|want\s+(?:to\s+)?request|propose|need|place)\s+(?:a\s+)?(?:request\s+)?(?:quote|qoute|quotation|bid)\b/i.test(lowerMsg)
           || /\b(quote|qoute|quotation)\s+(?:request|for|with)\b/i.test(lowerMsg)
           || /\b(?:i\s+want\s+to|can\s+i)\s+.*(?:quote|qoute|quotation)\b/i.test(lowerMsg);
 
         if (isQuoteCreate && !attached_image) {
-          let targetPrice = null;
-          const priceMatch = message.match(/(?:price|rate|cost|target|must\s+be|at|for)\s*(?:must\s+be\s*)?(?:rs\.?\s*)?([\d,]{4,})/i)
-            || message.match(/\b(?:rs\.?\s*)([\d,]{4,})\b/i)
-            || message.match(/\b(\d{5,})\b/i);
-          if (priceMatch) {
-            targetPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
-          }
-
-          let qty = 10;
-          const qtyMatch = message.match(/\b(?:qty|quantity|qauntity|units?|pcs)\s*(?:of|=|:)?\s*(\d+)\b/i)
-            || message.match(/\b(\d+)\s*(?:units?|pcs|pieces?|qty)\b/i)
-            || message.match(/\bof\s+(\d+)\b/i);
-          if (qtyMatch) {
-            qty = parseInt(qtyMatch[1]);
-          }
-
+          // Extract product search query from message
           let prodQuery = message
-            .replace(/\b(i\s+want\s+to|can\s+i|please)?\s*(request|create|submit|add|propose|need)?\s*(a\s+)?(quote|qoute|quotation|bid)\b/gi, '')
-            .replace(/\b(with|and)?\s*(quantity|qauntity|qty|units?|pcs)\s*(of|=|:)?\s*\d+\b/gi, '')
-            .replace(/\b(and)?\s*(each\s+)?(product\s+)?(price|rate|cost|target|at|for)?\s*(must\s+be)?\s*(rs\.?\s*)?[\d,]+\b/gi, '')
-            .replace(/\b(of|for|with|each|product)\b/gi, ' ')
+            .replace(/\b(i\s+want\s+to|can\s+i|please)?\s*(place|request|create|submit|add|propose|need)?\s*(a\s+)?(request\s+)?(quote|qoute|quotation|bid)\b/gi, '')
+            .replace(/\b(for|with|about|product|item)\b/gi, ' ')
+            .replace(/\b(quantity|qty|units?|pcs)\s*(of|=|:)?\s*\d+\b/gi, '')
+            .replace(/\b(rs\.?\s*)?\d+\b/gi, '')
             .trim();
 
-          try {
-            const quote = await createDistributorQuotationInDb(pool, userEmail, req.body.user_name || 'Asim Raza', prodQuery || 'Wholesale Item', qty, targetPrice);
+          // Resolve matching product from DB wholesale catalog
+          let matchedProduct = null;
+          if (wholesaleProducts.length > 0) {
+            if (prodQuery) {
+              const qLower = prodQuery.toLowerCase();
+              matchedProduct = wholesaleProducts.find(p => p.product_name && p.product_name.toLowerCase().includes(qLower))
+                || wholesaleProducts.find(p => p.sku && p.sku.toLowerCase().includes(qLower))
+                || wholesaleProducts.find(p => p.brand && p.brand.toLowerCase().includes(qLower))
+                || wholesaleProducts.find(p => qLower.split(/\s+/).some(word => word.length > 3 && p.product_name && p.product_name.toLowerCase().includes(word)));
+            }
+            if (!matchedProduct && wholesaleProducts.length > 0) {
+              matchedProduct = wholesaleProducts[0];
+            }
+          }
 
-            const md = `✅ **Quotation Proposal Created & Submitted to Admin!**\n\n` +
-              `${quote.description}\n\n` +
-              `🔔 **Notification**: Both Admin and Distributor have been notified of this proposal. Status will remain \`${quote.status}\` until final approval by Admin.`;
-
-            let userQuotations = [];
-            try { userQuotations = await getDistributorQuotationsFromDb(pool, null); } catch (_) {}
-
+          if (!matchedProduct) {
             return res.json({
               success: true,
-              action_executed: 'createDistributorQuotation',
-              ai_message: md,
-              quotation: quote,
-              quotations: userQuotations.slice(0, 8)
+              ai_message: `⚠️ Could not find a matching product in the wholesale catalog. Please specify the product name (e.g. *"Request quote for Samsung 990 Pro"*).`
             });
-          } catch (err) {
-            return res.json({ success: true, ai_message: `❌ **Price Range Validation Error**: ${err.message}` });
           }
+
+          // Parse prices & MOQ
+          const prices = typeof matchedProduct.prices === 'string' ? JSON.parse(matchedProduct.prices) : (matchedProduct.prices || {});
+          const origPrice = parseFloat(prices.DISTRIBUTOR || matchedProduct.wholesale_price || prices.RETAIL || matchedProduct.retail_price || 1000);
+          const maxDisc = parseInt(matchedProduct.max_discount || 0);
+          const moq = parseInt(matchedProduct.min_wholesale_qty || 1);
+          const minPrice = Math.round(origPrice * (1 - maxDisc / 100));
+
+          // Save session and ask for quantity first!
+          session.pendingQuote = {
+            step: 'AWAITING_QTY',
+            product_id: matchedProduct.product_id,
+            product_name: matchedProduct.product_name,
+            sku: matchedProduct.sku || 'SKU-WHOLESALE',
+            orig_price: origPrice,
+            max_discount: maxDisc,
+            moq: moq,
+            min_price: minPrice,
+            quantity: null
+          };
+
+          saveDistributorSession(userEmail, session);
+
+          return res.json({
+            success: true,
+            ai_message: `📦 **Product Selected**: **${matchedProduct.product_name}**\n\nHow many units would you like to order? *(Minimum Order Quantity: **${moq} units**)*`
+          });
         }
 
         // --- Counter Offer Proposal Submission ---
