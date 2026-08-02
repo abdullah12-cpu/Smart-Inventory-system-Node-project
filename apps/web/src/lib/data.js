@@ -34,13 +34,13 @@ export function computeStockAlertStatus(availableQty, low, over) {
 export const MOCK_USERS = {
   admin: {
     user_id: "u-1",
-    first_name: "Saif",
-    last_name: "Shahzad",
-    email: "saif@commerceiq.com",
+    first_name: "Zain",
+    last_name: "Shahid",
+    email: "zain@commerceiq.com",
     phone: "+92 300 1234567",
     profile_image:
       "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
-    role_name: "Super Admin",
+    role_name: "Admin",
     is_active: true,
   },
   manager: {

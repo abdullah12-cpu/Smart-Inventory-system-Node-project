@@ -41,12 +41,12 @@ import AdminDashboard from "./admin/AdminDashboard";
 const AVAILABLE_USER_ROLES = [
   {
     user_id: "u-1",
-    first_name: "Saif",
-    last_name: "Shahzad",
-    email: "saif@commerceiq.com",
+    first_name: "Zain",
+    last_name: "Shahid",
+    email: "zain@commerceiq.com",
     phone: "+92 300 1234567",
     profile_image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
-    role_name: "Super Admin",
+    role_name: "Admin",
     is_active: true
   }
 ];
@@ -337,7 +337,7 @@ export default function AdminPortal({ onLogout }) {
           history: chatMessages.slice(1),
           attached_image: attachedImg,
           portal_role: "ADMIN",
-          user_name: currentUser?.first_name || "Saif"
+          user_name: currentUser?.first_name || "Zain"
         })
       });
       if (response.ok) {
@@ -388,8 +388,8 @@ export default function AdminPortal({ onLogout }) {
       if (!n.is_read) markNotificationRead(n.notification_id);
     });
   };
-  const canAccessSuppliers = currentUser.role_name === "Super Admin" || currentUser.role_name === "Inventory Manager" || currentUser.role_name === "Analyst";
-  const canAccessBilling = currentUser.role_name === "Super Admin" || currentUser.role_name === "Accountant";
+  const canAccessSuppliers = currentUser.role_name === "Admin" || currentUser.role_name === "Super Admin" || currentUser.role_name === "Inventory Manager" || currentUser.role_name === "Analyst";
+  const canAccessBilling = currentUser.role_name === "Admin" || currentUser.role_name === "Super Admin" || currentUser.role_name === "Accountant";
   useEffect(() => {
     if (activeTab === "suppliers" && !canAccessSuppliers) {
       setActiveTab("dashboard");
@@ -699,7 +699,7 @@ export default function AdminPortal({ onLogout }) {
                     className: "mt-0.5", children: /* @__PURE__ */ jsx(
                       Badge,
                       {
-                        text: currentUser.role_name,
+                        text: currentUser.role_name === "Super Admin" ? "Admin" : (currentUser.role_name || "Admin"),
                         variant: "info",
                         className: "scale-[0.8] origin-left py-0.5"
                       }
@@ -2618,7 +2618,7 @@ export default function AdminPortal({ onLogout }) {
                       setChatMessages([
                         {
                           sender: "ai",
-                          text: "Hello Saif! I am your CIQ Admin Copilot. I can help you automate catalog actions. Try typing: 'Add product: Titanium Rods, category: Metals, price: 1500, stock: 100' or similar commands."
+                          text: "Hello Zain! I am your CIQ Admin Copilot. I can help you automate catalog actions. Try typing: 'Add product: Titanium Rods, category: Metals, price: 1500, stock: 100' or similar commands."
                         }
                       ]);
                     },
@@ -2648,7 +2648,7 @@ export default function AdminPortal({ onLogout }) {
                     }),
                         /* @__PURE__ */ jsxs("div", {
                       children: [
-                          /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-slate-800", children: "Welcome Saif! 👋" }),
+                          /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-slate-800", children: `Welcome ${currentUser?.first_name || "Zain"}! 👋` }),
                           /* @__PURE__ */ jsx("p", { className: "text-[11px] text-slate-500 mt-1 max-w-[85%] mx-auto leading-relaxed", children: "I can help you manage products and search, onboard, or query suppliers in your vendor directory instantly. Let's do something amazing!" })
                       ]
                     }),
