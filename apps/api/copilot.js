@@ -1018,56 +1018,21 @@ async function handleManageOrders(pool, args, message) {
     return `✅ Bulk Approved **${rows.length}** pending order(s):\n\n` +
       rows.map(r => `- ${r.order_number} (${r.customer_email})`).join('\n');
   }
-function formatHumanRevenue(numStrOrVal) {
-  const val = parseFloat(numStrOrVal || 0);
-  if (isNaN(val) || val === 0) return 'Rs 0';
-
-  const absVal = Math.abs(val);
-
-  // 1 Billion+ (1,000,000,000 / 100 Crore)
-  if (absVal >= 1e9) {
-    const bill = (val / 1e9).toFixed(3);
-    const crore = (val / 1e7).toFixed(2);
-    return `Rs ${bill} Billion (${crore} Crore PKR)`;
-  }
-
-  // 1 Crore+ (10,000,000 / 10 Million)
-  if (absVal >= 1e7) {
-    const crore = (val / 1e7).toFixed(2);
-    const mill = (val / 1e6).toFixed(1);
-    return `Rs ${crore} Crore (${mill} Million PKR)`;
-  }
-
-  // 1 Million+ (1,000,000 / 10 Lakh)
-  if (absVal >= 1e6) {
-    const mill = (val / 1e6).toFixed(2);
-    const lakh = (val / 1e5).toFixed(1);
-    return `Rs ${mill} Million (${lakh} Lakh PKR)`;
-  }
-
-  // 1 Lakh+ (100,000)
-  if (absVal >= 1e5) {
-    const lakh = (val / 1e5).toFixed(2);
-    return `Rs ${lakh} Lakh (Rs ${val.toLocaleString('en-PK')})`;
-  }
-
-  // Less than 1 Lakh
-  return `Rs ${val.toLocaleString('en-PK')}`;
-}
-
   if (action === 'analytics') {
     const period = args.period || 'month';
     const data = await getOrderAnalyticsFromDb(pool, period);
     const t = data.totals;
-    const periodLabel = { today: "Today's", week: 'This Week', month: 'This Month', all: 'Overall Lifetime' }[period] || period;
-
-    const revStr = formatHumanRevenue(t.total_revenue);
-    const avgStr = formatHumanRevenue(t.avg_order_value);
-
-    return `📊 **${periodLabel} Revenue Analytics**\n\n` +
-      `• **Total Revenue**: **${revStr}**\n` +
-      `• **Total Orders**: **${t.total_orders} orders**\n` +
-      `• **Average Order Value**: **${avgStr}**`;
+    const periodLabel = { today: 'Today', week: 'This Week', month: 'This Month', all: 'All Time' }[period] || period;
+    let md = `### 📊 Order Analytics — ${periodLabel}${typeLabel}\n\n`;
+    md += `| Metric | Value |\n|---|---|\n`;
+    md += `| Total Orders | **${t.total_orders}** |\n`;
+    md += `| Total Revenue | **Rs ${parseFloat(t.total_revenue).toLocaleString('en-PK', {maximumFractionDigits:0})}** |\n`;
+    md += `| Avg Order Value | **Rs ${parseFloat(t.avg_order_value).toLocaleString('en-PK', {maximumFractionDigits:0})}** |\n\n`;
+    if (data.by_status.length > 0) {
+      md += `**By Status:**\n\n| Status | Count |\n|---|---|\n`;
+      md += data.by_status.map(s => `| ${s.status} | ${s.count} |`).join('\n');
+    }
+    return md;
   }
   if (action === 'top_buyers') {
     const rows = await getTopBuyersFromDb(pool, args.limit || 5);
@@ -1666,33 +1631,17 @@ async function handleAnalyticalQuery(pool, sqlQuery) {
   }
   
   const headers = Object.keys(result.rows[0]);
-
-  // Single value aggregate result (e.g. SELECT SUM(total_amount) AS total_revenue)
-  if (result.rows.length === 1 && headers.length === 1) {
-    const colName = headers[0];
-    const val = result.rows[0][colName];
-    if (colName.includes('revenue') || colName.includes('amount') || colName.includes('sum') || colName.includes('total') || colName.includes('price')) {
-      const formattedRev = formatHumanRevenue(val);
-      return `💰 **${colName.replace(/_/g, ' ').toUpperCase()}**: **${formattedRev}**`;
-    }
-    return `📊 **${colName.replace(/_/g, ' ').toUpperCase()}**: **${String(val)}**`;
-  }
-
-  // Clean minimalist bullet format for queries
+  const mdHeader = '| ' + headers.join(' | ') + ' |\n| ' + headers.map(() => '---').join(' | ') + ' |';
   const mdRows = result.rows.map(row => {
-    return headers.map(h => {
-      let val = row[h];
-      if (val instanceof Date) val = val.toISOString().split('T')[0];
-      if (typeof val === 'number' || (!isNaN(parseFloat(val)) && (h.includes('revenue') || h.includes('amount') || h.includes('total') || h.includes('price')))) {
-        val = formatHumanRevenue(val);
-      } else if (typeof val === 'object' && val !== null) {
-        val = JSON.stringify(val);
-      }
-      return `• **${h.replace(/_/g, ' ')}**: ${val}`;
-    }).join('\n');
-  }).join('\n\n---\n\n');
+    return '| ' + headers.map(h => {
+      const val = row[h];
+      if (val instanceof Date) return val.toISOString();
+      if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+      return val !== null && val !== undefined ? String(val) : 'null';
+    }).join(' | ') + ' |';
+  }).join('\n');
   
-  return `📊 **Revenue & Analytical Summary**\n\n${mdRows}`;
+  return `### 📊 Analytical Report\n\n${mdHeader}\n${mdRows}`;
 }
 
 // ─── Helper: filter product cards to only those mentioned in LLM response ────
@@ -2480,7 +2429,7 @@ function registerCopilotRoutes(app, pool) {
                 success: true,
                 action_executed: 'getDistributorWholesaleRecommendations',
                 ai_message: reply,
-                products: getRelevantCards(wholesaleProducts, message),
+                products: getRelevantCards(wholesaleProducts, reply || message),
                 quotations: userQuotations.slice(0, 5)
               });
             }
@@ -2505,7 +2454,7 @@ function registerCopilotRoutes(app, pool) {
           success: true,
           action_executed: 'getDistributorWholesaleRecommendations',
           ai_message: fallbackMd,
-          products: getRelevantCards(wholesaleProducts, message)
+          products: getRelevantCards(wholesaleProducts, fallbackMd || message)
         });
 
       } catch (err) {
@@ -2964,14 +2913,14 @@ function registerCopilotRoutes(app, pool) {
                       success: true,
                       action_executed: 'getBuyerProductRecommendations',
                       ai_message: md,
-                      products: getRelevantCards(ragProducts, message)
+                      products: getRelevantCards(ragProducts, ragText)
                     });
                   }
                   return res.json({
                     success: true,
                     action_executed: 'getBuyerProductRecommendations',
                     ai_message: ragText,
-                    products: getRelevantCards(ragProducts, message)
+                    products: getRelevantCards(ragProducts, ragText)
                   });
                 }
               } else {
@@ -2988,7 +2937,7 @@ function registerCopilotRoutes(app, pool) {
           success: true,
           action_executed: 'getBuyerProductRecommendations',
           ai_message: md,
-          products: getRelevantCards(ragProducts && ragProducts.length > 0 ? ragProducts : products, message)
+          products: getRelevantCards(ragProducts && ragProducts.length > 0 ? ragProducts : products, md)
         });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ Error finding products: ${err.message}` });

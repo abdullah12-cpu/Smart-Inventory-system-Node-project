@@ -147,23 +147,10 @@ async function executeAdminTool(pool, name, args, message, attached_image) {
     if (action === 'analytics') {
       const data = await adminOps.getOrderAnalyticsFromDb(pool, args.period || 'all');
       const t = data.totals;
-
-      const formatHumanRevenue = (numStrOrVal) => {
-        const val = parseFloat(numStrOrVal || 0);
-        if (isNaN(val) || val === 0) return 'Rs 0';
-        const absVal = Math.abs(val);
-        if (absVal >= 1e9) return `Rs ${(val / 1e9).toFixed(3)} Billion (${(val / 1e7).toFixed(2)} Crore PKR)`;
-        if (absVal >= 1e7) return `Rs ${(val / 1e7).toFixed(2)} Crore (${(val / 1e6).toFixed(1)} Million PKR)`;
-        if (absVal >= 1e6) return `Rs ${(val / 1e6).toFixed(2)} Million (${(val / 1e5).toFixed(1)} Lakh PKR)`;
-        if (absVal >= 1e5) return `Rs ${(val / 1e5).toFixed(2)} Lakh (Rs ${val.toLocaleString('en-PK')})`;
-        return `Rs ${val.toLocaleString('en-PK')}`;
-      };
-
-      const periodLabel = { today: "Today's", week: 'This Week', month: 'This Month', all: 'Overall Lifetime' }[args.period || 'all'] || (args.period || 'Overall');
-      const md = `📊 **${periodLabel} Revenue Analytics**\n\n` +
-        `• **Total Revenue**: **${formatHumanRevenue(t.total_revenue)}**\n` +
-        `• **Total Orders**: **${t.total_orders} orders**\n` +
-        `• **Average Order Value**: **${formatHumanRevenue(t.avg_order_value)}**`;
+      let md = `### 📊 Order Analytics\n\n| Metric | Value |\n|---|---|\n`;
+      md += `| Total Orders | **${t.total_orders}** |\n`;
+      md += `| Total Revenue | **Rs ${parseFloat(t.total_revenue).toLocaleString('en-PK', {maximumFractionDigits:0})}** |\n`;
+      md += `| Avg Order Value | **Rs ${parseFloat(t.avg_order_value).toLocaleString('en-PK', {maximumFractionDigits:0})}** |\n`;
       return { action_executed: name, ai_message: md };
     }
     if (action === 'top_buyers') {
