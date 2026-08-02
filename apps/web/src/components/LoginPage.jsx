@@ -19,7 +19,9 @@ import {
   Coins,
   ShieldCheck,
   ShoppingBag,
-  Truck
+  Truck,
+  Globe,
+  MapPin
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 
@@ -57,7 +59,6 @@ export default function LoginPage({
   const [ntnCode, setNtnCode] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [warehouseRegion, setWarehouseRegion] = useState("wh-1");
-  const [creditRequest, setCreditRequest] = useState("500000");
   const [buyerStoreName, setBuyerStoreName] = useState("");
   const [buyerContactName, setBuyerContactName] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
@@ -69,14 +70,6 @@ export default function LoginPage({
   const [regPassword, setRegPassword] = useState("");
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
-
-  const COUNTRY_CITY_DATA = {
-    "Pakistan": { flag: "🇵🇰", cities: ["Karachi", "Lahore", "Islamabad", "Rawalpindi"] },
-    "Saudi Arabia": { flag: "🇸🇦", cities: ["Riyadh", "Jeddah", "Mecca", "Medina"] },
-    "United Arab Emirates": { flag: "🇦🇪", cities: ["Dubai", "Abu Dhabi", "Sharjah"] },
-    "United Kingdom": { flag: "🇬🇧", cities: ["London", "Manchester", "Birmingham"] },
-    "United States": { flag: "🇺🇸", cities: ["New York", "Los Angeles", "Chicago", "Houston"] }
-  };
 
   const [statusEmail, setStatusEmail] = useState("");
   const [statusResult, setStatusResult] = useState(null);
@@ -632,9 +625,7 @@ export default function LoginPage({
                       }`}>{statusResult.status}</span>
                     </div>
                     <div className="flex flex-col gap-1.5 text-[10px] text-slate-500 border-t border-slate-200 pt-3">
-                      <div className="flex justify-between"><span>NTN Code:</span> <span className="font-bold text-slate-700">{statusResult.ntn_code || "Pending"}</span></div>
-                      <div className="flex justify-between"><span>Credit Request:</span> <span className="font-bold text-slate-700">Rs {statusResult.credit_limit ? statusResult.credit_limit.toLocaleString() : "500,000"}</span></div>
-                      <div className="flex justify-between"><span>Hub City:</span> <span className="font-bold text-slate-700">{statusResult.city || "Pakistan"}</span></div>
+                      <div className="flex justify-between"><span>Applied On:</span> <span className="font-bold text-slate-700">{statusResult.created_at ? new Date(statusResult.created_at).toLocaleDateString() : "—"}</span></div>
                     </div>
                   </div>
                 )}
@@ -695,21 +686,31 @@ export default function LoginPage({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Country *</label>
-                      <select value={country} onChange={(e) => { setCountry(e.target.value); setCity(""); }} required className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs cursor-pointer focus:outline-none focus:border-[#4F46E5]">
-                        <option value="">Select</option>
-                        {Object.keys(COUNTRY_CITY_DATA).map(c => (
-                          <option key={c} value={c}>{COUNTRY_CITY_DATA[c].flag} {c}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Globe size={13} /></span>
+                        <input
+                          type="text"
+                          value={country}
+                          onChange={(e) => setCountry(e.target.value)}
+                          required
+                          placeholder="e.g. Pakistan"
+                          className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5]"
+                        />
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">City *</label>
-                      <select value={city} onChange={(e) => setCity(e.target.value)} required disabled={!country} className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs cursor-pointer focus:outline-none focus:border-[#4F46E5] disabled:opacity-50">
-                        <option value="">Select</option>
-                        {country && COUNTRY_CITY_DATA[country].cities.map(ct => (
-                          <option key={ct} value={ct}>{ct}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><MapPin size={13} /></span>
+                        <input
+                          type="text"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          required
+                          placeholder="e.g. Lahore"
+                          className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-[#4F46E5]"
+                        />
+                      </div>
                     </div>
                   </div>
 

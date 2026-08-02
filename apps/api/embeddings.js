@@ -312,7 +312,22 @@ async function vectorSearchDistributorProducts(pool, query, opts = {}) {
 //    Runs once on server start, non-blocking (fire-and-forget)
 // ─────────────────────────────────────────────────────────────────────────────
 async function backfillEmbeddings(pool) {
+  // Check if the embedding column exists (requires pgvector to be installed)
   let rows;
+  try {
+    const colCheck = await pool.query(`
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'products' AND column_name = 'embedding'
+    `);
+    if (colCheck.rows.length === 0) {
+      console.warn('[Embeddings] Skipping backfill — embedding column does not exist (pgvector not installed).');
+      return;
+    }
+  } catch (err) {
+    console.error('[Embeddings] Could not check for embedding column:', err.message);
+    return;
+  }
+
   try {
     const res = await pool.query(
       `SELECT product_id, product_name, brand, category, short_description, unit, weight, prices

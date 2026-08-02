@@ -2388,12 +2388,6 @@ export default function AdminPortal({ onLogout }) {
                               }),
                           /* @__PURE__ */ jsxs("p", {
                                 className: "text-[11px] text-[#64748B]", children: [
-                                  "Region: ",
-                            /* @__PURE__ */ jsx("strong", { className: "text-blue-600", children: dist.warehouse_region || "None" })
-                                ]
-                              }),
-                          /* @__PURE__ */ jsxs("p", {
-                                className: "text-[11px] text-[#64748B]", children: [
                                   "Location: ",
                             /* @__PURE__ */ jsxs("strong", {
                                     className: "text-indigo-600", children: [
@@ -2402,44 +2396,6 @@ export default function AdminPortal({ onLogout }) {
                                       dist.country || "Not Specified"
                                     ]
                                   })
-                                ]
-                              }),
-                          /* @__PURE__ */ jsxs("div", {
-                                className: "text-[11px] text-[#64748B] flex flex-col gap-1 mt-1", children: [
-                            /* @__PURE__ */ jsxs("span", {
-                                  children: [
-                                    "Requested Limit: ",
-                              /* @__PURE__ */ jsx("strong", { className: "text-emerald-600 inline-block", children: /* @__PURE__ */ jsx(CountUp, { value: parseFloat(dist.credit_request || 0) }) })
-                                  ]
-                                }),
-                                  (() => {
-                                    const limitVal = parseFloat(dist.credit_request || 0);
-                                    const maxLimit = 5000000;
-                                    const pct = Math.min((limitVal / maxLimit) * 100, 100);
-                                    return (
-                                /* @__PURE__ */ jsxs("div", {
-                                      className: "w-36 mt-0.5",
-                                      children: [
-                                    /* @__PURE__ */ jsx("div", {
-                                        className: "h-1 bg-slate-100 rounded-full overflow-hidden",
-                                        children: /* @__PURE__ */ jsx(motion.div, {
-                                          className: "h-full bg-emerald-500 rounded-full",
-                                          initial: shouldReduceMotion ? { width: `${pct}%` } : { width: 0 },
-                                          animate: { width: `${pct}%` },
-                                          transition: { duration: 0.6, ease: "easeOut" }
-                                        })
-                                      }),
-                                    /* @__PURE__ */ jsxs("div", {
-                                        className: "flex justify-between text-[8px] text-[#94A3B8] mt-0.5 font-bold",
-                                        children: [
-                                        /* @__PURE__ */ jsx("span", { children: "Limit utilization" }),
-                                        /* @__PURE__ */ jsxs("span", { children: [Math.round(pct), "%"] })
-                                        ]
-                                      })
-                                      ]
-                                    })
-                                    );
-                                  })()
                                 ]
                               })
                               ]

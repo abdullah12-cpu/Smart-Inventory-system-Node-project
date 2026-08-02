@@ -1622,34 +1622,39 @@ async function handleAnalyticalQuery(pool, sqlQuery) {
 
 // ─── Helper: filter product cards to only those mentioned in LLM response ────
 // Prevents showing unrelated products alongside a focused LLM answer.
-// Scoring: +3 if full product name mentioned, +2 if brand mentioned, +1 if category mentioned.
-// Falls back to top ragProducts if nothing scores above 0.
+// Scoring: +5 if full product name mentioned, +3 if brand mentioned, +1 if category mentioned.
+// Only shows cards that have a name or brand match — category alone is not enough.
 function getRelevantCards(ragProducts, llmText, maxCards = 6) {
   if (!ragProducts || ragProducts.length === 0) return [];
   const lower = (llmText || '').toLowerCase();
 
   const scored = ragProducts.map(p => {
     let score = 0;
-    if (p.product_name && lower.includes(p.product_name.toLowerCase())) score += 3;
-    // Also check first 3 significant words of product name
-    const nameWords = (p.product_name || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
-    nameWords.slice(0, 3).forEach(w => { if (lower.includes(w)) score += 1; });
-    if (p.brand    && lower.includes(p.brand.toLowerCase()))    score += 2;
+    const productNameLower = (p.product_name || '').toLowerCase();
+    const brandLower = (p.brand || '').toLowerCase();
+
+    // Full product name match (strongest signal)
+    if (productNameLower && lower.includes(productNameLower)) score += 5;
+
+    // Brand match
+    if (brandLower && brandLower.length > 2 && lower.includes(brandLower)) score += 3;
+
+    // Category match (weak signal — not enough on its own to show a card)
     if (p.category && lower.includes(p.category.toLowerCase())) score += 1;
+
     return { ...p, _score: score };
   });
 
-  // Return products that scored > 0, sorted by score desc, capped at maxCards
-  const relevant = scored.filter(p => p._score > 0).sort((a, b) => b._score - a._score);
-  if (relevant.length > 0) return relevant.slice(0, maxCards);
+  // Only show products that have a name OR brand match (score >= 3)
+  // This prevents showing unrelated products that only share a category keyword
+  const relevant = scored
+    .filter(p => p._score >= 3)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, maxCards);
 
-  // Only return product cards if user explicitly inquired about products/catalog/stock
-  const isCatalogQuery = /\b(catalog|products?|stock|wholesale price|items?|inventory|buy|purchase|rate)\b/i.test(lower);
-  if (isCatalogQuery) {
-    return ragProducts.slice(0, maxCards);
-  }
+  if (relevant.length > 0) return relevant;
 
-  // Return empty array for non-product prompts (order tracking, quotation status, greetings, ledger)
+  // No name/brand matches — return empty (don't fall back to full list)
   return [];
 }
 

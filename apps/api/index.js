@@ -43,8 +43,13 @@ async function initDb() {
       );
     `);
 
-    // Enable pgvector extension for semantic search
-    await client.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+    // Enable pgvector extension for semantic search (optional — skipped if not installed)
+    try {
+      await client.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+      console.log('[DB] pgvector extension enabled.');
+    } catch (vecErr) {
+      console.warn('[DB] pgvector extension not available — vector/semantic search disabled. Install pgvector to enable it.');
+    }
 
     // Create products table
     await client.query(`
@@ -72,17 +77,18 @@ async function initDb() {
       );
     `);
 
-    // Add embedding column if it doesn't exist yet (nomic-embed-text = 768 dims)
-    await client.query(`
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding vector(768);
-    `);
-
-    // Index for fast cosine similarity search
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS products_embedding_idx
-      ON products USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 10);
-    `);
+    // Add embedding column if pgvector is available (nomic-embed-text = 768 dims)
+    try {
+      await client.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS embedding vector(768);`);
+      // Index for fast cosine similarity search
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS products_embedding_idx
+        ON products USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 10);
+      `);
+    } catch (vecColErr) {
+      console.warn('[DB] Skipping vector column/index — pgvector not installed.');
+    }
 
 
     // Create orders table
@@ -645,9 +651,9 @@ app.post('/api/auth/register-distributor', async (req, res) => {
 
     // Insert distributor with user-provided password
     await pool.query(
-      `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, credit_request, status, country, city) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [regEmail, password, 'distributor', contactName, businessName, 'wh-1', '2500000', 'PENDING_APPROVAL', country, city]
+      `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, status, country, city) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [regEmail, password, 'distributor', contactName, businessName, 'wh-1', 'PENDING_APPROVAL', country, city]
     );
 
     return res.status(201).json({ success: true, message: 'Distributor application registered successfully.' });
