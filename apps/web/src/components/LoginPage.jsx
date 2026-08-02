@@ -49,7 +49,7 @@ export default function LoginPage({
   const [portal, setPortal] = useState(portalParam);
   const [showPwd, setShowPwd] = useState(false);
   const [email, setEmail] = useState(() => {
-    if (isAdminRoute) return "saif@commerceiq.com";
+    if (isAdminRoute) return "zain@commerceiq.com";
     if (isWholesaleRoute) return "asim@commerceiq.com";
     return "demo@commerceiq.com";
   });
@@ -144,7 +144,7 @@ export default function LoginPage({
     let targetEmail = "";
     let targetPortal = "";
     if (role === "admin") {
-      targetEmail = "saif@commerceiq.com";
+      targetEmail = "zain@commerceiq.com";
       targetPortal = "admin";
     } else if (role === "distributor") {
       targetEmail = "asim@commerceiq.com";

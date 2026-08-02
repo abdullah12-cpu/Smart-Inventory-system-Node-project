@@ -260,8 +260,12 @@ async function initDb() {
 
     // Seed predefined admin
     await client.query(`
-      INSERT INTO users (email, password, role, contact_name)
-      VALUES ('saif@commerceiq.com', 'demopassword', 'admin', 'Saif Shahzad')
+      INSERT INTO users (email, password, role, name)
+      VALUES ('zain@commerceiq.com', 'demopassword', 'admin', 'Zain Shahid')
+      ON CONFLICT (email) DO UPDATE SET name = 'Zain Shahid';
+
+      INSERT INTO users (email, password, role, name)
+      VALUES ('saif@commerceiq.com', 'demopassword', 'admin', 'Zain Shahid')
       ON CONFLICT (email) DO NOTHING;
     `);
 
