@@ -2429,7 +2429,7 @@ function registerCopilotRoutes(app, pool) {
                 success: true,
                 action_executed: 'getDistributorWholesaleRecommendations',
                 ai_message: reply,
-                products: getRelevantCards(wholesaleProducts, reply || message),
+                products: getRelevantCards(wholesaleProducts, message),
                 quotations: userQuotations.slice(0, 5)
               });
             }
@@ -2454,7 +2454,7 @@ function registerCopilotRoutes(app, pool) {
           success: true,
           action_executed: 'getDistributorWholesaleRecommendations',
           ai_message: fallbackMd,
-          products: getRelevantCards(wholesaleProducts, fallbackMd || message)
+          products: getRelevantCards(wholesaleProducts, message)
         });
 
       } catch (err) {
@@ -2913,14 +2913,14 @@ function registerCopilotRoutes(app, pool) {
                       success: true,
                       action_executed: 'getBuyerProductRecommendations',
                       ai_message: md,
-                      products: getRelevantCards(ragProducts, ragText)
+                      products: getRelevantCards(ragProducts, message)
                     });
                   }
                   return res.json({
                     success: true,
                     action_executed: 'getBuyerProductRecommendations',
                     ai_message: ragText,
-                    products: getRelevantCards(ragProducts, ragText)
+                    products: getRelevantCards(ragProducts, message)
                   });
                 }
               } else {
@@ -2937,7 +2937,7 @@ function registerCopilotRoutes(app, pool) {
           success: true,
           action_executed: 'getBuyerProductRecommendations',
           ai_message: md,
-          products: getRelevantCards(ragProducts && ragProducts.length > 0 ? ragProducts : products, md)
+          products: getRelevantCards(ragProducts && ragProducts.length > 0 ? ragProducts : products, message)
         });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ Error finding products: ${err.message}` });
