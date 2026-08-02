@@ -476,6 +476,9 @@ export function StoreProvider({ children }) {
         if (response.ok) {
           const res = await fetch("/api/orders");
           if (res.ok) setOrders(await res.json());
+          // Refresh products so stock reservation reflects immediately in low stock alerts
+          const prodRes = await fetch("/api/products");
+          if (prodRes.ok) setProducts(await prodRes.json());
 
           const matched = orders.find(o => o.order_id === orderId);
           const orderNum = matched ? matched.order_number : orderId;
@@ -511,24 +514,82 @@ export function StoreProvider({ children }) {
     },
     [orders, currentUser, addNotification]
   );
+  const rejectOrder = useCallback(
+    async (orderId) => {
+      try {
+        const response = await fetch(`/api/orders/${orderId}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "REJECTED" })
+        });
+        if (response.ok) {
+          const res = await fetch("/api/orders");
+          if (res.ok) setOrders(await res.json());
+          // Refresh products so reversed stock shows immediately
+          const prodRes = await fetch("/api/products");
+          if (prodRes.ok) setProducts(await prodRes.json());
+
+          const matched = orders.find(o => o.order_id === orderId);
+          const orderNum = matched ? matched.order_number : orderId;
+
+          const newAudit = {
+            audit_id: `aud-${Date.now()}`,
+            table_name: "orders",
+            record_id: orderId,
+            action: "UPDATE",
+            performed_by: `${currentUser?.first_name || 'Admin'} ${currentUser?.last_name || ''} (${currentUser?.role_name || 'Admin'})`,
+            notes: `Rejected order: ${orderNum}. Reserved stock has been released back to inventory.`,
+            created_at: new Date().toISOString()
+          };
+          await fetch("/api/audit-logs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newAudit)
+          });
+          setAuditLogs((prev) => [newAudit, ...prev]);
+
+          addNotification({
+            title: "Order Rejected",
+            message: `Order ${orderNum} has been rejected and reserved stock released.`,
+            severity: "WARNING",
+            trigger_type: "ORDER_REJECTED"
+          });
+          return true;
+        }
+      } catch (err) {
+        console.error("Error rejecting order:", err);
+      }
+      return false;
+    },
+    [orders, currentUser, addNotification]
+  );
   const submitQuotationRequest = useCallback(
     async (quoteData) => {
       try {
+        const enrichedQuote = {
+          ...quoteData,
+          customer_email: quoteData.customer_email || currentUser?.email || 'partner@commerceiq.com',
+          customer_name: quoteData.customer_name || currentUser?.business_name || currentUser?.contact_name || 'Wholesale Partner',
+        };
         const response = await fetch("/api/quotations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(quoteData)
+          body: JSON.stringify(enrichedQuote)
         });
         if (response.ok) {
           const res = await fetch("/api/quotations");
           if (res.ok) setQuotations(await res.json());
+
+          const performedBy = currentUser
+            ? `${currentUser.first_name || currentUser.contact_name || 'Partner'} ${currentUser.last_name || ''}`.trim() + ` (${currentUser.role_name || currentUser.role || 'distributor'})`
+            : 'Wholesale Partner';
 
           const newAudit = {
             audit_id: `aud-${Date.now()}`,
             table_name: "quotations",
             record_id: quoteData.quotation_id,
             action: "CREATE",
-            performed_by: `${currentUser.first_name} ${currentUser.last_name} (${currentUser.role_name})`,
+            performed_by: performedBy,
             notes: `Submitted quote request: ${quoteData.quotation_number} (Rs ${quoteData.total_amount.toLocaleString()}).`,
             created_at: new Date().toISOString()
           };
@@ -540,6 +601,9 @@ export function StoreProvider({ children }) {
           setAuditLogs((prev) => [newAudit, ...prev]);
 
           return true;
+        } else {
+          const errBody = await response.json().catch(() => ({}));
+          console.error("Quotation submit failed:", response.status, errBody);
         }
       } catch (err) {
         console.error("Error submitting quotation request:", err);
@@ -782,53 +846,28 @@ export function StoreProvider({ children }) {
           const newOrder = await response.json();
           setOrders((prev) => [newOrder, ...prev]);
 
-          // Update inventory reservations for ordered items
-          const updatedProducts = products.map((prod) => {
-            const orderItem = orderData.items.find(item => item.product_id === prod.product_id);
-            if (!orderItem) return prod;
+          // Refresh products from DB — backend already reserved stock, so this gives accurate available_quantity
+          const prodRefresh = await fetch("/api/products");
+          if (prodRefresh.ok) {
+            const freshProducts = await prodRefresh.json();
+            setProducts(freshProducts);
 
-            const updatedInv = prod.inventory.map((inv, idx) => {
-              if (idx === 0) { // Reserve from primary warehouse
-                const resQty = inv.reserved_quantity + orderItem.qty;
-                const availQty = Math.max(0, inv.quantity - resQty);
-                return {
-                  ...inv,
-                  reserved_quantity: resQty,
-                  available_quantity: availQty
-                };
+            // Check low stock after refresh
+            for (const prod of freshProducts) {
+              const totalAvail = (prod.inventory || []).reduce((sum, i) => sum + (i.available_quantity || 0), 0);
+              if (totalAvail <= prod.low_stock_threshold && totalAvail >= 0) {
+                const orderItem = (orderData.items || []).find(i => i.product_id === prod.product_id);
+                if (orderItem) {
+                  addNotification({
+                    title: "Low Stock Alert",
+                    message: `${prod.product_name} stock dropped to ${totalAvail} units (threshold: ${prod.low_stock_threshold}) after order ${orderData.order_number}.`,
+                    severity: "WARNING",
+                    trigger_type: "LOW_STOCK"
+                  });
+                }
               }
-              return inv;
-            });
-
-            const totalAvail = updatedInv.reduce((sum, i) => sum + i.available_quantity, 0);
-            if (totalAvail <= prod.low_stock_threshold) {
-              const notifMsg = `Low Stock Alert: ${prod.product_name} available stock has dropped to ${totalAvail} units (safety limit is ${prod.low_stock_threshold}) after order ${orderData.order_number}.`;
-              setTimeout(() => {
-                addNotification({
-                  title: "Critical Low Stock Threshold Breach",
-                  message: notifMsg,
-                  severity: "WARNING",
-                  trigger_type: "LOW_STOCK"
-                });
-              }, 100);
             }
-
-            const updatedProd = {
-              ...prod,
-              inventory: updatedInv
-            };
-
-            // Post updated product back to API to persist in PG database
-            fetch("/api/products", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(updatedProd)
-            }).catch(e => console.error("Error updating product inventory on order placement:", e));
-
-            return updatedProd;
-          });
-
-          setProducts(updatedProducts);
+          }
 
           const quotesRes = await fetch("/api/quotations");
           if (quotesRes.ok) setQuotations(await quotesRes.json());
@@ -849,13 +888,19 @@ export function StoreProvider({ children }) {
             });
           }
           return true;
+        } else {
+          const errBody = await response.json().catch(() => ({}));
+          if (errBody.insufficient_stock) {
+            throw new Error(errBody.message || 'Insufficient stock to place order.');
+          }
         }
       } catch (err) {
         console.error("Error placing order:", err);
+        throw err;
       }
       return false;
     },
-    [addNotification, products]
+    [addNotification]
   );
   const addSupplier = useCallback(
     async (s) => {
@@ -1103,6 +1148,7 @@ export function StoreProvider({ children }) {
         setQuotations,
         setOrders,
         approveOrder,
+        rejectOrder,
         submitQuotationRequest,
         updateQuotationStatus,
         warehouses,

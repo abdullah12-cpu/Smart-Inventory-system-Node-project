@@ -186,6 +186,7 @@ export default function AdminPortal({ onLogout }) {
     updateSupplier,
     deleteSupplier,
     approveOrder,
+    rejectOrder,
     quotations,
     updateQuotationStatus,
     distributors,
@@ -478,6 +479,16 @@ export default function AdminPortal({ onLogout }) {
   const handleShipOrder = (orderId) => {
     setShippingOrderId(orderId);
     setSelectedShipWarehouse("wh-1");
+  };
+
+  const handleRejectOrder = async (order) => {
+    if (!confirm(`Reject order ${order.order_number}?\n\nThis will release all reserved stock back to inventory.`)) return;
+    const success = await rejectOrder(order.order_id);
+    if (success) {
+      alert(`Order ${order.order_number} rejected. Reserved stock has been released.`);
+    } else {
+      alert(`Failed to reject order ${order.order_number}.`);
+    }
   };
   useEffect(() => {
     if (allocInvoiceId) {
@@ -1811,27 +1822,64 @@ export default function AdminPortal({ onLogout }) {
                             );
                             const isPaid = associatedInv ? associatedInv.status === "PAID" : false;
 
+                            const paymentBadge = /* @__PURE__ */ jsx("span", {
+                              className: `ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-rose-50 text-rose-600 border border-rose-200"}`,
+                              children: isPaid ? "PAID" : "UNPAID"
+                            });
+
                             if (o.status === "PENDING" || o.status === "PROCEED" || o.status === "DRAFT") {
-                              return /* @__PURE__ */ jsx("button", {
-                                onClick: () => handleApproveBuyerOrder(o),
-                                className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
-                                children: "Approve"
+                              return /* @__PURE__ */ jsxs("div", {
+                                className: "inline-flex items-center gap-1",
+                                children: [
+                                  /* @__PURE__ */ jsx("button", {
+                                    onClick: () => handleApproveBuyerOrder(o),
+                                    className: "px-2.5 py-1 bg-[#10B981] hover:bg-[#059669] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                    children: "Approve"
+                                  }),
+                                  /* @__PURE__ */ jsx("button", {
+                                    onClick: () => handleRejectOrder(o),
+                                    className: "px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                    children: "Reject"
+                                  })
+                                ]
                               });
                             }
 
                             if (o.status === "APPROVED" || o.status === "CONFIRMED" || o.status === "PROCESSING" || o.status === "READY_TO_SHIP" || (isPaid && o.status !== "SHIPPED" && o.status !== "CANCELLED")) {
-                              return /* @__PURE__ */ jsx("button", {
-                                onClick: () => handleShipOrder(o.order_id),
-                                className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
-                                children: "Ship"
+                              return /* @__PURE__ */ jsxs("div", {
+                                className: "inline-flex items-center gap-1",
+                                children: [
+                                  /* @__PURE__ */ jsx("button", {
+                                    onClick: () => handleShipOrder(o.order_id),
+                                    className: "px-2.5 py-1 bg-[#3B82F6] hover:bg-[#2563EB] text-white border-0 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm",
+                                    children: "Ship"
+                                  }),
+                                  paymentBadge
+                                ]
                               });
                             }
 
                             if (o.status === "SHIPPED") {
-                              return /* @__PURE__ */ jsx("span", { className: "px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold rounded", children: "Shipped" });
+                              return /* @__PURE__ */ jsxs("div", {
+                                className: "inline-flex items-center gap-1",
+                                children: [
+                                  /* @__PURE__ */ jsx("span", { className: "px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold rounded", children: "Shipped" }),
+                                  paymentBadge
+                                ]
+                              });
                             }
 
-                            return /* @__PURE__ */ jsx("span", { className: "px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded", children: "Awaiting Invoice Payment" });
+                            if (o.status === "REJECTED" || o.status === "CANCELLED") {
+                              return /* @__PURE__ */ jsx("span", { className: "px-2 py-0.5 bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-bold rounded", children: o.status });
+                            }
+
+                            return /* @__PURE__ */ jsxs("div", {
+                              className: "inline-flex items-center gap-1",
+                              children: [
+                                /* @__PURE__ */ jsx("span", { className: "px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded", children: "Awaiting Invoice Payment" }),
+                                paymentBadge
+                              ]
+                            });
                           })()
                         })
                                   ]

@@ -860,6 +860,34 @@ app.post('/api/orders', async (req, res) => {
   }
 
   try {
+    // Stock validation for B2B orders before creating the order
+    const orderItems = typeof ord.items === 'string' ? JSON.parse(ord.items) : (ord.items || []);
+    if ((ord.order_type === 'B2B' || ord.order_type === 'DISTRIBUTOR') && orderItems.length > 0) {
+      for (const item of orderItems) {
+        const qty = parseInt(item.qty || item.quantity || 0);
+        if (qty <= 0) continue;
+        const prodRes = await pool.query(
+          'SELECT * FROM products WHERE product_id = $1 OR sku = $2 OR product_name ILIKE $3 LIMIT 1',
+          [item.product_id || '', item.sku || '', `%${item.name || item.product_name || ''}%`]
+        );
+        if (prodRes.rows.length > 0) {
+          const product = prodRes.rows[0];
+          const inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : (product.inventory || []);
+          const totalAvailable = inventory.reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+          if (totalAvailable < qty) {
+            return res.status(400).json({
+              success: false,
+              insufficient_stock: true,
+              message: `Stock Check Failed for ${ord.order_number}:\n\nItem: "${product.product_name}"\nRequired Quantity: ${qty}\nAvailable Inventory: ${totalAvailable}\n\nCannot place order due to insufficient stock.`,
+              product_name: product.product_name,
+              required: qty,
+              available: totalAvailable
+            });
+          }
+        }
+      }
+    }
+
     // Insert order
     const result = await pool.query(
       `INSERT INTO orders (
@@ -886,6 +914,34 @@ app.post('/api/orders', async (req, res) => {
 
     // Buyer orders (B2C) remain exclusively as orders and do not create quotations
     const row = result.rows[0];
+
+    // Reserve stock for B2B orders on placement
+    if ((ord.order_type === 'B2B' || ord.order_type === 'DISTRIBUTOR') && orderItems.length > 0) {
+      for (const item of orderItems) {
+        const qty = parseInt(item.qty || item.quantity || 0);
+        if (qty <= 0) continue;
+        const prodRes = await pool.query(
+          'SELECT * FROM products WHERE product_id = $1 OR sku = $2 OR product_name ILIKE $3 LIMIT 1',
+          [item.product_id || '', item.sku || '', `%${item.name || item.product_name || ''}%`]
+        );
+        if (prodRes.rows.length > 0) {
+          const product = prodRes.rows[0];
+          let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : (product.inventory || []);
+          // Reserve from first warehouse with sufficient stock
+          let remaining = qty;
+          inventory = inventory.map(inv => {
+            if (remaining <= 0) return inv;
+            const avail = inv.available_quantity || 0;
+            const toReserve = Math.min(avail, remaining);
+            remaining -= toReserve;
+            const newReserved = (inv.reserved_quantity || 0) + toReserve;
+            const newAvail = Math.max(0, inv.quantity - newReserved);
+            return { ...inv, reserved_quantity: newReserved, available_quantity: newAvail };
+          });
+          await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inventory), product.product_id]);
+        }
+      }
+    }
     const savedOrder = {
       order_id: row.order_id,
       order_number: row.order_number,
@@ -1062,6 +1118,62 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
         }
       } catch (invErr) {
         console.error('Error auto-creating invoice on order approval:', invErr.message);
+      }
+    }
+
+    // ── Inventory reversal when order is REJECTED or CANCELLED ───────────────
+    // Release any reserved stock back so it becomes available again
+    if (status === 'REJECTED' || status === 'CANCELLED') {
+      try {
+        const order = result.rows[0];
+        const orderItems = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+
+        for (const item of orderItems) {
+          const qty = parseInt(item.qty || item.quantity || 0);
+          if (qty <= 0) continue;
+
+          const prodRes = await pool.query(
+            'SELECT * FROM products WHERE product_id = $1 OR sku = $2 OR product_name ILIKE $3 LIMIT 1',
+            [item.product_id || '', item.sku || '', `%${item.name || item.product_name || ''}%`]
+          );
+
+          if (prodRes.rows.length > 0) {
+            const product = prodRes.rows[0];
+            let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : (product.inventory || []);
+
+            // Release reserved quantity back to available
+            let remaining = qty;
+            inventory = inventory.map(inv => {
+              if (remaining <= 0) return inv;
+              const reserved = inv.reserved_quantity || 0;
+              const toRelease = Math.min(reserved, remaining);
+              remaining -= toRelease;
+              const newReserved = reserved - toRelease;
+              const newAvail = Math.max(0, inv.quantity - newReserved);
+              return { ...inv, reserved_quantity: newReserved, available_quantity: newAvail };
+            });
+
+            await pool.query(
+              'UPDATE products SET inventory = $1 WHERE product_id = $2',
+              [JSON.stringify(inventory), product.product_id]
+            );
+
+            // Record stock movement
+            const movId = `mv-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            await pool.query(
+              `INSERT INTO stock_movements (movement_id, product_id, product_name, warehouse_id, warehouse_name, movement_type, quantity, notes, performed_by, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+              [
+                movId, product.product_id, product.product_name,
+                'wh-1', 'System', 'REVERSAL', qty,
+                `Stock released — order ${order.order_number} ${status}`,
+                'System', new Date().toISOString()
+              ]
+            );
+          }
+        }
+      } catch (revErr) {
+        console.error('Error reversing stock on order rejection:', revErr.message);
       }
     }
 

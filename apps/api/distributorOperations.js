@@ -222,18 +222,21 @@ function buildQuotationDescription(quote) {
 
   const discountPct = origPrice > 0 ? Math.round(((origPrice - unitPrice) / origPrice) * 100) : 0;
 
-  return [
-    `📋 **Quotation Item Breakdown & Specification:**`,
-    `- **Quotation Number**: **${quote.quotation_number || quote.quotation_id}**`,
-    `- **Product Name**: **${prodName}** (SKU: \`${sku}\`)`,
-    `- **Order Quantity**: ${qty} units`,
-    `- **Original List Price**: Rs ${origPrice.toLocaleString()} / unit`,
-    `- **Max Allowed Discount**: ${maxDisc}% (Minimum Allowed Price: Rs ${minPrice.toLocaleString()})`,
-    `- **Offered Unit Price**: **Rs ${unitPrice.toLocaleString()} / unit** (${discountPct}% discount)`,
-    `- **Total Quotation Amount**: **Rs ${totalAmt.toLocaleString()}**`,
-    `- **Quotation Status**: \`${status}\``,
-    `- **Last Counter Proposed By**: **${lastCounter}**`
+  const raw = [
+    `Quotation Item Breakdown & Specification:`,
+    `- Quotation Number: ${quote.quotation_number || quote.quotation_id}`,
+    `- Product Name: ${prodName} (SKU: ${sku})`,
+    `- Order Quantity: ${qty} units`,
+    `- Original List Price: Rs ${origPrice.toLocaleString()} / unit`,
+    `- Max Allowed Discount: ${maxDisc}% (Minimum Allowed Price: Rs ${minPrice.toLocaleString()})`,
+    `- Offered Unit Price: Rs ${unitPrice.toLocaleString()} / unit (${discountPct}% discount)`,
+    `- Total Quotation Amount: Rs ${totalAmt.toLocaleString()}`,
+    `- Quotation Status: ${status}`,
+    `- Last Counter Proposed By: ${lastCounter}`
   ].join('\n');
+
+  // Strip any non-ASCII / emoji characters to prevent WIN1252 encoding errors in PostgreSQL
+  return raw.replace(/[^\x00-\x7F]/g, '');
 }
 
 async function createDistributorQuotationInDb(pool, customerEmail, customerName, productNameOrSku, quantity = 10, targetPrice = null) {

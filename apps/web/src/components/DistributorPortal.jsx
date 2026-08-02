@@ -578,13 +578,17 @@ export default function DistributorPortal({ onLogout }) {
       customer_email: currentUser?.email || "asim@commerceiq.com"
     };
 
-    const success = await placeOrder(orderPayload);
-    if (success) {
-      setDirectOrderSuccessToast(`Purchase Order ${orderNumber} placed successfully!`);
-      setTimeout(() => setDirectOrderSuccessToast(""), 3000);
-      setActiveProductForDirectOrder(null);
-    } else {
-      alert("Failed to place direct B2B order.");
+    try {
+      const success = await placeOrder(orderPayload);
+      if (success) {
+        setDirectOrderSuccessToast(`Purchase Order ${orderNumber} placed successfully!`);
+        setTimeout(() => setDirectOrderSuccessToast(""), 3000);
+        setActiveProductForDirectOrder(null);
+      } else {
+        alert("Failed to place direct B2B order.");
+      }
+    } catch (err) {
+      alert(err.message || "Failed to place direct B2B order.");
     }
   };
 

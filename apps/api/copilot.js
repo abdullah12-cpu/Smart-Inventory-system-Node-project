@@ -2317,6 +2317,9 @@ function registerCopilotRoutes(app, pool) {
           } catch (_) {}
         }
 
+        // Track whether we found products matching the query or are showing full catalog
+        const queryMatchFound = wholesaleProducts.length > 0 && cleanedQuery;
+
         // Format Wholesale Products Context
         const productContext = wholesaleProducts.map((p, i) => {
           const wholesalePriceStr = p.wholesale_price ? `Rs ${Number(p.wholesale_price).toLocaleString()}` : `Rs ${Number(p.retail_price * 0.85).toLocaleString()}`;
@@ -2380,9 +2383,12 @@ function registerCopilotRoutes(app, pool) {
           '8. When asked about invoices or payments, provide invoice number, amount, paid/remaining, status, and due date from the INVOICES section.',
           '9. When asked about credit limit, balance, or ledger, use the FINANCIAL LEDGER section.',
           '10. If data is not found in any section, say so clearly. NEVER ask for clarification when product data is already provided below.',
+          '11. CRITICAL: NEVER invent, fabricate, or suggest products that are NOT listed in the WHOLESALE CATALOG DATA section above. If a product is not in the catalog, tell the partner it is not available.',
           '',
           '## WHOLESALE CATALOG DATA:',
-          productContext || 'No matching wholesale products found.',
+          wholesaleProducts.length > 0
+            ? (productContext + (queryMatchFound ? '' : '\n\n[NOTE: No exact match for the query was found. The above is the full catalog. Only recommend products actually listed above.]'))
+            : 'No matching products found in the wholesale catalog for this query.',
           '',
           '## DISTRIBUTOR ACTIVE QUOTATIONS:',
           quotationContext || 'No active quotations found for your account.',
