@@ -261,7 +261,14 @@ export default function BuyerPortal({ onLogout }) {
                 className: "w-7 h-7 rounded-full object-cover border border-white"
               }
             ),
-            /* @__PURE__ */ jsx("span", { className: "font-bold text-xs", children: "Saif Shahzad" })
+            /* @__PURE__ */ jsx("span", {
+              className: "font-bold text-xs",
+              children: currentUser
+                ? (currentUser.first_name && currentUser.last_name
+                    ? `${currentUser.first_name} ${currentUser.last_name}`
+                    : (currentUser.first_name || currentUser.name || currentUser.email))
+                : "Buyer Account"
+            })
           ] }),
           /* @__PURE__ */ jsx(
             "button",
