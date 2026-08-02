@@ -252,15 +252,7 @@ export default function BuyerPortal({ onLogout }) {
           ] })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 pl-4 border-l border-white/20", children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-            /* @__PURE__ */ jsx(
-              "img",
-              {
-                src: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
-                alt: "Profile",
-                className: "w-7 h-7 rounded-full object-cover border border-white"
-              }
-            ),
+          /* @__PURE__ */ jsx("div", { className: "flex items-center gap-2", children: [
             /* @__PURE__ */ jsx("span", {
               className: "font-bold text-xs",
               children: currentUser
