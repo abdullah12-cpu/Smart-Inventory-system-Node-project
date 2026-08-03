@@ -1116,7 +1116,7 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
       const targetPrice = targetPriceMatch ? parseFloat(targetPriceMatch[1]) : null;
 
       try {
-        const quote = await createDistributorQuotationInDb(pool, 'asim@commerceiq.com', 'Saif Distributor', prodName, qty, targetPrice);
+        const quote = await createDistributorQuotationInDb(pool, 'asim@commerceiq.com', 'Asim Distribution', prodName, qty, targetPrice);
         const md = `✅ **Quotation Request Submitted Successfully via Prompt!**\n\n- **Quotation ID**: \`${quote.quotation_id}\`\n- **Quotation Number**: **${quote.quotation_number}**\n- **Product**: **${quote.product_name}** (${quote.sku})\n- **Quantity**: ${quote.quantity} units\n- **Target Unit Price**: Rs ${Number(quote.unit_price).toLocaleString()}\n- **Total Estimated Value**: Rs ${Number(quote.total_amount).toLocaleString()}\n- **Status**: \`${quote.status}\` (Under Review by Sales Team)`;
         return res.json({ success: true, action_executed: "createDistributorQuotation", ai_message: md });
       } catch (err) {
@@ -1135,7 +1135,7 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
       const qty = qtyMatch ? parseInt(qtyMatch[1]) : 10;
 
       try {
-        const order = await createDistributorDirectOrderInDb(pool, 'asim@commerceiq.com', 'Saif Distributor', prodName, qty, 'Karachi Central Depot');
+        const order = await createDistributorDirectOrderInDb(pool, 'asim@commerceiq.com', 'Asim Distribution', prodName, qty, 'Karachi Central Depot');
         const md = `✅ **Direct B2B Wholesale Order Placed Successfully via Prompt!**\n\n- **Order Number**: **${order.order_number}**\n- **Product**: **${order.product_name}** (${order.sku})\n- **Order Quantity**: ${order.quantity} units\n- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n- **Warehouse Depot**: ${order.warehouse_depot}\n- **Order Status**: \`${order.status}\` (Processing)`;
         return res.json({ success: true, action_executed: "createDistributorDirectOrder", ai_message: md });
       } catch (err) {
@@ -1698,7 +1698,7 @@ function registerCopilotRoutes(app, pool) {
     const geminiKey = process.env.GEMINI_API_KEY || '';
 
     const role = (portal_role || defaultRole).toUpperCase();
-    const displayName = user_name || (role === 'DISTRIBUTOR' ? 'Partner' : role === 'BUYER' ? 'Valued Customer' : 'Saif');
+    const displayName = user_name || (role === 'DISTRIBUTOR' ? 'Asim' : role === 'BUYER' ? 'Valued Customer' : 'Zain');
     const effectiveSystemPrompt = role === 'DISTRIBUTOR' ? DISTRIBUTOR_SYSTEM_PROMPT : role === 'BUYER' ? BUYER_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     const lowerMsg = message.toLowerCase().trim();
