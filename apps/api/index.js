@@ -248,6 +248,8 @@ async function initDb() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
       ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(100);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255);
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS order_id VARCHAR(100);
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS order_number VARCHAR(100);
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS quotation_number VARCHAR(100);
@@ -260,12 +262,12 @@ async function initDb() {
 
     // Seed predefined admin
     await client.query(`
-      INSERT INTO users (email, password, role, name)
-      VALUES ('zain@commerceiq.com', 'demopassword', 'admin', 'Zain Shahid')
-      ON CONFLICT (email) DO UPDATE SET name = 'Zain Shahid';
+      INSERT INTO users (email, password, role, contact_name, name)
+      VALUES ('zain@commerceiq.com', 'demopassword', 'admin', 'Zain Shahid', 'Zain Shahid')
+      ON CONFLICT (email) DO UPDATE SET contact_name = 'Zain Shahid', name = 'Zain Shahid';
 
-      INSERT INTO users (email, password, role, name)
-      VALUES ('saif@commerceiq.com', 'demopassword', 'admin', 'Zain Shahid')
+      INSERT INTO users (email, password, role, contact_name, name)
+      VALUES ('saif@commerceiq.com', 'demopassword', 'admin', 'Zain Shahid', 'Zain Shahid')
       ON CONFLICT (email) DO NOTHING;
     `);
 
