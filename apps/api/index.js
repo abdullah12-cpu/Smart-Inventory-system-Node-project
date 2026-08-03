@@ -763,11 +763,14 @@ app.get('/api/products', async (req, res) => {
       image_url: row.image_url || ''
     }));
     
-    // Filter by warehouse if distributor portal and warehouse_region is provided
-    if (portal === 'distributor' && warehouse_region) {
+    // For distributor portal: show all ACTIVE products regardless of warehouse
+    // (distributors should see all products; stock level is shown on the card)
+    // Only hide products that are completely out of stock across ALL warehouses
+    if (portal === 'distributor') {
       products = products.filter(product => {
         const inventory = product.inventory || [];
-        return inventory.some(inv => inv.warehouse_id === warehouse_region && inv.available_quantity > 0);
+        const totalAvailable = inventory.reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+        return totalAvailable >= 0; // show all — even 0 stock shows as "Out of Stock"
       });
     }
     
@@ -828,10 +831,26 @@ app.delete('/api/products/:id', async (req, res) => {
   }
 });
 
-// GET all orders
+// GET all orders (with optional customer_email and order_type filters for buyer portal)
 app.get('/api/orders', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM orders ORDER BY id DESC');
+    const { customer_email, order_type } = req.query;
+    let query = 'SELECT * FROM orders';
+    const params = [];
+    const conditions = [];
+    if (customer_email) {
+      conditions.push(`LOWER(customer_email) = $${params.length + 1}`);
+      params.push(customer_email.toLowerCase());
+    }
+    if (order_type) {
+      conditions.push(`UPPER(order_type) = $${params.length + 1}`);
+      params.push(order_type.toUpperCase());
+    }
+    if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');
+    query += ' ORDER BY id DESC';
+    const result = params.length > 0
+      ? await pool.query(query, params)
+      : await pool.query(query);
     const orders = result.rows.map(row => ({
       order_id: row.order_id,
       order_number: row.order_number,

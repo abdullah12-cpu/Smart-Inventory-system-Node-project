@@ -48,7 +48,7 @@ async function getDistributorQuotationsFromDb(pool, customerEmail) {
     params.push(`%${customerEmail}%`);
   }
 
-  query += ' ORDER BY created_at DESC LIMIT 20';
+  query += ' ORDER BY created_at DESC LIMIT 200';
   const res = await pool.query(query, params);
   return res.rows;
 }
@@ -177,7 +177,7 @@ async function getDistributorOrdersFromDb(pool, customerEmail) {
     params.push(`%${customerEmail}%`);
   }
 
-  query += ' ORDER BY order_date DESC LIMIT 20';
+  query += ' ORDER BY order_date DESC LIMIT 200';
   const res = await pool.query(query, params);
   return res.rows;
 }

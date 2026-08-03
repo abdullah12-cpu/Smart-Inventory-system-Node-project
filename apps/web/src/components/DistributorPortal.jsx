@@ -1017,12 +1017,12 @@ export default function DistributorPortal({ onLogout }) {
               {
                 className: "bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3",
                 children: [
-                  /* @__PURE__ */ jsx("div", { className: "w-full h-36 rounded-xl overflow-hidden mb-1 bg-slate-50 border border-[#E2E8F0] flex items-center justify-center", children: /* @__PURE__ */ jsx(
+                  /* @__PURE__ */ jsx("div", { className: "w-full h-44 rounded-xl overflow-hidden mb-1 bg-white border border-[#E2E8F0] flex items-center justify-center p-2", children: /* @__PURE__ */ jsx(
                     "img",
                     {
                       src: p.image_url || "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=300&fit=crop",
                       alt: p.product_name,
-                      className: "w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                      className: "w-full h-full object-contain transition-transform duration-500 hover:scale-105"
                     }
                   ) }),
                   /* @__PURE__ */ jsx("div", { className: "flex justify-between items-start", children: /* @__PURE__ */ jsxs("div", { children: [

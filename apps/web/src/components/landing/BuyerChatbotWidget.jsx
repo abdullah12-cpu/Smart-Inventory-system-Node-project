@@ -190,7 +190,7 @@ export default function BuyerChatbotWidget() {
   ]);
   const [addedItemIds, setAddedItemIds] = useState([]);
   const [pendingImage, setPendingImage] = useState(null); // { dataUrl, fileName }
-  const { addToCart } = useStore();
+  const { addToCart, currentUser } = useStore();
 
   const chatEndRef = useRef(null);
   const imageInputRef = useRef(null);
@@ -241,7 +241,10 @@ export default function BuyerChatbotWidget() {
         body: JSON.stringify({
           message: textToSend || "Find similar products to this image",
           attached_image: imageToSend,
-          history
+          history,
+          portal_role: "BUYER",
+          user_email: currentUser?.email || null,
+          user_name: currentUser?.first_name || "Customer"
         })
       });
       const data = await response.json();

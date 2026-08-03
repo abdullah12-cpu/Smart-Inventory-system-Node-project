@@ -91,7 +91,10 @@ export default function BuyerPortal({ onLogout }) {
     (sum, item) => sum + item.product.prices.RETAIL * item.qty,
     0
   );
-  const buyerOrders = orders.filter((o) => o.order_type === "B2C");
+  const buyerOrders = orders.filter((o) =>
+    o.order_type === "B2C" &&
+    (o.customer_email?.toLowerCase() === currentUser?.email?.toLowerCase())
+  );
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     const tax = cartTotal * 0.18;

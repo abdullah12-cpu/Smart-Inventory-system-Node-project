@@ -220,21 +220,22 @@ function buildOrderDetailMd(order) {
  * Track a specific order by order_id or order_number.
  */
 async function trackBuyerOrder(pool, args = {}) {
-  const { order_id_query = '' } = args;
+  const { order_id_query = '', customer_email = null } = args;
 
   if (!order_id_query.trim()) {
     return {
-      ai_message: "Please provide an order ID or order number to track.\n\nExample: *\"Where is my order ORD-2026-7781?\"*",
+      ai_message: "Kaunsa order track karna hai? Order number dijiye.\n\nExample: *\"ORD-2026-7781 track karo\"*",
       orders: []
     };
   }
 
   const searchVal = order_id_query.trim().toUpperCase();
   let result;
+  const emailCondition = customer_email ? ` AND LOWER(customer_email) = '${customer_email.toLowerCase()}'` : '';
 
   try {
     result = await pool.query(
-      `SELECT * FROM orders WHERE UPPER(order_id) = $1 OR UPPER(order_number) = $1 LIMIT 1`,
+      `SELECT * FROM orders WHERE (UPPER(order_id) = $1 OR UPPER(order_number) = $1)${emailCondition} LIMIT 1`,
       [searchVal]
     );
   } catch (e) {
@@ -245,7 +246,7 @@ async function trackBuyerOrder(pool, args = {}) {
   if (!result.rows.length) {
     try {
       result = await pool.query(
-        `SELECT * FROM orders WHERE UPPER(order_id) LIKE $1 OR UPPER(order_number) LIKE $1 LIMIT 3`,
+        `SELECT * FROM orders WHERE (UPPER(order_id) LIKE $1 OR UPPER(order_number) LIKE $1)${emailCondition} LIMIT 3`,
         [`%${searchVal}%`]
       );
     } catch (e) {
@@ -318,9 +319,9 @@ async function listBuyerOrdersByStatus(pool, args = {}) {
   const orders = result.rows;
 
   if (!orders.length) {
-    const statusMsg = status_filter ? ` with status **${ORDER_STATUS_LABEL[status_filter.toUpperCase()] || status_filter}**` : '';
+    const statusMsg = status_filter ? ` "${ORDER_STATUS_LABEL[status_filter.toUpperCase()] || status_filter}"` : '';
     return {
-      ai_message: `📭 No orders found${statusMsg}.\n\nTry:\n- *"Show all orders"*\n- *"Show pending orders"*\n- *"Show shipped orders"*\n- *"Show delivered orders"*`,
+      ai_message: `Aapka koi${statusMsg} order nahi mila.\n\nTry karein:\n- *"Mere sary orders dikhao"*\n- *"Shipped orders dikhao"*\n- *"Delivered orders dikhao"*`,
       orders: []
     };
   }

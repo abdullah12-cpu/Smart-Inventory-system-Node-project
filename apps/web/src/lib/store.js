@@ -50,10 +50,10 @@ export function StoreProvider({ children }) {
   useEffect(() => {
     const fetchAllData = async () => {
       try {
-        // Build product query with distributor filtering
+        // Fetch all products regardless of warehouse — distributor sees full catalog
         let prodUrl = "/api/products";
-        if (portal === "distributor" && currentUser?.warehouse_region) {
-          prodUrl += `?portal=distributor&warehouse_region=${currentUser.warehouse_region}`;
+        if (portal === "distributor") {
+          prodUrl += `?portal=distributor`;
         }
         
         const prodRes = await fetch(prodUrl);
@@ -62,7 +62,10 @@ export function StoreProvider({ children }) {
         const whRes = await fetch("/api/warehouses");
         if (whRes.ok) setWarehouses(await whRes.json());
 
-        const ordersRes = await fetch("/api/orders");
+        const ordersUrl = (portal === "buyer" && currentUser?.email)
+          ? `/api/orders?customer_email=${encodeURIComponent(currentUser.email)}&order_type=B2C`
+          : "/api/orders";
+        const ordersRes = await fetch(ordersUrl);
         if (ordersRes.ok) setOrders(await ordersRes.json());
 
         const quotesRes = await fetch("/api/quotations");
@@ -476,9 +479,11 @@ export function StoreProvider({ children }) {
         if (response.ok) {
           const res = await fetch("/api/orders");
           if (res.ok) setOrders(await res.json());
-          // Refresh products so stock reservation reflects immediately in low stock alerts
-          const prodRes = await fetch("/api/products");
-          if (prodRes.ok) setProducts(await prodRes.json());
+          // Delay product refresh slightly to allow DB transaction to fully commit
+          setTimeout(async () => {
+            const prodRes = await fetch("/api/products");
+            if (prodRes.ok) setProducts(await prodRes.json());
+          }, 600);
 
           const matched = orders.find(o => o.order_id === orderId);
           const orderNum = matched ? matched.order_number : orderId;
@@ -525,9 +530,11 @@ export function StoreProvider({ children }) {
         if (response.ok) {
           const res = await fetch("/api/orders");
           if (res.ok) setOrders(await res.json());
-          // Refresh products so reversed stock shows immediately
-          const prodRes = await fetch("/api/products");
-          if (prodRes.ok) setProducts(await prodRes.json());
+          // Delay product refresh slightly to allow DB transaction to fully commit
+          setTimeout(async () => {
+            const prodRes = await fetch("/api/products");
+            if (prodRes.ok) setProducts(await prodRes.json());
+          }, 600);
 
           const matched = orders.find(o => o.order_id === orderId);
           const orderNum = matched ? matched.order_number : orderId;
@@ -846,28 +853,30 @@ export function StoreProvider({ children }) {
           const newOrder = await response.json();
           setOrders((prev) => [newOrder, ...prev]);
 
-          // Refresh products from DB — backend already reserved stock, so this gives accurate available_quantity
-          const prodRefresh = await fetch("/api/products");
-          if (prodRefresh.ok) {
-            const freshProducts = await prodRefresh.json();
-            setProducts(freshProducts);
+          // Refresh products from DB after a short delay to let DB reservation commit
+          setTimeout(async () => {
+            const prodRefresh = await fetch("/api/products");
+            if (prodRefresh.ok) {
+              const freshProducts = await prodRefresh.json();
+              setProducts(freshProducts);
 
-            // Check low stock after refresh
-            for (const prod of freshProducts) {
-              const totalAvail = (prod.inventory || []).reduce((sum, i) => sum + (i.available_quantity || 0), 0);
-              if (totalAvail <= prod.low_stock_threshold && totalAvail >= 0) {
-                const orderItem = (orderData.items || []).find(i => i.product_id === prod.product_id);
-                if (orderItem) {
-                  addNotification({
-                    title: "Low Stock Alert",
-                    message: `${prod.product_name} stock dropped to ${totalAvail} units (threshold: ${prod.low_stock_threshold}) after order ${orderData.order_number}.`,
-                    severity: "WARNING",
-                    trigger_type: "LOW_STOCK"
-                  });
+              // Check low stock after refresh
+              for (const prod of freshProducts) {
+                const totalAvail = (prod.inventory || []).reduce((sum, i) => sum + (i.available_quantity || 0), 0);
+                if (totalAvail <= prod.low_stock_threshold && totalAvail >= 0) {
+                  const orderItem = (orderData.items || []).find(i => i.product_id === prod.product_id);
+                  if (orderItem) {
+                    addNotification({
+                      title: "Low Stock Alert",
+                      message: `${prod.product_name} stock dropped to ${totalAvail} units (threshold: ${prod.low_stock_threshold}) after order ${orderData.order_number}.`,
+                      severity: "WARNING",
+                      trigger_type: "LOW_STOCK"
+                    });
+                  }
                 }
               }
             }
-          }
+          }, 600);
 
           const quotesRes = await fetch("/api/quotations");
           if (quotesRes.ok) setQuotations(await quotesRes.json());
