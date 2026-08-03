@@ -357,7 +357,7 @@ export default function DistributorPortal({ onLogout }) {
     return [
       {
         sender: "ai",
-        text: `Hello ${partnerName}! I am your CIQ Distributor Copilot. I can help you check wholesale prices, check inventory stock, track orders, or view quotations.`
+        text: `Salam ${partnerName}! Main aapka CIQ Distributor Copilot hoon. Main wholesale prices, stock levels, orders tracking aur quotations mein aapki madad kar sakta hoon.`
       }
     ];
   });
@@ -922,9 +922,9 @@ export default function DistributorPortal({ onLogout }) {
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "p-4 border-t border-[#E2E8F0]", children: [
         /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 px-2 py-2 mb-2 rounded-lg bg-slate-50 border border-slate-100", children: [
-          /* @__PURE__ */ jsx("div", { className: "w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs", children: currentUser?.business_name ? currentUser.business_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : "SD" }),
+          /* @__PURE__ */ jsx("div", { className: "w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs", children: currentUser?.business_name ? currentUser.business_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : "AD" }),
           /* @__PURE__ */ jsxs("div", { className: "flex-1 overflow-hidden", children: [
-            /* @__PURE__ */ jsx("div", { className: "text-xs font-bold text-[#0F172A] truncate", children: currentUser?.business_name || "Saif Distributor" }),
+            /* @__PURE__ */ jsx("div", { className: "text-xs font-bold text-[#0F172A] truncate", children: currentUser?.business_name || (currentUser?.first_name ? `${currentUser.first_name} ${currentUser.last_name || ''}`.trim() : "Asim Distribution") }),
             /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#64748B] truncate", children: currentUser?.warehouse_region === 'wh-1' ? 'Karachi Region' : (currentUser?.warehouse_region === 'wh-2' ? 'Lahore Region' : 'Islamabad Region') })
           ] })
         ] }),
@@ -2208,7 +2208,7 @@ export default function DistributorPortal({ onLogout }) {
                         setChatMessages([
                           {
                             sender: "ai",
-                            text: `Hello ${partnerName}! I am your CIQ Partner Copilot. Ask me about wholesale rates, stock levels, quotation requests, or ledger details.`
+                            text: `Salam ${partnerName}! Main aapka CIQ Distributor Copilot hoon. Main wholesale prices, stock levels, orders tracking aur quotations mein aapki madad kar sakta hoon.`
                           }
                         ]);
                       },
