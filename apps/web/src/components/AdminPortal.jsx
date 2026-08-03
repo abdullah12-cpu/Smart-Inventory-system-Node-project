@@ -2618,7 +2618,7 @@ export default function AdminPortal({ onLogout }) {
                       setChatMessages([
                         {
                           sender: "ai",
-                          text: "Hello Zain! I am your CIQ Admin Copilot. I can help you automate catalog actions. Try typing: 'Add product: Titanium Rods, category: Metals, price: 1500, stock: 100' or similar commands."
+                          text: "Salam Zain! Main aapka CIQ Admin Copilot hoon. Main aapki madad kar sakta hoon catalog, inventory aur orders manage karne mein. Try typing: 'Add product: Titanium Rods, category: Metals, price: 1500, stock: 100' ya koi aur command."
                         }
                       ]);
                     },
@@ -2648,7 +2648,7 @@ export default function AdminPortal({ onLogout }) {
                     }),
                         /* @__PURE__ */ jsxs("div", {
                       children: [
-                          /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-slate-800", children: `Welcome ${currentUser?.first_name || "Zain"}! 👋` }),
+                          /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-slate-800", children: `Khushamdeed ${currentUser?.first_name || "Zain"}! 👋` }),
                           /* @__PURE__ */ jsx("p", { className: "text-[11px] text-slate-500 mt-1 max-w-[85%] mx-auto leading-relaxed", children: "I can help you manage products and search, onboard, or query suppliers in your vendor directory instantly. Let's do something amazing!" })
                       ]
                     }),

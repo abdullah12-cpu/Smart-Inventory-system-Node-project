@@ -357,7 +357,7 @@ export default function DistributorPortal({ onLogout }) {
     return [
       {
         sender: "ai",
-        text: `Hello ${partnerName}! I am your CIQ Distributor Copilot. I can help you check wholesale prices, check inventory stock, track orders, or view quotations.`
+        text: `Salam ${partnerName}! Main aapka CIQ Distributor Copilot hoon. Main wholesale prices, stock levels, orders tracking aur quotations mein aapki madad kar sakta hoon.`
       }
     ];
   });
@@ -2204,7 +2204,7 @@ export default function DistributorPortal({ onLogout }) {
                         setChatMessages([
                           {
                             sender: "ai",
-                            text: `Hello ${partnerName}! I am your CIQ Partner Copilot. Ask me about wholesale rates, stock levels, quotation requests, or ledger details.`
+                            text: `Salam ${partnerName}! Main aapka CIQ Distributor Copilot hoon. Main wholesale prices, stock levels, orders tracking aur quotations mein aapki madad kar sakta hoon.`
                           }
                         ]);
                       },

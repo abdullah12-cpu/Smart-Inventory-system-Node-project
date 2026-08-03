@@ -185,7 +185,7 @@ export default function BuyerChatbotWidget() {
   const [messages, setMessages] = useState([
     {
       sender: "ai",
-      text: "👋 Hi! I am your AI Personal Shopping Assistant. Tell me what you're looking for, budget limits in PKR, or specific features (e.g. noise cancellation, wireless), and I'll find the best products for you! You can also 📷 upload a product photo to search visually!"
+      text: "👋 Salam! Main aapka AI Personal Shopping Assistant hoon. Mujhe batayein aap kya dhoond rahe hain, PKR mein budget limit, ya specific features (jaise wireless, noise cancellation), aur main aap ke liye behtareen products dhoond launga! Aap 📷 photo upload karke bhi search kar sakte hain!"
     }
   ]);
   const [addedItemIds, setAddedItemIds] = useState([]);
