@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, MessageSquare, X, Send, ShoppingBag, Check, Camera, Trash2, Package, Truck, Clock, CheckCircle2, XCircle, Volume2, Square, Loader2 } from "lucide-react";
+import { Sparkles, MessageSquare, X, Send, ShoppingBag, Check, Camera, Trash2, Package, Truck, Clock, CheckCircle2, XCircle, Volume2, Square } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/data";
 
@@ -178,106 +178,94 @@ function OrderStatusCard({ order }) {
   );
 }
 
+// Preload voices once at module level so they're ready instantly
+let _cachedUrduVoice = null;
+function getBestUrduVoice() {
+  if (_cachedUrduVoice) return _cachedUrduVoice;
+  const voices = window.speechSynthesis?.getVoices() || [];
+  // Priority: native Urdu > Pakistani Urdu > generic Urdu > Arabic (closest phonetics)
+  _cachedUrduVoice =
+    voices.find(v => v.lang === 'ur-PK') ||
+    voices.find(v => v.lang === 'ur') ||
+    voices.find(v => v.lang.startsWith('ur')) ||
+    voices.find(v => v.lang === 'ar-SA') ||
+    voices.find(v => v.lang.startsWith('ar')) ||
+    null;
+  return _cachedUrduVoice;
+}
+
+// Clean AI text down to the first natural spoken sentence only
+function extractSpokenText(raw) {
+  if (!raw) return '';
+  return raw
+    .split(/\n\s*[\d]+\.|\n\s*\||\n\s*[-•]|\n\n/)[0]  // first paragraph before lists/tables
+    .replace(/[*_#`~]/g, '')                             // strip markdown
+    .replace(/Rs\s*([\d,]+)/g, '$1 روپے')               // numbers → Urdu suffix
+    .replace(/\bhttps?:\/\/\S+/g, '')                   // strip URLs
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 180);                                      // keep it short → fast
+}
+
 function TTSPlayButton({ text, autoPlay = false }) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const audioRef = useRef(null);
-  const utteranceRef = useRef(null);
+  const utterRef = useRef(null);
 
-  // Helper: browser SpeechSynthesis with best Urdu voice
-  const speakWithBrowser = (textToSpeak) => {
-    if (!window.speechSynthesis) return;
+  const stop = () => {
+    window.speechSynthesis?.cancel();
+    utterRef.current = null;
+    setIsPlaying(false);
+  };
+
+  const speak = (spokenText) => {
+    if (!window.speechSynthesis || !spokenText) return;
     window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(textToSpeak);
-    // Pick best Urdu voice available; fall back to any available
-    const voices = window.speechSynthesis.getVoices();
-    const urduVoice = voices.find(v => v.lang === 'ur-PK' || v.lang === 'ur')
-      || voices.find(v => v.lang.startsWith('ur'))
-      || voices.find(v => v.lang.startsWith('ar')); // Arabic is closest phonetically
-    if (urduVoice) utter.voice = urduVoice;
-    utter.lang = 'ur-PK';
-    utter.rate = 0.88;
-    utter.pitch = 1.05;
+
+    const utter = new SpeechSynthesisUtterance(spokenText);
+    const voice = getBestUrduVoice();
+    if (voice) utter.voice = voice;
+    utter.lang   = 'ur-PK';
+    utter.rate   = 1.0;   // natural speed — not slow
+    utter.pitch  = 1.1;   // slightly warm
     utter.volume = 1;
-    utter.onstart = () => setIsPlaying(true);
-    utter.onend = () => setIsPlaying(false);
-    utter.onerror = () => setIsPlaying(false);
-    utteranceRef.current = utter;
+
+    utter.onstart  = () => setIsPlaying(true);
+    utter.onend    = () => setIsPlaying(false);
+    utter.onerror  = () => setIsPlaying(false);
+
+    utterRef.current = utter;
     setIsPlaying(true);
     window.speechSynthesis.speak(utter);
   };
 
-  const stopAll = () => {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    if (utteranceRef.current) utteranceRef.current = null;
-    setIsPlaying(false);
+  const handleClick = () => {
+    if (isPlaying) { stop(); return; }
+    speak(extractSpokenText(text));
   };
 
-  const handlePlay = async () => {
-    if (isPlaying) { stopAll(); return; }
-
-    setLoading(true);
-    // Extract first conversational sentence only (skip product lists, tables, numbers)
-    const introText = (text || '')
-      .split(/\n\s*[\d]+\.|\n\s*\||\n\s*-/)[0]
-      .replace(/[*_#`~]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 250);
-
-    if (!introText) { setLoading(false); return; }
-
-    try {
-      const resp = await fetch('/api/copilot/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: introText, language: 'ur' })
-      });
-
-      if (resp.ok && resp.status !== 204) {
-        const blob = await resp.blob();
-        if (blob.size > 1000) {  // valid audio
-          setLoading(false);
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          audio.onplay = () => setIsPlaying(true);
-          audio.onended = () => { setIsPlaying(false); URL.revokeObjectURL(url); };
-          audio.onerror = () => { setIsPlaying(false); speakWithBrowser(introText); };
-          await audio.play();
-          return;
-        }
-      }
-      // TTS not available → use best browser voice
-      setLoading(false);
-      speakWithBrowser(introText);
-    } catch {
-      setLoading(false);
-      speakWithBrowser(introText);
-    }
-  };
-
-  // Auto-play when mounted if requested
+  // Auto-play the latest AI message instantly — no fetch, no latency
   useEffect(() => {
-    if (autoPlay) {
-      // Small delay to let browser unlock audio context after user interaction
-      const t = setTimeout(() => handlePlay(), 400);
-      return () => clearTimeout(t);
+    if (!autoPlay) return;
+    // voices may not be loaded yet on first render; retry once after voiceschanged
+    const trySpeak = () => {
+      _cachedUrduVoice = null; // refresh cache
+      speak(extractSpokenText(text));
+    };
+    if (window.speechSynthesis?.getVoices().length > 0) {
+      trySpeak();
+    } else {
+      window.speechSynthesis?.addEventListener('voiceschanged', trySpeak, { once: true });
     }
-    return () => stopAll();
+    return () => stop();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <button
-      onClick={handlePlay}
-      disabled={loading}
-      title={isPlaying ? "Stop Voice" : "Listen in Urdu Voice"}
+      onClick={handleClick}
+      title={isPlaying ? 'Stop Voice' : 'Listen Urdu Voice'}
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-semibold transition-all cursor-pointer border border-indigo-200/70 shrink-0"
     >
-      {loading ? (
-        <><Loader2 className="w-3 h-3 animate-spin text-indigo-500" /><span>Loading...</span></>
-      ) : isPlaying ? (
+      {isPlaying ? (
         <><Square className="w-3 h-3 fill-indigo-600 text-indigo-600" /><span>Stop</span></>
       ) : (
         <><Volume2 className="w-3 h-3 text-indigo-600" /><span>Listen Urdu Voice</span></>
