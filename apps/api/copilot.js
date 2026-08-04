@@ -3520,82 +3520,46 @@ function registerCopilotRoutes(app, pool) {
   app.post('/api/copilot/distributor/chat', (req, res) => handleChat(req, res, 'DISTRIBUTOR'));
   app.post('/api/copilot/buyer/chat', (req, res) => handleChat(req, res, 'BUYER'));
 
-  // Urdu Text-to-Speech (TTS) Proxy Endpoint
+  // Urdu TTS — Microsoft Edge Neural (ur-PK-UzmaNeural / ur-PK-AsadNeural)
   app.post('/api/copilot/tts', async (req, res) => {
-    const { text, language = 'ur' } = req.body || {};
+    const { text, voice = 'ur-PK-UzmaNeural' } = req.body || {};
     if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ success: false, error: 'Text parameter is required for TTS synthesis.' });
+      return res.status(400).json({ success: false, error: 'text is required' });
     }
 
-    // Clean text: strip markdown, keep only readable content, cap at 200 chars for fast TTS
-    const cleanText = text
+    // Light clean only — frontend sends pre-chunked text, no truncation here
+    const spoken = text
       .replace(/[*_#`~]/g, '')
-      .replace(/\|[^\n]+\|/g, '')           // strip tables
-      .replace(/https?:\/\/\S+/g, '')        // strip URLs
-      .replace(/Rs\s*([\d,]+)/g, '$1 روپے') // convert Rs amounts to Urdu
+      .replace(/https?:\/\/\S+/g, '')
       .replace(/\s{2,}/g, ' ')
-      .trim()
-      .slice(0, 300);
+      .trim();
 
-    // 1. Try local XTTS Python service first (highest quality)
-    const TTS_SERVICE_URL = process.env.TTS_SERVICE_URL || 'http://localhost:8020/api/tts';
+    if (!spoken) return res.status(204).send();
+
+    const TTS_URL = process.env.TTS_SERVICE_URL || 'http://localhost:8020/api/tts';
     try {
-      const xttsResp = await fetch(TTS_SERVICE_URL, {
+      const ttsResp = await fetch(TTS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: cleanText, language }),
-        signal: AbortSignal.timeout(8000)  // 8s timeout
-      });
-
-      if (xttsResp.ok) {
-        res.setHeader('Content-Type', 'audio/wav');
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-        const buffer = Buffer.from(await xttsResp.arrayBuffer());
-        return res.send(buffer);
-      }
-    } catch (_) {
-      // XTTS not running — fall through to Google TTS
-    }
-
-    // 2. Fallback: Google Translate TTS (free, natural Urdu voice, no API key needed)
-    try {
-      const ttsLang = language === 'ur' ? 'ur' : 'en';
-      // Split into chunks of max 200 chars (Google TTS limit per request)
-      const chunks = [];
-      let remaining = cleanText;
-      while (remaining.length > 0) {
-        const chunk = remaining.slice(0, 200);
-        const cutAt = chunk.lastIndexOf(' ');
-        const piece = cutAt > 100 ? chunk.slice(0, cutAt) : chunk;
-        chunks.push(piece);
-        remaining = remaining.slice(piece.length).trim();
-      }
-
-      // Fetch first chunk only for speed (keeps latency < 1s)
-      const speakText = chunks[0] || cleanText;
-      const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(speakText)}&tl=${ttsLang}&client=tw-ob`;
-
-      const gResp = await fetch(googleUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://translate.google.com/'
-        },
+        body: JSON.stringify({ text: spoken, voice }),
         signal: AbortSignal.timeout(10000)
       });
 
-      if (gResp.ok) {
-        const contentType = gResp.headers.get('content-type') || 'audio/mpeg';
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-        const buffer = Buffer.from(await gResp.arrayBuffer());
-        return res.send(buffer);
+      if (!ttsResp.ok) {
+        const err = await ttsResp.text();
+        console.error('[TTS] service error:', err);
+        return res.status(502).json({ success: false, error: err });
       }
-    } catch (gErr) {
-      console.error('[TTS Google fallback error]:', gErr.message);
-    }
 
-    // 3. Last resort: return 204 so frontend uses browser SpeechSynthesis with best available voice
-    return res.status(204).send();
+      const contentType = ttsResp.headers.get('content-type') || 'audio/mpeg';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const { Readable } = require('stream');
+      Readable.fromWeb(ttsResp.body).pipe(res);
+    } catch (err) {
+      console.error('[TTS] proxy error:', err.message);
+      return res.status(204).send();
+    }
   });
 }
 

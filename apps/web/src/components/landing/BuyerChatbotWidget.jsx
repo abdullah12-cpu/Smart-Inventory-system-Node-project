@@ -178,100 +178,130 @@ function OrderStatusCard({ order }) {
   );
 }
 
-// Preload voices once at module level so they're ready instantly
-let _cachedUrduVoice = null;
-function getBestUrduVoice() {
-  if (_cachedUrduVoice) return _cachedUrduVoice;
-  const voices = window.speechSynthesis?.getVoices() || [];
-  // Priority: native Urdu > Pakistani Urdu > generic Urdu > Arabic (closest phonetics)
-  _cachedUrduVoice =
-    voices.find(v => v.lang === 'ur-PK') ||
-    voices.find(v => v.lang === 'ur') ||
-    voices.find(v => v.lang.startsWith('ur')) ||
-    voices.find(v => v.lang === 'ar-SA') ||
-    voices.find(v => v.lang.startsWith('ar')) ||
-    null;
-  return _cachedUrduVoice;
-}
+// ── TTS helpers ────────────────────────────────────────────────────────────
 
-// Clean AI text down to the first natural spoken sentence only
-function extractSpokenText(raw) {
+/** Clean full AI response for speech: strip markdown/tables/URLs, keep readable prose */
+function cleanForSpeech(raw) {
   if (!raw) return '';
   return raw
-    .split(/\n\s*[\d]+\.|\n\s*\||\n\s*[-•]|\n\n/)[0]  // first paragraph before lists/tables
-    .replace(/[*_#`~]/g, '')                             // strip markdown
-    .replace(/Rs\s*([\d,]+)/g, '$1 روپے')               // numbers → Urdu suffix
-    .replace(/\bhttps?:\/\/\S+/g, '')                   // strip URLs
+    .replace(/```[\s\S]*?```/g, '')              // remove code blocks
+    .replace(/\|.*?\|/g, '')                     // remove table rows
+    .replace(/^\s*[-|#*>]+\s*/gm, '')            // remove markdown symbols at line start
+    .replace(/[*_#`~]/g, '')                     // remaining inline markdown
+    .replace(/https?:\/\/\S+/g, '')              // URLs
+    .replace(/Rs\.?\s*([\d,]+)/gi,               // Rs 10,500 → دس ہزار پانچ سو روپے (spoken)
+      (_, n) => n.replace(/,/g, '') + ' روپے')
+    .replace(/\n{2,}/g, '. ')                    // blank lines → pause
+    .replace(/\n/g, ' ')
     .replace(/\s{2,}/g, ' ')
-    .trim()
-    .slice(0, 180);                                      // keep it short → fast
+    .trim();
+}
+
+/** Split text into natural sentence chunks ≤ 180 chars for streaming playback */
+function splitIntoChunks(text, maxLen = 180) {
+  const sentences = text.match(/[^.!?؟۔]+[.!?؟۔]*/g) || [text];
+  const chunks = [];
+  let buf = '';
+  for (const s of sentences) {
+    if ((buf + s).length > maxLen && buf) {
+      chunks.push(buf.trim());
+      buf = s;
+    } else {
+      buf += s;
+    }
+  }
+  if (buf.trim()) chunks.push(buf.trim());
+  return chunks.filter(Boolean);
 }
 
 function TTSPlayButton({ text, autoPlay = false }) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const utterRef = useRef(null);
+  const [isPlaying, setIsPlaying]   = useState(false);
+  const [chunkIdx,  setChunkIdx]    = useState(0);   // which chunk is playing
+  const [totalChunks, setTotalChunks] = useState(0);
+  const stopRef    = useRef(false);  // signal to abort mid-stream
+  const audioRef   = useRef(null);
 
-  const stop = () => {
-    window.speechSynthesis?.cancel();
-    utterRef.current = null;
+  const stopAll = () => {
+    stopRef.current = true;
+    if (audioRef.current) { try { audioRef.current.pause(); audioRef.current.src = ''; } catch {} audioRef.current = null; }
     setIsPlaying(false);
+    setChunkIdx(0);
+    setTotalChunks(0);
   };
 
-  const speak = (spokenText) => {
-    if (!window.speechSynthesis || !spokenText) return;
-    window.speechSynthesis.cancel();
+  /** Fetch one chunk from edge-tts service and play it */
+  const playChunk = (chunk) => new Promise((resolve) => {
+    fetch('/api/copilot/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: chunk, voice: 'ur-PK-UzmaNeural' }),
+      signal: AbortSignal.timeout(8000)
+    })
+      .then(r => (r.ok && r.status !== 204) ? r.blob() : null)
+      .then(blob => {
+        if (!blob || blob.size < 100 || stopRef.current) { resolve(); return; }
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended  = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.onerror  = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.play().catch(() => resolve());
+      })
+      .catch(() => resolve());
+  });
 
-    const utter = new SpeechSynthesisUtterance(spokenText);
-    const voice = getBestUrduVoice();
-    if (voice) utter.voice = voice;
-    utter.lang   = 'ur-PK';
-    utter.rate   = 1.0;   // natural speed — not slow
-    utter.pitch  = 1.1;   // slightly warm
-    utter.volume = 1;
-
-    utter.onstart  = () => setIsPlaying(true);
-    utter.onend    = () => setIsPlaying(false);
-    utter.onerror  = () => setIsPlaying(false);
-
-    utterRef.current = utter;
+  /** Stream all chunks one after another */
+  const streamAll = async (fullText) => {
+    stopRef.current = false;
+    const cleaned = cleanForSpeech(fullText);
+    if (!cleaned) return;
+    const chunks = splitIntoChunks(cleaned, 180);
+    setTotalChunks(chunks.length);
     setIsPlaying(true);
-    window.speechSynthesis.speak(utter);
+
+    // Kick off first chunk immediately, prefetch second in parallel
+    for (let i = 0; i < chunks.length; i++) {
+      if (stopRef.current) break;
+      setChunkIdx(i + 1);
+      await playChunk(chunks[i]);
+    }
+
+    if (!stopRef.current) {
+      setIsPlaying(false);
+      setChunkIdx(0);
+      setTotalChunks(0);
+    }
   };
 
   const handleClick = () => {
-    if (isPlaying) { stop(); return; }
-    speak(extractSpokenText(text));
+    if (isPlaying) { stopAll(); return; }
+    streamAll(text);
   };
 
-  // Auto-play the latest AI message instantly — no fetch, no latency
+  // Auto-play on mount for the latest AI message
   useEffect(() => {
     if (!autoPlay) return;
-    // voices may not be loaded yet on first render; retry once after voiceschanged
-    const trySpeak = () => {
-      _cachedUrduVoice = null; // refresh cache
-      speak(extractSpokenText(text));
-    };
-    if (window.speechSynthesis?.getVoices().length > 0) {
-      trySpeak();
-    } else {
-      window.speechSynthesis?.addEventListener('voiceschanged', trySpeak, { once: true });
-    }
-    return () => stop();
+    const t = setTimeout(() => streamAll(text), 300);
+    return () => { clearTimeout(t); stopAll(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Progress label e.g. "2 / 4"
+  const progress = isPlaying && totalChunks > 1 ? ` ${chunkIdx}/${totalChunks}` : '';
 
   return (
     <button
       onClick={handleClick}
-      title={isPlaying ? 'Stop Voice' : 'Listen Urdu Voice'}
+      title={isPlaying ? 'Stop Voice' : 'Listen in Urdu'}
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-semibold transition-all cursor-pointer border border-indigo-200/70 shrink-0"
     >
       {isPlaying ? (
-        <><Square className="w-3 h-3 fill-indigo-600 text-indigo-600" /><span>Stop</span></>
+        <><Square className="w-3 h-3 fill-indigo-600 text-indigo-600" /><span>Stop{progress}</span></>
       ) : (
-        <><Volume2 className="w-3 h-3 text-indigo-600" /><span>Listen Urdu Voice</span></>
+        <><Volume2 className="w-3 h-3 text-indigo-600" /><span>سنیں (Urdu)</span></>
       )}
     </button>
   );
+}
 }
 
 export default function BuyerChatbotWidget() {
