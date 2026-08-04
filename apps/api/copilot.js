@@ -138,8 +138,9 @@ SAHI EXAMPLES (isi tarah likhein):
 - "Aapke aaj ke 4 orders hain."
 - "Yeh rahe aapke unpaid invoices:"
 - "Is hafte koi order nahi mila."
+- "Game khelne ke liye PS5 best option hai â€” Rs 215,000 mein available hai."
 - "Aapka sabse bada order Rs 2,00,000 ka tha."
-- "Catalog items mein yeh options available hain:"
+- "Gaming products mein yeh items available hain:"
 - "Koi shipped order nahi hai is week mein."
 
 GALAT EXAMPLES (kabhi mat likhein):
@@ -2990,7 +2991,7 @@ function registerCopilotRoutes(app, pool) {
         // â”€â”€ Roman Urdu intent â†’ product query mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Normalizes Urdu phrasing to accurate product search terms
         const urduQueryMap = [
-          [/\b(game khelni|game khelna|gaming console|console chahiye|play game|game khelne)\b/i, 'gaming'],
+          [/\b(game khelni|game khelna|gaming console|console chahiye|play game|game khelne)\b/i, 'gaming console playstation xbox'],
           [/\b(keyboard chahiye|keyboard lena|type karna)\b/i, 'gaming keyboard'],
           [/\b(mouse chahiye|mouse lena)\b/i, 'gaming mouse'],
           [/\b(headset chahiye|sunna chahta|headphones)\b/i, 'gaming headset'],
@@ -3077,7 +3078,7 @@ function registerCopilotRoutes(app, pool) {
           });
         }
 
-        // ——— Broad fallback: still 0 → send entire catalog so LLM can say "we don't have X" —
+        // â”€â”€ Broad fallback: still 0 â†’ send entire catalog so LLM can say "we don't have X" â”€â”€
         if (ragProducts.length === 0) {
           ragProducts = await getBuyerProductRecommendationsFromDb(pool, { query: '', sort_by: 'price_low' });
         }
@@ -3092,7 +3093,7 @@ function registerCopilotRoutes(app, pool) {
           lastQuery:     ragQuery
         });
 
-        // 4. Build RAG prompt — inject ONLY real DB products, no hallucination possible
+        // 4. Build RAG prompt â€” inject ONLY real DB products, no hallucination possible
         const productContext = ragProducts.slice(0, 15).map((p, i) => {
           const simNote = p.similarity ? ` [match: ${p.similarity}]` : '';
           return `${i + 1}. "${p.product_name}" | Brand: ${p.brand || 'N/A'} | Category: ${p.category || 'General'} | Price: Rs ${p.retail_price.toLocaleString()} | Stock: ${p.available_stock > 0 ? `In Stock (${p.available_stock})` : 'Out of Stock'} | ${p.short_description || ''}${simNote}`;
@@ -3127,8 +3128,8 @@ function registerCopilotRoutes(app, pool) {
           '',
           '## CRITICAL LANGUAGE RULE:',
           'Write your ENTIRE response in ROMAN URDU ONLY (Urdu words using English/Latin letters, like Pakistani WhatsApp messages).',
-          'FORBIDDEN: Chinese characters (正确), Arabic/Urdu script (آپ کا), Hindi script (आपके) — ALL FORBIDDEN.',
-          'ONLY use English alphabet. Numbers and product names in English.',
+          'FORBIDDEN: Chinese characters, Arabic/Urdu script (like آپ کا), Hindi script - ALL FORBIDDEN.',
+          'ONLY use English alphabet. Numbers and product names stay in English.',
           '',
           'CORRECT Roman Urdu examples:',
           '- Yeh rahe aapke liye best gaming products:',
@@ -3137,7 +3138,7 @@ function registerCopilotRoutes(app, pool) {
           '',
           '## STRICT RULES:',
           '1. ONLY recommend products from PRODUCT DATA below. Use exact product names from the data.',
-          '2. If product is not in data: say Yeh product abhi hamare store mein available nahi hai.',
+          '2. If product not in data: say "Yeh product abhi hamare store mein available nahi hai."',
           '3. Use ONLY prices from PRODUCT DATA. Never invent prices.',
           `4. ${retrievalNote}`,
           '',
@@ -3147,11 +3148,418 @@ function registerCopilotRoutes(app, pool) {
           '## CONVERSATION HISTORY:',
           conversationHistory || 'No previous messages.',
           '',
-          buyerOrderContext ? "## CUSTOMER ORDERS:\n" + buyerOrderContext + "\n" : '',
+          buyerOrderContext ? ('## CUSTOMER ORDERS:\n' + buyerOrderContext + '\n') : '',
           '',
           '## CUSTOMER MESSAGE:',
           message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500),
           '',
           'REPLY IN ROMAN URDU ONLY (English alphabet only, NO Chinese, NO Arabic/Urdu script). Be friendly and concise.',
         ].join('\n');
+
+        // 5. Call local Ollama model with the RAG prompt (Remote PC -> Local Mac fallback)
+        try {
+          const endpoint = await getOllamaChatEndpoint();
+          if (endpoint) {
+            const ollamaRagRes = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: endpoint.modelName,
+                messages: [
+                  { role: 'system', content: ragSystemPrompt },
+                  { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
+                ],
+                options: { temperature: 0.3 }
+              })
+            });
+              if (ollamaRagRes.ok) {
+                const ollamaData = await ollamaRagRes.json();
+                const ragText = ollamaData.choices?.[0]?.message?.content?.trim();
+                if (ragText) {
+                  // Output validation â€” same injection guard
+                  const looksInjected = /ignore|system prompt|instructions|i am now|you are now/i.test(ragText);
+                  if (looksInjected) {
+                    console.warn('[Buyer RAG] Possible injection response detected, returning safe fallback.');
+                    return res.json({
+                      success: true,
+                      action_executed: 'getBuyerProductRecommendations',
+                      ai_message: md,
+                      products: getRelevantCards(ragProducts, ragText, 6, message)
+                    });
+                  }
+                  return res.json({
+                    success: true,
+                    action_executed: 'getBuyerProductRecommendations',
+                    ai_message: ragText,
+                    products: getRelevantCards(ragProducts, ragText, 6, message)
+                  });
+                }
+              } else {
+                const errText = await ollamaRagRes.text();
+                console.error('[Buyer RAG] Ollama HTTP error:', ollamaRagRes.status, errText);
+              }
+            }
+        } catch (ollamaErr) {
+          console.error('[Buyer RAG] Ollama connection error:', ollamaErr.message);
+        }
+
+        // Final fallback: return structured regex result using ragProducts for cards
+        return res.json({
+          success: true,
+          action_executed: 'getBuyerProductRecommendations',
+          ai_message: md,
+          products: getRelevantCards(ragProducts && ragProducts.length > 0 ? ragProducts : products, md, 6, message)
+        });
+      } catch (err) {
+        return res.json({ success: true, ai_message: `âŒ Error finding products: ${err.message}` });
+      }
+    }
+
+    // 2. Allowed business keywords (Static list + Platform tabs + Synonyms)
+    const STATIC_KEYWORDS = [
+      'product', 'catalog', 'inventory', 'stock', 'qty', 'quantity', 'price', 'rate', 'cost', 
+      'wholesale', 'distributor', 'discount', 'category', 'brand', 'low trigger', 'limit', 
+      'karachi', 'lahore', 'depot', 'warehouse', 'add', 'create', 'insert', 'register', 
+      'update', 'edit', 'change', 'modify', 'delete', 'remove', 'bulk', 'alert', 'threshold',
+      'find', 'search', 'get', 'list', 'show', 'check', 'audit', 'under', 'over', 'less', 'greater',
+      'above', 'below', 'equal', 'sku', 'barcode', 'upc', 'description', 'unit', 'weight',
+      'switch', 'router', 'access point', 'fiber', 'cable', 'cisco', 'tp-link', 'samsung', 'ssd',
+      'box', 'pcs', 'user', 'admin', 'dashboard', 'portal', 'profile', 'account', 'settings', 
+      'logout', 'notification', 'order', 'supplier', 'invoice', 'payment', 'movement', 'log', 
+      'history', 'analytics', 'report', 'view', 'display', 'tell', 'info', 'detail', 'total', 
+      'count', 'summary', 'status'
+    ];
+
+    let dbKeywords = [];
+    try {
+      const catRes = await pool.query('SELECT DISTINCT category, brand FROM products');
+      for (const r of catRes.rows) {
+        if (r.category) dbKeywords.push(r.category.toLowerCase().trim());
+        if (r.brand) dbKeywords.push(r.brand.toLowerCase().trim());
+      }
+    } catch (e) {
+      console.error("Error fetching dynamic keywords from DB:", e);
+    }
+
+    const ALLOWED_KEYWORDS = [...STATIC_KEYWORDS, ...dbKeywords];
+    const hasKeyword = ALLOWED_KEYWORDS.some(kw => lowerMsg.includes(kw));
+
+    if (!hasKeyword) {
+      return res.json({
+        success: true,
+        ai_message: `I can only assist with the registered operations: product catalog inventory management.`
+      });
+    }
+
+    // 0. Try Ollama model (Remote PC -> Local Mac fallback)
+    try {
+      const endpoint = await getOllamaChatEndpoint();
+      if (endpoint) {
+        const modelName = endpoint.modelName;
+
+        const messages = [
+          {
+            role: 'system',
+            content: effectiveSystemPrompt
+          },
+          ...(history || []).map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text
+          })),
+          {
+            role: 'user',
+            content: message
+          }
+        ];
+
+        const response = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: messages,
+            tools: getAdminTools(false),
+            tool_choice: 'auto'
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const choice = data.choices[0];
+          const toolCalls = choice.message.tool_calls;
+
+          if (toolCalls && toolCalls.length > 0) {
+            const toolCall = toolCalls[0];
+            const functionName = toolCall.function.name;
+            let args;
+            try {
+              args = JSON.parse(toolCall.function.arguments);
+            } catch (e) {
+              return res.json({ success: true, ai_message: `âŒ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
+            }
+            try {
+              const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+              return res.json({
+                success: true,
+                ...executionResult,
+                ai_message: executionResult.ai_message + `\n\n*(Local Ollama Model: ${modelName})*`
+              });
+            } catch (err) {
+              return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+            }
+          }
+
+          return res.json({
+            success: true,
+            ai_message: choice.message.content
+          });
+        }
+      }
+    } catch (ollamaErr) {
+      if (ollamaErr.code === 'ECONNREFUSED' || (ollamaErr.message && ollamaErr.message.includes('fetch'))) {
+        // Local Ollama is not active, fallback to cloud APIs
+      } else {
+        console.error('Ollama Execution Error:', ollamaErr);
+        return res.json({ success: true, ai_message: `âŒ Ollama Agent Error: ${ollamaErr.message}` });
+      }
+    }
+
+    // 1. Try Mistral AI if key is present
+    if (mistralKey) {
+      try {
+        const messages = [
+          {
+            role: 'system',
+            content: effectiveSystemPrompt
+          },
+          ...(history || []).map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text
+          })),
+          {
+            role: 'user',
+            content: message
+          }
+        ];
+
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${mistralKey}`
+          },
+          body: JSON.stringify({
+            model: 'mistral-large-latest',
+            messages: messages,
+            tools: getAdminTools(false),
+            tool_choice: 'auto'
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Mistral API responded with status ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const choice = data.choices[0];
+        const toolCalls = choice.message.tool_calls;
+
+        if (toolCalls && toolCalls.length > 0) {
+          const toolCall = toolCalls[0];
+          const functionName = toolCall.function.name;
+          let args;
+          try {
+            args = JSON.parse(toolCall.function.arguments);
+          } catch (e) {
+            args = toolCall.function.arguments;
+          }
+          try {
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+            return res.json({
+              success: true,
+              ...executionResult
+            });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+          }
+        }
+
+        return res.json({
+          success: true,
+          ai_message: choice.message.content
+        });
+
+      } catch (err) {
+        console.error('Mistral Error:', err);
+      }
+    }
+
+    // 2. Try OpenAI if key is present
+    if (openaiKey) {
+      try {
+        const messages = [
+          {
+            role: 'system',
+            content: effectiveSystemPrompt
+          },
+          ...(history || []).map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text
+          })),
+          {
+            role: 'user',
+            content: message
+          }
+        ];
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: messages,
+            tools: getAdminTools(false)
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`OpenAI API responded with status ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const choice = data.choices[0];
+        const toolCalls = choice.message.tool_calls;
+
+        if (toolCalls && toolCalls.length > 0) {
+          const toolCall = toolCalls[0];
+          const functionName = toolCall.function.name;
+          let args;
+          try {
+            args = JSON.parse(toolCall.function.arguments);
+          } catch (e) {
+            args = toolCall.function.arguments;
+          }
+          try {
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+            return res.json({
+              success: true,
+              ...executionResult
+            });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+          }
+        }
+
+        return res.json({
+          success: true,
+          ai_message: choice.message.content
+        });
+
+      } catch (err) {
+        console.error('OpenAI Error:', err);
+      }
+    }
+
+    // 3. Try Gemini if key is present
+    if (geminiKey) {
+      try {
+        const genAI = new GoogleGenerativeAI(geminiKey);
+        const model = genAI.getGenerativeModel({
+          model: 'gemini-2.5-flash',
+          systemInstruction: effectiveSystemPrompt,
+        });
+
+        const chatHistory = (history || []).map(msg => ({
+          role: msg.sender === 'user' ? 'user' : 'model',
+          parts: [{ text: msg.text }]
+        }));
+
+        const chat = model.startChat({
+          history: chatHistory,
+          tools: [{ functionDeclarations: getAdminTools(true) }]
+        });
+
+        const result = await chat.sendMessage(message);
+        const response = result.response;
+        
+        const calls = response.functionCalls;
+        if (calls && calls.length > 0) {
+          const call = calls[0];
+          const functionName = call.name;
+          const args = call.args;
+          try {
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+            return res.json({
+              success: true,
+              ...executionResult
+            });
+          } catch (err) {
+            return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+          }
+        }
+
+        return res.json({
+          success: true,
+          ai_message: response.text()
+        });
+
+      } catch (err) {
+        console.error('Generative AI Error:', err);
+      }
+    }
+
+    // 5. Fallback locally if keys are not working
+    return handleLocalFallback(pool, message, attached_image, res, role);
+  };
+
+  app.post('/api/copilot/chat', (req, res) => handleChat(req, res, 'ADMIN'));
+  app.post('/api/copilot/distributor/chat', (req, res) => handleChat(req, res, 'DISTRIBUTOR'));
+  // Urdu TTS — Microsoft Edge Neural TTS (ur-PK-UzmaNeural)
+  app.post('/api/copilot/tts', async (req, res) => {
+    const { text, voice = 'ur-PK-UzmaNeural' } = req.body || {};
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ success: false, error: 'text is required' });
+    }
+    const spoken = text
+      .replace(/[*_#`~]/g, '')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/[\u4e00-\u9fff]+/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (!spoken) return res.status(204).send();
+    const TTS_URL = process.env.TTS_SERVICE_URL || 'http://localhost:8020/api/tts';
+    try {
+      const ttsResp = await fetch(TTS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: spoken, voice }),
+        signal: AbortSignal.timeout(12000)
+      });
+      if (!ttsResp.ok) {
+        const err = await ttsResp.text();
+        return res.status(502).json({ success: false, error: err });
+      }
+      const contentType = ttsResp.headers.get('content-type') || 'audio/mpeg';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const { Readable } = require('stream');
+      Readable.fromWeb(ttsResp.body).pipe(res);
+    } catch (err) {
+      console.error('[TTS] proxy error:', err.message);
+      return res.status(204).send();
+    }
+  });
+
+  app.post('/api/copilot/buyer/chat', (req, res) => handleChat(req, res, 'BUYER'));
+}
+
+module.exports = { registerCopilotRoutes };
 
