@@ -1,4 +1,4 @@
-﻿const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { 
   createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb,
   createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb, filterSuppliersByLocationInDb,
@@ -138,9 +138,8 @@ SAHI EXAMPLES (isi tarah likhein):
 - "Aapke aaj ke 4 orders hain."
 - "Yeh rahe aapke unpaid invoices:"
 - "Is hafte koi order nahi mila."
-- "Game khelne ke liye PS5 best option hai â€” Rs 215,000 mein available hai."
 - "Aapka sabse bada order Rs 2,00,000 ka tha."
-- "Gaming products mein yeh items available hain:"
+- "Catalog items mein yeh options available hain:"
 - "Koi shipped order nahi hai is week mein."
 
 GALAT EXAMPLES (kabhi mat likhein):
@@ -2991,7 +2990,7 @@ function registerCopilotRoutes(app, pool) {
         // â”€â”€ Roman Urdu intent â†’ product query mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Normalizes Urdu phrasing to accurate product search terms
         const urduQueryMap = [
-          [/\b(game khelni|game khelna|gaming console|console chahiye|play game|game khelne)\b/i, 'gaming console playstation xbox'],
+          [/\b(game khelni|game khelna|gaming console|console chahiye|play game|game khelne)\b/i, 'gaming'],
           [/\b(keyboard chahiye|keyboard lena|type karna)\b/i, 'gaming keyboard'],
           [/\b(mouse chahiye|mouse lena)\b/i, 'gaming mouse'],
           [/\b(headset chahiye|sunna chahta|headphones)\b/i, 'gaming headset'],
@@ -3078,7 +3077,7 @@ function registerCopilotRoutes(app, pool) {
           });
         }
 
-        // â”€â”€ Broad fallback: still 0 â†’ send entire catalog so LLM can say "we don't have X" â”€â”€
+        // ——— Broad fallback: still 0 → send entire catalog so LLM can say "we don't have X" —
         if (ragProducts.length === 0) {
           ragProducts = await getBuyerProductRecommendationsFromDb(pool, { query: '', sort_by: 'price_low' });
         }
@@ -3093,7 +3092,7 @@ function registerCopilotRoutes(app, pool) {
           lastQuery:     ragQuery
         });
 
-        // 4. Build RAG prompt â€” inject ONLY real DB products, no hallucination possible
+        // 4. Build RAG prompt — inject ONLY real DB products, no hallucination possible
         const productContext = ragProducts.slice(0, 15).map((p, i) => {
           const simNote = p.similarity ? ` [match: ${p.similarity}]` : '';
           return `${i + 1}. "${p.product_name}" | Brand: ${p.brand || 'N/A'} | Category: ${p.category || 'General'} | Price: Rs ${p.retail_price.toLocaleString()} | Stock: ${p.available_stock > 0 ? `In Stock (${p.available_stock})` : 'Out of Stock'} | ${p.short_description || ''}${simNote}`;
@@ -3136,18 +3135,11 @@ function registerCopilotRoutes(app, pool) {
           '## CATALOG MEIN SIRF YEH PRODUCTS HAIN â€” KUCH AUR NAHI:',
           productContext || 'Is waqt koi matching product nahi mila.',
           '',
-          '## SMART MATCHING RULES:',
-          '- "game khelni hai", "gaming chahiye", "console chahiye" â†’ Gaming Consoles (Xbox, PlayStation) â€” Gaming Chair NAHI',
-          '- "chair chahiye", "comfortable seat" â†’ Gaming Furniture',
-          '- "keyboard chahiye" â†’ Gaming Keyboards',
-          '- "mouse chahiye" â†’ Gaming Mice',
-          '- "headset", "headphones", "awaz", "sound" â†’ Gaming Headsets (SteelSeries Arctis Nova Pro)',
-          '- Hamesha upar diye gaye PRODUCT DATA ke exact naam use karein',
-          '',
-          '## ROMAN URDU RESPONSE STYLE:',
-          '- Natural bolchaal: "Game khelne ke liye PS5 best hai â€” Rs 215,000 mein available hai."',
-          '- "Awaz ke liye SteelSeries Arctis Nova Pro Gaming Headset hai â€” Rs 98,000 mein."',
-          '- AVOID: "tanha", "aarzoo", "badhaati hain", accent marks (Ä Ä« Å« Ä“), literal Urdu translation',
+          '## DYNAMIC CATALOG RULES:',
+          '- Customers ko SIRF CATALOG DATA section ke real database products recommend karein.',
+          '- Agar koi product/category catalog mein nahi hai, aasaan Urdu mein samjhein ke yeh item store catalog mein available nahi hai.',
+          '- Hamesha CATALOG DATA ke exact product names aur prices use karein. Koi naya product, price ya brand invent mat karein.',
+          '- LANGUAGE INSTRUCTION: Aap AASAAN, SADA, aur NATURAL URDU (آسان اور سادہ اردو) mein jawab dein. Roman English script ki bajaye simple Urdu script use karein taake customer aasani se samajh sake aur Urdu voice clear bol sake.',
           '',
           '## CONVERSATION HISTORY:',
           conversationHistory || 'Pehle koi baat nahi hui.',
@@ -3157,7 +3149,7 @@ function registerCopilotRoutes(app, pool) {
           '## CUSTOMER MESSAGE:',
           message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500),
           '',
-          'Natural Roman Urdu mein jawab dein. SIRF upar diye gaye exact product names use karein. Koi naya product invent mat karein.',
+          'Aasaan aur saaf Urdu (آسان اور سادہ اردو) mein jawab dein. SIRF upar diye gaye exact product names use karein. Koi naya product invent mat karein.',
         ].join('\n');
 
         // 5. Call local Ollama model with the RAG prompt (Remote PC -> Local Mac fallback)
@@ -3527,6 +3519,84 @@ function registerCopilotRoutes(app, pool) {
   app.post('/api/copilot/chat', (req, res) => handleChat(req, res, 'ADMIN'));
   app.post('/api/copilot/distributor/chat', (req, res) => handleChat(req, res, 'DISTRIBUTOR'));
   app.post('/api/copilot/buyer/chat', (req, res) => handleChat(req, res, 'BUYER'));
+
+  // Urdu Text-to-Speech (TTS) Proxy Endpoint
+  app.post('/api/copilot/tts', async (req, res) => {
+    const { text, language = 'ur' } = req.body || {};
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ success: false, error: 'Text parameter is required for TTS synthesis.' });
+    }
+
+    // Clean text: strip markdown, keep only readable content, cap at 200 chars for fast TTS
+    const cleanText = text
+      .replace(/[*_#`~]/g, '')
+      .replace(/\|[^\n]+\|/g, '')           // strip tables
+      .replace(/https?:\/\/\S+/g, '')        // strip URLs
+      .replace(/Rs\s*([\d,]+)/g, '$1 روپے') // convert Rs amounts to Urdu
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .slice(0, 300);
+
+    // 1. Try local XTTS Python service first (highest quality)
+    const TTS_SERVICE_URL = process.env.TTS_SERVICE_URL || 'http://localhost:8020/api/tts';
+    try {
+      const xttsResp = await fetch(TTS_SERVICE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanText, language }),
+        signal: AbortSignal.timeout(8000)  // 8s timeout
+      });
+
+      if (xttsResp.ok) {
+        res.setHeader('Content-Type', 'audio/wav');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        const buffer = Buffer.from(await xttsResp.arrayBuffer());
+        return res.send(buffer);
+      }
+    } catch (_) {
+      // XTTS not running — fall through to Google TTS
+    }
+
+    // 2. Fallback: Google Translate TTS (free, natural Urdu voice, no API key needed)
+    try {
+      const ttsLang = language === 'ur' ? 'ur' : 'en';
+      // Split into chunks of max 200 chars (Google TTS limit per request)
+      const chunks = [];
+      let remaining = cleanText;
+      while (remaining.length > 0) {
+        const chunk = remaining.slice(0, 200);
+        const cutAt = chunk.lastIndexOf(' ');
+        const piece = cutAt > 100 ? chunk.slice(0, cutAt) : chunk;
+        chunks.push(piece);
+        remaining = remaining.slice(piece.length).trim();
+      }
+
+      // Fetch first chunk only for speed (keeps latency < 1s)
+      const speakText = chunks[0] || cleanText;
+      const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(speakText)}&tl=${ttsLang}&client=tw-ob`;
+
+      const gResp = await fetch(googleUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://translate.google.com/'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (gResp.ok) {
+        const contentType = gResp.headers.get('content-type') || 'audio/mpeg';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        const buffer = Buffer.from(await gResp.arrayBuffer());
+        return res.send(buffer);
+      }
+    } catch (gErr) {
+      console.error('[TTS Google fallback error]:', gErr.message);
+    }
+
+    // 3. Last resort: return 204 so frontend uses browser SpeechSynthesis with best available voice
+    return res.status(204).send();
+  });
 }
 
 module.exports = { registerCopilotRoutes };
