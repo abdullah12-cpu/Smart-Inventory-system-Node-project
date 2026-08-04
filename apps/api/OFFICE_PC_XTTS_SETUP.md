@@ -1,93 +1,100 @@
 # Office PC — XTTS v2 GPU Setup Guide
-## Urdu Neural TTS on RTX 4090 (suhaibrashid17/XTTS-v2-Urdu-FT)
+## Urdu Neural TTS on RTX 4090 (No existing packages touched)
+
+Everything runs inside an isolated virtual environment.
+Nothing is installed globally. Nothing existing is uninstalled or changed.
 
 ---
 
-## What You Get
+## Prerequisites — Check These First
 
-- Native Urdu fine-tuned XTTS v2 model running fully on your RTX 4090
-- ~150-300ms latency (vs ~500ms+ with edge-tts network round-trip)
-- No Microsoft servers, fully local, works offline
-- Voice cloning capable (can use custom speaker reference audio)
-
----
-
-## Prerequisites
-
-Open PowerShell and verify these first:
+Open PowerShell:
 
 ```powershell
-# Must be 3.10, 3.11, or 3.12 (NOT 3.13 — Coqui TTS not compatible yet)
+# Python version — need 3.10, 3.11, or 3.12
 python --version
 
-# Must show your RTX 4090
+# GPU check
 nvidia-smi
 
-# Check CUDA version (need 12.1 or 12.4)
+# CUDA version (shown top-right in nvidia-smi output)
 nvidia-smi | Select-String "CUDA Version"
 ```
 
 ---
 
-## Step 1 — Uninstall CPU PyTorch (if installed)
+## Step 1 — Create an Isolated Virtual Environment
 
 ```powershell
-pip uninstall torch torchvision torchaudio -y
+cd C:\path\to\Smart-Inventory-system-Node-project\apps\api
+
+# Create a new isolated environment named "tts_env"
+python -m venv tts_env
+
+# Activate it
+tts_env\Scripts\activate
+
+# Your prompt should now show: (tts_env) PS C:\...
 ```
+
+Everything from this point installs only inside `tts_env`.
+Nothing on the system Python is touched.
 
 ---
 
-## Step 2 — Install CUDA PyTorch
+## Step 2 — Install CUDA PyTorch Inside the venv
 
-For CUDA 12.1 (most common):
+Check your CUDA version from Step 0, then run the matching command:
+
+**CUDA 12.1:**
 ```powershell
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
-For CUDA 12.4:
+**CUDA 12.4:**
 ```powershell
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+
+**CUDA 11.8:**
+```powershell
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
 Verify GPU is detected:
 ```powershell
 python -c "import torch; print('CUDA:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0))"
-# Expected output:
+# Expected:
 # CUDA: True
 # GPU: NVIDIA GeForce RTX 4090
 ```
 
-If CUDA shows False, your PyTorch build does not match your CUDA version.
-Check `nvidia-smi` for the exact CUDA version and use the matching build URL from:
-https://pytorch.org/get-started/locally
-
 ---
 
-## Step 3 — Install Coqui TTS and dependencies
+## Step 3 — Install Coqui TTS and Dependencies
 
 ```powershell
 pip install coqui-tts
 pip install fastapi uvicorn soundfile scipy huggingface_hub numpy pydantic
 ```
 
-This downloads Coqui TTS and all audio processing libraries.
-Takes 3-5 minutes depending on internet speed.
+Takes 3-5 minutes. All goes into `tts_env` only.
 
 ---
 
-## Step 4 — Write the GPU TTS service
+## Step 4 — Create the GPU TTS Service File
 
-Create a new file `apps/api/tts_service_gpu.py` with this content:
+In the `apps/api` folder, create a new file called `tts_service_gpu.py`:
 
 ```python
 """
 Urdu TTS — XTTS v2 GPU Service
 Model: suhaibrashid17/XTTS-v2-Urdu-FT
-Runs on RTX 4090, port 8020
+Port:  8020
+Run:   tts_env\Scripts\python.exe tts_service_gpu.py
 """
 
 import os
-import sys
 import re
 import io
 import numpy as np
@@ -99,29 +106,32 @@ from pydantic import BaseModel
 from huggingface_hub import snapshot_download
 from TTS.api import TTS
 
-app = FastAPI(title="Urdu XTTS v2 GPU TTS")
+app = FastAPI(title="Urdu XTTS v2 GPU")
 
 # ── GPU Check ──────────────────────────────────────────────────────────────
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"[TTS] Device: {device.upper()}")
+print(f"[TTS] Device : {device.upper()}")
 if device == "cuda":
-    print(f"[TTS] GPU: {torch.cuda.get_device_name(0)}")
-    print(f"[TTS] VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+    print(f"[TTS] GPU    : {torch.cuda.get_device_name(0)}")
+    print(f"[TTS] VRAM   : {torch.cuda.get_device_properties(0).total_memory/1024**3:.1f} GB")
+else:
+    print("[TTS] WARNING: CUDA not found — running on CPU (slow). Check PyTorch install.")
 
-# ── Load Model ─────────────────────────────────────────────────────────────
+# ── Load Urdu XTTS v2 Model ────────────────────────────────────────────────
 MODEL_REPO = "suhaibrashid17/XTTS-v2-Urdu-FT"
 print(f"[TTS] Loading {MODEL_REPO} ...")
 
-model_dir = snapshot_download(repo_id=MODEL_REPO)
-config_path = os.path.join(model_dir, "config.json")
+model_dir    = snapshot_download(repo_id=MODEL_REPO)
+config_path  = os.path.join(model_dir, "config.json")
 
-# Default speaker reference — neutral tone if none exists
-ref_speaker_path = os.path.join(model_dir, "ref_speaker.wav")
-if not os.path.exists(ref_speaker_path):
-    sr = 22050
-    t = np.linspace(0, 3, sr * 3)
+# Speaker reference — neutral sine tone if no real WAV exists
+ref_path = os.path.join(model_dir, "ref_speaker.wav")
+if not os.path.exists(ref_path):
+    sr   = 22050
+    t    = np.linspace(0, 3, sr * 3)
     wave = (0.3 * np.sin(2 * np.pi * 180 * t)).astype(np.float32)
-    sf.write(ref_speaker_path, wave, sr)
+    sf.write(ref_path, wave, sr)
+    print(f"[TTS] Created default speaker reference: {ref_path}")
 
 tts_model = TTS(
     model_path=model_dir,
@@ -129,25 +139,22 @@ tts_model = TTS(
     progress_bar=False,
     gpu=(device == "cuda")
 )
-print("[TTS] Model loaded. Ready.")
+print("[TTS] Model ready.")
 
 
-# ── Text Cleaning ──────────────────────────────────────────────────────────
 def clean_text(raw: str) -> str:
     text = re.sub(r'```[\s\S]*?```', '', raw)
     text = re.sub(r'\|.*?\|', '', text)
     text = re.sub(r'[*_#`~]', '', text)
     text = re.sub(r'https?://\S+', '', text)
-    text = re.sub(r'[\u4e00-\u9fff]+', '', text)   # strip Chinese
+    text = re.sub(r'[\u4e00-\u9fff]+', '', text)
     text = re.sub(r'Rs\.?\s*([\d,]+)',
                   lambda m: m.group(1).replace(',', '') + ' روپے', text)
-    text = re.sub(r'\n{2,}', '. ', text)
-    text = re.sub(r'\n', ' ', text)
+    text = re.sub(r'\n+', ' ', text)
     text = re.sub(r'\s{2,}', ' ', text).strip()
-    return text[:500]   # cap at 500 chars for speed
+    return text[:500]
 
 
-# ── API ────────────────────────────────────────────────────────────────────
 class TTSRequest(BaseModel):
     text: str
     voice: str = "default"
@@ -157,11 +164,11 @@ class TTSRequest(BaseModel):
 @app.get("/health")
 def health():
     return {
-        "status": "ok",
-        "engine": "xtts-v2",
-        "model": MODEL_REPO,
-        "device": device,
-        "gpu": torch.cuda.get_device_name(0) if device == "cuda" else "none"
+        "status" : "ok",
+        "engine" : "xtts-v2",
+        "model"  : MODEL_REPO,
+        "device" : device,
+        "gpu"    : torch.cuda.get_device_name(0) if device == "cuda" else "none"
     }
 
 
@@ -172,27 +179,26 @@ def synthesize(req: TTSRequest):
 
     spoken = clean_text(req.text)
     if not spoken:
-        raise HTTPException(status_code=400, detail="empty text after cleaning")
+        raise HTTPException(status_code=400, detail="text empty after cleaning")
 
+    import tempfile, pathlib
+    tmp = pathlib.Path(tempfile.mktemp(suffix=".wav"))
     try:
-        with io.BytesIO() as buf:
-            tmp_path = "/tmp/tts_output.wav"
-            tts_model.tts_to_file(
-                text=spoken,
-                language="ur",
-                speaker_wav=ref_speaker_path,
-                file_path=tmp_path
-            )
-            with open(tmp_path, "rb") as f:
-                audio_bytes = f.read()
-
-        return StreamingResponse(
-            io.BytesIO(audio_bytes),
-            media_type="audio/wav",
-            headers={"Cache-Control": "public, max-age=3600"}
+        tts_model.tts_to_file(
+            text=spoken,
+            language="ur",
+            speaker_wav=ref_path,
+            file_path=str(tmp)
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
+        audio_bytes = tmp.read_bytes()
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    return StreamingResponse(
+        io.BytesIO(audio_bytes),
+        media_type="audio/wav",
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
 
 
 if __name__ == "__main__":
@@ -202,172 +208,167 @@ if __name__ == "__main__":
 
 ---
 
-## Step 5 — First Run (downloads model ~2GB)
+## Step 5 — Run the Service
+
+Make sure the venv is still active (prompt shows `(tts_env)`), then:
 
 ```powershell
-cd path\to\Smart-Inventory-system-Node-project\apps\api
 python tts_service_gpu.py
 ```
 
-First run downloads the model from Hugging Face (~2GB). This takes
-5-10 minutes on first run only. You will see:
+**First run** downloads the Urdu model from Hugging Face (~2 GB).
+Takes 5-10 minutes depending on internet. Only happens once.
 
+Expected output:
 ```
-[TTS] Device: CUDA
-[TTS] GPU: NVIDIA GeForce RTX 4090
-[TTS] VRAM: 24.0 GB
+[TTS] Device : CUDA
+[TTS] GPU    : NVIDIA GeForce RTX 4090
+[TTS] VRAM   : 24.0 GB
 [TTS] Loading suhaibrashid17/XTTS-v2-Urdu-FT ...
-[TTS] Model loaded. Ready.
-INFO: Uvicorn running on http://0.0.0.0:8020
+[TTS] Model ready.
+INFO:     Uvicorn running on http://0.0.0.0:8020
 ```
 
-Subsequent starts take ~10-20 seconds (model loads from local cache).
+**Subsequent starts** take ~15-20 seconds (loads from local cache).
 
 ---
 
-## Step 6 — Test it
+## Step 6 — Test It
 
 Open a new PowerShell window:
 
 ```powershell
-# Health check — should show xtts-v2 engine and your GPU name
-curl http://localhost:8020/health
+# Health check
+Invoke-WebRequest -Uri "http://localhost:8020/health" -UseBasicParsing | Select-Object -ExpandProperty Content
+# Expected: {"status":"ok","engine":"xtts-v2","device":"cuda","gpu":"NVIDIA GeForce RTX 4090"}
 
-# Generate test audio
-$body = '{"text":"Yeh rahe aapke liye best gaming products. Aapka budget aur requirements ke mutabiq yeh options available hain."}'
-Invoke-WebRequest `
-  -Uri "http://localhost:8020/api/tts" `
-  -Method POST `
-  -Body $body `
+# Generate audio
+$body = '{"text":"Yeh rahe aapke liye best gaming products. Aapka budget ke mutabiq yeh options available hain."}'
+Invoke-WebRequest -Uri "http://localhost:8020/api/tts" `
+  -Method POST -Body $body `
   -ContentType "application/json" `
-  -OutFile "test_xtts.wav"
+  -OutFile "test_xtts.wav" -UseBasicParsing
 
 # Play it
-Start-Process test_xtts.wav
+Start-Process "test_xtts.wav"
 ```
 
-You should hear clear, natural Urdu speech within ~300ms.
+You should hear natural Urdu speech in ~200-300ms.
 
 ---
 
-## Step 7 — Expose via ngrok
+## Step 7 — Expose via ngrok (Second Tunnel)
+
+Ollama already uses one tunnel. Open a new terminal:
 
 ```powershell
-# New terminal (Ollama is already using one tunnel)
 ngrok http 8020
 ```
 
-You get a URL like:
+Copy the URL — something like:
 ```
-https://xxxx-203-99-61-238.ngrok-free.app
+https://abcd-203-99-61-238.ngrok-free.app
 ```
+
+> Free ngrok supports 2 simultaneous tunnels per account.
 
 ---
 
-## Step 8 — Update .env on your dev machine
+## Step 8 — Update .env on Your Dev Machine
 
-Open `apps/api/.env` on your laptop and update:
+Open `apps/api/.env` on your laptop and change:
 
 ```env
-# Comment out or remove the old edge-tts line:
-# TTS_SERVICE_URL=http://localhost:8020/api/tts
-
-# Add the XTTS GPU line:
-TTS_SERVICE_URL=https://xxxx-203-99-61-238.ngrok-free.app/api/tts
+TTS_SERVICE_URL=https://abcd-203-99-61-238.ngrok-free.app/api/tts
 ```
 
-Restart Node server:
+Restart Node:
 ```powershell
 npm run dev
 ```
 
-That is the only change needed. No code changes — the Node proxy
-already handles both edge-tts and XTTS v2 through the same endpoint.
+No code changes needed. Done.
 
 ---
 
-## VRAM Usage on RTX 4090
-
-```
-XTTS v2 model          →  ~2.5 GB VRAM
-Ollama qwen2.5:14b     →  ~9.0 GB VRAM
-Total                  →  ~11.5 GB / 24 GB
-Headroom remaining     →  ~12.5 GB  (plenty of room)
-```
-
-Both run completely independently on different ports.
-No resource conflict.
-
----
-
-## Keep Running with pm2
+## Daily Startup (After First Setup)
 
 ```powershell
-# Install pm2 once
+# Terminal 1 — activate venv and start TTS
+cd C:\path\to\project\apps\api
+tts_env\Scripts\activate
+python tts_service_gpu.py
+
+# Terminal 2 — expose TTS via ngrok
+ngrok http 8020
+```
+
+Ollama + its ngrok tunnel run as usual in separate terminals.
+
+---
+
+## Keep Running Permanently with pm2
+
+```powershell
 npm install -g pm2
 
-# Start XTTS GPU service
-pm2 start "python tts_service_gpu.py" `
+# Use the venv Python directly — no need to activate first
+pm2 start "C:\path\to\project\apps\api\tts_env\Scripts\python.exe tts_service_gpu.py" `
   --name xtts-gpu `
   --cwd "C:\path\to\project\apps\api"
 
-# Check it started
-pm2 status
-pm2 logs xtts-gpu
-
-# Auto-restart on Windows reboot
 pm2 save
 pm2 startup
+pm2 status
 ```
+
+---
+
+## VRAM Usage — Both Services Together
+
+```
+XTTS v2 (Urdu model)    →  ~2.5 GB VRAM
+Ollama qwen2.5:14b      →  ~9.0 GB VRAM
+─────────────────────────────────────────
+Total used              →  ~11.5 GB
+RTX 4090 total          →   24.0 GB
+Free headroom           →  ~12.5 GB  ✅
+```
+
+No conflict. Both run independently on different ports.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Cause | Fix |
-|---|---|---|
-| `CUDA: False` | Wrong PyTorch build | Uninstall and reinstall with correct `--index-url` for your CUDA version |
-| `AssertionError: Torch not compiled with CUDA` | Same — CPU build installed | `pip uninstall torch` then reinstall CUDA build |
-| `ModuleNotFoundError: TTS` | Coqui not installed | `pip install coqui-tts` |
-| First run hangs at download | Slow connection | Wait — model is 2GB, let it finish |
-| `torchcodec` error on import | Compatibility issue | `pip install torchcodec` or ignore — handled by service |
-| Audio sounds robotic | Default ref speaker | Replace `ref_speaker.wav` with a real Urdu speaker WAV file (3-10 seconds, clean mic recording) |
-| Port 8020 in use | Old service running | `netstat -ano \| findstr :8020` then `taskkill /PID <pid> /F` |
-| ngrok tunnel limit | Already 2 tunnels open | Check ngrok dashboard at https://dashboard.ngrok.com/tunnels |
+| Problem | Fix |
+|---|---|
+| `CUDA: False` after install | Wrong CUDA build. Check `nvidia-smi` for CUDA version and use matching `--index-url` |
+| `ModuleNotFoundError: TTS` | Run `pip install coqui-tts` inside the activated venv |
+| `(tts_env)` not showing in prompt | Run `tts_env\Scripts\activate` again |
+| First run stuck at download | Normal — 2GB download, just wait |
+| `torchcodec` import error | Run `pip install torchcodec` inside venv, or it is safely ignored |
+| Port 8020 already in use | `netstat -ano \| findstr :8020` then `taskkill /PID <pid> /F` |
+| ngrok shows "tunnel limit" | Visit https://dashboard.ngrok.com/tunnels and close unused ones |
+| Audio sounds robotic | Replace `ref_speaker.wav` with a real Urdu voice recording (see below) |
 
 ---
 
-## Better Voice Quality (Optional)
+## Optional — Better Voice Quality
 
-The default speaker reference is a synthetic tone. For more natural,
-human-sounding output, replace it with a real voice sample:
+The default speaker reference is a synthetic tone which makes the voice
+slightly robotic. Replace it with a real Urdu voice recording for
+much more natural output:
 
-1. Record 5-10 seconds of clear Urdu speech (no background noise)
-2. Save as `WAV, 22050 Hz, mono`
-3. Copy to the model directory as `ref_speaker.wav`:
+1. Record 5-10 seconds of clear spoken Urdu (quiet room, no echo)
+2. Save as WAV, 22050 Hz, mono, 16-bit
+3. Find the model cache folder:
 
 ```powershell
-# Find model cache location
-python -c "from huggingface_hub import snapshot_download; print(snapshot_download('suhaibrashid17/XTTS-v2-Urdu-FT'))"
-
-# Copy your recording there
-Copy-Item "your_voice.wav" "C:\Users\<user>\.cache\huggingface\hub\...\ref_speaker.wav"
+tts_env\Scripts\python.exe -c "from huggingface_hub import snapshot_download; print(snapshot_download('suhaibrashid17/XTTS-v2-Urdu-FT'))"
 ```
 
-Restart the service. The voice output will now clone that speaker's
-tone and naturalness.
+4. Copy your recording to that folder as `ref_speaker.wav`
+5. Restart `tts_service_gpu.py`
 
----
-
-## Summary — What Changes Between edge-tts and XTTS v2
-
-| | edge-tts (current) | XTTS v2 GPU (new) |
-|---|---|---|
-| Quality | Good (Microsoft neural) | Better (Urdu fine-tuned) |
-| Latency | ~400-800ms | ~150-300ms |
-| Internet needed | Yes (calls Microsoft) | No (fully local) |
-| GPU needed | No | Yes (RTX 4090) |
-| Setup time | 2 minutes | 20 minutes (one time) |
-| File to run | `tts_service.py` | `tts_service_gpu.py` |
-| Port | 8020 | 8020 (same) |
-| .env change | None | Update TTS_SERVICE_URL to ngrok URL |
+The voice output will now match the naturalness and tone of your recording.
