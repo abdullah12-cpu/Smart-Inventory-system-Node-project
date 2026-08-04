@@ -189,115 +189,79 @@ function cleanForSpeech(raw) {
     .replace(/^\s*[-|#*>]+\s*/gm, '')            // remove markdown symbols at line start
     .replace(/[*_#`~]/g, '')                     // remaining inline markdown
     .replace(/https?:\/\/\S+/g, '')              // URLs
-    .replace(/Rs\.?\s*([\d,]+)/gi,               // Rs 10,500 → دس ہزار پانچ سو روپے (spoken)
-      (_, n) => n.replace(/,/g, '') + ' روپے')
-    .replace(/\n{2,}/g, '. ')                    // blank lines → pause
+    // Remove all non-Latin/non-Urdu script characters (Chinese, etc.)
+    .replace(/[\u4e00-\u9fff\u3000-\u303f\u30a0-\u30ff\u3040-\u309f]+/g, '')
+    // Rs amounts → spoken
+    .replace(/Rs\.?\s*([\d,]+)/gi, (_, n) => n.replace(/,/g, '') + ' rupees')
+    .replace(/\n{2,}/g, '. ')
     .replace(/\n/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
-/** Split text into natural sentence chunks ≤ 180 chars for streaming playback */
-function splitIntoChunks(text, maxLen = 180) {
-  const sentences = text.match(/[^.!?؟۔]+[.!?؟۔]*/g) || [text];
-  const chunks = [];
-  let buf = '';
-  for (const s of sentences) {
-    if ((buf + s).length > maxLen && buf) {
-      chunks.push(buf.trim());
-      buf = s;
-    } else {
-      buf += s;
-    }
-  }
-  if (buf.trim()) chunks.push(buf.trim());
-  return chunks.filter(Boolean);
-}
-
 function TTSPlayButton({ text, autoPlay = false }) {
   const [isPlaying, setIsPlaying]   = useState(false);
-  const [chunkIdx,  setChunkIdx]    = useState(0);   // which chunk is playing
-  const [totalChunks, setTotalChunks] = useState(0);
-  const stopRef    = useRef(false);  // signal to abort mid-stream
+  const stopRef    = useRef(false);
   const audioRef   = useRef(null);
 
   const stopAll = () => {
     stopRef.current = true;
     if (audioRef.current) { try { audioRef.current.pause(); audioRef.current.src = ''; } catch {} audioRef.current = null; }
     setIsPlaying(false);
-    setChunkIdx(0);
-    setTotalChunks(0);
   };
 
-  /** Fetch one chunk from edge-tts service and play it */
-  const playChunk = (chunk) => new Promise((resolve) => {
-    fetch('/api/copilot/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: chunk, voice: 'ur-PK-UzmaNeural' }),
-      signal: AbortSignal.timeout(8000)
-    })
-      .then(r => (r.ok && r.status !== 204) ? r.blob() : null)
-      .then(blob => {
-        if (!blob || blob.size < 100 || stopRef.current) { resolve(); return; }
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended  = () => { URL.revokeObjectURL(url); resolve(); };
-        audio.onerror  = () => { URL.revokeObjectURL(url); resolve(); };
-        audio.play().catch(() => resolve());
-      })
-      .catch(() => resolve());
-  });
-
-  /** Stream all chunks one after another */
-  const streamAll = async (fullText) => {
+  /** Send full text to edge-tts in ONE request → single continuous audio */
+  const playFull = async (fullText) => {
+    if (!fullText) return;
     stopRef.current = false;
-    const cleaned = cleanForSpeech(fullText);
-    if (!cleaned) return;
-    const chunks = splitIntoChunks(cleaned, 180);
-    setTotalChunks(chunks.length);
     setIsPlaying(true);
 
-    // Kick off first chunk immediately, prefetch second in parallel
-    for (let i = 0; i < chunks.length; i++) {
-      if (stopRef.current) break;
-      setChunkIdx(i + 1);
-      await playChunk(chunks[i]);
-    }
+    try {
+      const resp = await fetch('/api/copilot/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: fullText, voice: 'ur-PK-UzmaNeural' }),
+        signal: AbortSignal.timeout(15000)
+      });
 
-    if (!stopRef.current) {
+      if (!resp.ok || resp.status === 204 || stopRef.current) { setIsPlaying(false); return; }
+
+      const blob = await resp.blob();
+      if (!blob.size || stopRef.current) { setIsPlaying(false); return; }
+
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended  = () => { setIsPlaying(false); URL.revokeObjectURL(url); };
+      audio.onerror  = () => { setIsPlaying(false); };
+      await audio.play();
+    } catch {
       setIsPlaying(false);
-      setChunkIdx(0);
-      setTotalChunks(0);
     }
   };
 
   const handleClick = () => {
     if (isPlaying) { stopAll(); return; }
-    streamAll(text);
+    playFull(cleanForSpeech(text));
   };
 
   // Auto-play on mount for the latest AI message
   useEffect(() => {
     if (!autoPlay) return;
-    const t = setTimeout(() => streamAll(text), 300);
+    const t = setTimeout(() => playFull(cleanForSpeech(text)), 300);
     return () => { clearTimeout(t); stopAll(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Progress label e.g. "2 / 4"
-  const progress = isPlaying && totalChunks > 1 ? ` ${chunkIdx}/${totalChunks}` : '';
 
   return (
     <button
       onClick={handleClick}
-      title={isPlaying ? 'Stop Voice' : 'Listen in Urdu'}
+      title={isPlaying ? 'Stop Voice' : 'Listen Urdu Voice'}
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-semibold transition-all cursor-pointer border border-indigo-200/70 shrink-0"
     >
       {isPlaying ? (
-        <><Square className="w-3 h-3 fill-indigo-600 text-indigo-600" /><span>Stop{progress}</span></>
+        <><Square className="w-3 h-3 fill-indigo-600 text-indigo-600" /><span>Stop</span></>
       ) : (
-        <><Volume2 className="w-3 h-3 text-indigo-600" /><span>سنیں (Urdu)</span></>
+        <><Volume2 className="w-3 h-3 text-indigo-600" /><span>Listen Urdu</span></>
       )}
     </button>
   );
