@@ -302,7 +302,6 @@ function TTSPlayButton({ text, autoPlay = false }) {
     </button>
   );
 }
-}
 
 export default function BuyerChatbotWidget() {
   const [isOpen, setIsOpen] = useState(false);
