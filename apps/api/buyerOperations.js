@@ -154,7 +154,7 @@ async function compareBuyerProductsInDb(pool, args = {}) {
   const priceDiff = Math.abs(p1.retail_price - p2.retail_price);
   const cheaperItem = p1.retail_price < p2.retail_price ? p1.product_name : p2.product_name;
 
-  const tableMd = `### ⚖️ Side-by-Side Product Comparison\n\n| Specification | **${p1.product_name}** | **${p2.product_name}** |\n| --- | --- | --- |\n| **Retail Price** | **Rs ${p1.retail_price.toLocaleString()}** | **Rs ${p2.retail_price.toLocaleString()}** |\n| **Brand** | ${p1.brand || 'N/A'} | ${p2.brand || 'N/A'} |\n| **Category** | ${p1.category || 'General'} | ${p2.category || 'General'} |\n| **Availability** | ${p1.available_stock > 0 ? `In Stock (${p1.available_stock} units)` : '⚠️ Out of Stock'} | ${p2.available_stock > 0 ? `In Stock (${p2.available_stock} units)` : '⚠️ Out of Stock'} |\n| **SKU Code** | \`${p1.sku}\` | \`${p2.sku}\` |\n| **Key Specs** | ${p1.short_description || 'Standard specifications'} | ${p2.short_description || 'Standard specifications'} |\n\n💡 **Shopping Insights:**\n- **Price Difference:** **Rs ${priceDiff.toLocaleString()}** (*${cheaperItem}* is more budget-friendly).\n- **Recommendation:** Choose **${p1.product_name}** for ${p1.category} applications or **${p2.product_name}** if you need ${p2.brand || p2.category} specifications.`;
+  const tableMd = `### ⚖️ مصنوعات کا موازنہ\n\n| تفصیل | **${p1.product_name}** | **${p2.product_name}** |\n| --- | --- | --- |\n| **قیمت** | **Rs ${p1.retail_price.toLocaleString()}** | **Rs ${p2.retail_price.toLocaleString()}** |\n| **برانڈ** | ${p1.brand || 'N/A'} | ${p2.brand || 'N/A'} |\n| **کیٹیگری** | ${p1.category || 'عام'} | ${p2.category || 'عام'} |\n| **دستیابی** | ${p1.available_stock > 0 ? `اسٹاک میں موجود (${p1.available_stock} عدد)` : '⚠️ اسٹاک ختم'} | ${p2.available_stock > 0 ? `اسٹاک میں موجود (${p2.available_stock} عدد)` : '⚠️ اسٹاک ختم'} |\n| **SKU کوڈ** | \`${p1.sku}\` | \`${p2.sku}\` |\n| **اہم خصوصیات** | ${p1.short_description || 'معیاری تفصیلات'} | ${p2.short_description || 'معیاری تفصیلات'} |\n\n💡 **اہم معلومات:**\n- **قیمت کا فرق:** **Rs ${priceDiff.toLocaleString()}** (*${cheaperItem}* زیادہ مناسب قیمت میں دستیاب ہے)۔\n- **سفارش:** اگر آپ کو ${p1.category} چاہیے تو **${p1.product_name}** اور اگر ${p2.brand || p2.category} چاہیے تو **${p2.product_name}** منتخب کریں۔`;
 
   return { ai_message: tableMd, products: [p1, p2] };
 }
@@ -173,19 +173,19 @@ const ORDER_STATUS_EMOJI = {
 };
 
 const ORDER_STATUS_LABEL = {
-  PENDING:    'Pending',
-  CONFIRMED:  'Confirmed',
-  PROCESSING: 'Processing',
-  SHIPPED:    'Shipped',
-  DELIVERED:  'Delivered',
-  CANCELLED:  'Cancelled',
-  RETURNED:   'Returned',
+  PENDING:    'زیر التواء',
+  CONFIRMED:  'تصدیق شدہ',
+  PROCESSING: 'تیاری جاری',
+  SHIPPED:    'روانہ کر دیا گیا',
+  DELIVERED:  'پہنچا دیا گیا',
+  CANCELLED:  'منسوخ شدہ',
+  RETURNED:   'واپس شدہ',
 };
 
 function formatOrderDate(dateStr) {
   if (!dateStr) return 'N/A';
   try {
-    return new Date(dateStr).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' });
+    return new Date(dateStr).toLocaleDateString('ur-PK', { year: 'numeric', month: 'short', day: 'numeric' });
   } catch { return String(dateStr); }
 }
 
@@ -197,20 +197,20 @@ function buildOrderDetailMd(order) {
   const statusLabel = ORDER_STATUS_LABEL[order.status?.toUpperCase()] || order.status;
 
   const itemLines = items.length > 0
-    ? items.map(i => `  - **${i.product_name || i.sku || 'Item'}** × ${i.quantity || 1} — Rs ${parseFloat(i.unit_price || i.price || 0).toLocaleString()}`).join('\n')
-    : (order.items_summary || 'Item details not available');
+    ? items.map(i => `  - **${i.product_name || i.sku || 'آئٹم'}** × ${i.quantity || 1} — Rs ${parseFloat(i.unit_price || i.price || 0).toLocaleString()}`).join('\n')
+    : (order.items_summary || 'آئٹم کی تفصیل دستیاب نہیں');
 
   const subtotal = order.subtotal ? `Rs ${parseFloat(order.subtotal).toLocaleString()}` : 'N/A';
   const discount = order.discount_total ? `Rs ${parseFloat(order.discount_total).toLocaleString()}` : '—';
   const tax     = order.tax_total     ? `Rs ${parseFloat(order.tax_total).toLocaleString()}`     : '—';
 
   return [
-    `**Order Number:** \`${order.order_number || order.order_id}\``,
-    `**Status:** ${emoji} **${statusLabel}**`,
-    `**Order Date:** ${formatOrderDate(order.order_date || order.created_at)}`,
-    `**Order Type:** ${order.order_type || 'Retail'}`,
-    `\n**Items Ordered:**\n${itemLines}`,
-    `\n| Subtotal | Discount | Tax | **Total** |`,
+    `**آرڈر نمبر:** \`${order.order_number || order.order_id}\``,
+    `**اسٹیٹس:** ${emoji} **${statusLabel}**`,
+    `**تاریخ:** ${formatOrderDate(order.order_date || order.created_at)}`,
+    `**آرڈر قسم:** ${order.order_type || 'ریٹیل'}`,
+    `\n**آرڈر شدہ اشیاء:**\n${itemLines}`,
+    `\n| ذیلی کل | رعایت | ٹیکس | **کل رقم** |`,
     `| --- | --- | --- | --- |`,
     `| ${subtotal} | ${discount} | ${tax} | **Rs ${parseFloat(order.total_amount || 0).toLocaleString()}** |`,
   ].join('\n');
