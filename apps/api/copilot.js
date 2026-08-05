@@ -3515,8 +3515,55 @@ function registerCopilotRoutes(app, pool) {
       .trim();
     if (!spoken) return res.status(204).send();
 
-    // 1. Try ElevenLabs API if key is provided (reload .env dynamically)
     try { require('dotenv').config(); } catch {}
+
+    // 1. Primary: Office PC GPU TTS Service (RTX 4090 GPU Urdu Neural TTS)
+    const ttsServiceUrl = process.env.TTS_SERVICE_URL || 'https://bronco-antsy-magnetize.ngrok-free.dev/api/tts';
+    const ttsApiKey = process.env.TTS_API_KEY || 'az5nD6ceT-c4lslqzadpNA-b';
+    const defaultVoice = process.env.TTS_DEFAULT_VOICE || 'demo-urdu-male.wav';
+
+    if (ttsServiceUrl) {
+      try {
+        let targetUrl = ttsServiceUrl;
+        if (ttsApiKey && !targetUrl.includes('key=')) {
+          targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(ttsApiKey.trim());
+        }
+
+        let targetVoice = voice;
+        if (!targetVoice || targetVoice.includes('Neural') || targetVoice.includes('ur-PK') || targetVoice === 'default') {
+          targetVoice = defaultVoice;
+        }
+
+        console.log(`[TTS] 🚀 Attempting Office PC GPU TTS (${targetUrl}, voice=${targetVoice})...`);
+        const gpuResp = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+            'x-api-key': ttsApiKey
+          },
+          body: JSON.stringify({ text: spoken, voice: targetVoice }),
+          signal: AbortSignal.timeout(35000)
+        });
+
+        if (gpuResp.ok) {
+          const contentType = gpuResp.headers.get('content-type') || 'audio/wav';
+          console.log(`[TTS] ✅ Office PC GPU TTS speech synthesis successful! Returning audio (${contentType})...`);
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('X-TTS-Engine', 'Office-GPU-TTS');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          const { Readable } = require('stream');
+          return Readable.fromWeb(gpuResp.body).pipe(res);
+        } else {
+          const errText = await gpuResp.text();
+          console.warn(`[TTS] ⚠️ Office PC GPU TTS returned HTTP ${gpuResp.status}: ${errText}. Falling back...`);
+        }
+      } catch (err) {
+        console.warn(`[TTS] ⚠️ Office PC GPU TTS request error: ${err.message}. Falling back...`);
+      }
+    }
+
+    // 2. Secondary Fallback: ElevenLabs API if key is provided
     const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY ? process.env.ELEVENLABS_API_KEY.trim() : '';
     if (elevenLabsApiKey) {
       try {
@@ -3554,22 +3601,19 @@ function registerCopilotRoutes(app, pool) {
         } else {
           const errBody = await elevenResp.text();
           console.warn(`[TTS] ⚠️ ElevenLabs API returned HTTP ${elevenResp.status}: ${errBody}`);
-          console.warn(`[TTS] 🔄 Falling back to local Edge-TTS microservice...`);
         }
       } catch (err) {
-        console.warn(`[TTS] ⚠️ ElevenLabs request error: ${err.message}. Falling back to Edge-TTS...`);
+        console.warn(`[TTS] ⚠️ ElevenLabs request error: ${err.message}...`);
       }
-    } else {
-      console.log(`[TTS] ℹ️ ELEVENLABS_API_KEY is not set. Using local Edge-TTS microservice...`);
     }
 
-    // 2. Fallback: Edge Neural TTS Microservice
-    const TTS_URL = process.env.TTS_SERVICE_URL || 'http://localhost:8020/api/tts';
+    // 3. Final Fallback: Edge Neural TTS Microservice
+    const LOCAL_TTS_URL = 'http://localhost:8020/api/tts';
     try {
-      const ttsResp = await fetch(TTS_URL, {
+      const ttsResp = await fetch(LOCAL_TTS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: spoken, voice }),
+        body: JSON.stringify({ text: spoken, voice: 'ur-PK-UzmaNeural' }),
         signal: AbortSignal.timeout(12000)
       });
       if (!ttsResp.ok) {
