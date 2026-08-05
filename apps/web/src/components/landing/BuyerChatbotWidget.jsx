@@ -183,7 +183,7 @@ function OrderStatusCard({ order }) {
 /** Clean Urdu-script AI response for TTS: strip markdown/tables/URLs, preserve Urdu text */
 function cleanForSpeech(raw) {
   if (!raw) return '';
-  return raw
+  let text = raw
     .replace(/```[\s\S]*?```/g, '')              // remove code blocks
     .replace(/\|.*?\|/g, '')                     // remove table rows
     .replace(/^\s*[-|#*>]+\s*/gm, '')            // remove markdown symbols at line start
@@ -196,6 +196,16 @@ function cleanForSpeech(raw) {
     .replace(/\n/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
+
+  // Cap speech to first 2 key sentences (~180 chars) for ultra-fast 3-4s latency
+  const sentences = text.split(/(?<=[۔!؟?.])/);
+  if (sentences.length > 2) {
+    text = sentences.slice(0, 2).join(' ').trim();
+  }
+  if (text.length > 200) {
+    text = text.substring(0, 200).trim();
+  }
+  return text;
 }
 
 

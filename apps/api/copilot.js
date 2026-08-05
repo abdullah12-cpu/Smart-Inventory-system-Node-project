@@ -3542,7 +3542,14 @@ function registerCopilotRoutes(app, pool) {
             'ngrok-skip-browser-warning': 'true',
             'x-api-key': ttsApiKey
           },
-          body: JSON.stringify({ text: spoken, voice: targetVoice }),
+          body: JSON.stringify({
+            text: spoken,
+            voice: targetVoice,
+            max_chars: 120,
+            temperature: 0.1,
+            top_p: 0.3,
+            speed: 1.05
+          }),
           signal: AbortSignal.timeout(120000)
         });
 
