@@ -206,9 +206,9 @@ function buildOrderDetailMd(order) {
 
   return [
     `**آرڈر نمبر:** \`${order.order_number || order.order_id}\``,
-    `**اسٹیٹس:** ${emoji} **${statusLabel}**`,
+    `**حیثیت:** ${emoji} **${statusLabel}**`,
     `**تاریخ:** ${formatOrderDate(order.order_date || order.created_at)}`,
-    `**آرڈر قسم:** ${order.order_type || 'ریٹیل'}`,
+    `**آرڈر کی قسم:** ${order.order_type || 'ریٹیل'}`,
     `\n**آرڈر شدہ اشیاء:**\n${itemLines}`,
     `\n| ذیلی کل | رعایت | ٹیکس | **کل رقم** |`,
     `| --- | --- | --- | --- |`,
@@ -224,7 +224,7 @@ async function trackBuyerOrder(pool, args = {}) {
 
   if (!order_id_query.trim()) {
     return {
-      ai_message: "Kaunsa order track karna hai? Order number dijiye.\n\nExample: *\"ORD-2026-7781 track karo\"*",
+      ai_message: "کون سا آرڈر ٹریک کرنا ہے؟ براہ کرم آرڈر نمبر بتائیں۔\n\nمثال: *\"ORD-2026-7781 ٹریک کریں\"*",
       orders: []
     };
   }
@@ -256,7 +256,7 @@ async function trackBuyerOrder(pool, args = {}) {
 
   if (!result.rows.length) {
     return {
-      ai_message: `⚠️ No order found matching **"${order_id_query}"**.\n\nDouble-check the order number, or try:\n- *"Show all my orders"*\n- *"Show shipped orders"*\n- *"Show pending orders"*`,
+      ai_message: `⚠️ آرڈر **"${order_id_query}"** نہیں ملا۔\n\nآرڈر نمبر دوبارہ چیک کریں، یا آزمائیں:\n- *"میرے سارے آرڈرز دکھائیں"*\n- *"شپڈ آرڈرز دکھائیں"*\n- *"پینڈنگ آرڈرز دکھائیں"*`,
       orders: []
     };
   }
@@ -265,22 +265,22 @@ async function trackBuyerOrder(pool, args = {}) {
   const s = (order.status || '').toUpperCase();
 
   const nextStep =
-    s === 'PENDING'    ? '⏳ Waiting to be confirmed by our team. You will be notified soon.' :
-    s === 'CONFIRMED'  ? '📋 Order confirmed! Being prepared for dispatch.' :
-    s === 'PROCESSING' ? '⚙️ Currently being packed and processed in our warehouse.' :
-    s === 'SHIPPED'    ? '🚚 On its way! Expected delivery within 2–4 business days.' :
-    s === 'DELIVERED'  ? '🎉 Delivered successfully. Enjoy your purchase!' :
-    s === 'CANCELLED'  ? '❌ This order was cancelled. Contact support for a refund.' :
+    s === 'PENDING'    ? '⏳ ہماری ٹیم کی تصدیق کا انتظار ہے۔ جلد آپ کو مطلع کیا جائے گا۔' :
+    s === 'CONFIRMED'  ? '📋 آرڈر کی تصدیق ہو چکی ہے! ترسیل کے لیے تیار کیا جا رہا ہے۔' :
+    s === 'PROCESSING' ? '⚙️ ابھی ہمارے گودام میں پیک اور تیار کیا جا رہا ہے۔' :
+    s === 'SHIPPED'    ? '🚚 راستے میں ہے! 2–4 کاروباری دنوں میں ڈلیوری متوقع ہے۔' :
+    s === 'DELIVERED'  ? '🎉 کامیابی سے پہنچا دیا گیا۔ خریداری مبارک ہو!' :
+    s === 'CANCELLED'  ? '❌ یہ آرڈر منسوخ کر دیا گیا۔ رقم واپسی کے لیے سپورٹ سے رابطہ کریں۔' :
     '';
 
   const md = [
-    `### 📦 Live Order Tracking`,
+    `### 📦 آرڈر کی لائیو ٹریکنگ`,
     ``,
     buildOrderDetailMd(order),
     ``,
-    nextStep ? `> **Status Update:** ${nextStep}` : '',
+    nextStep ? `> **تازہ صورتحال:** ${nextStep}` : '',
     ``,
-    `💬 Ask: *"Show all orders"*, *"Show shipped orders"*, or track another order by number.`
+    `💬 پوچھیں: *"سارے آرڈرز دکھائیں"*، *"شپڈ آرڈرز دکھائیں"*، یا نمبر کے ذریعے کوئی اور آرڈر ٹریک کریں۔`
   ].filter(l => l !== null).join('\n');
 
   return { ai_message: md, orders: result.rows };
@@ -290,7 +290,7 @@ async function trackBuyerOrder(pool, args = {}) {
  * List orders optionally filtered by status, with a summary table.
  */
 async function listBuyerOrdersByStatus(pool, args = {}) {
-  const { status_filter = null, customer_email = null } = args;
+  const { status_filter = null, customer_email = null, date_filter = null } = args;
 
   let sql = `SELECT * FROM orders`;
   const params = [];
@@ -306,6 +306,12 @@ async function listBuyerOrdersByStatus(pool, args = {}) {
     params.push(status_filter.toUpperCase());
   }
 
+  if (date_filter === 'today') {
+    conditions.push(`(order_date::date = CURRENT_DATE OR created_at::date = CURRENT_DATE)`);
+  } else if (date_filter === 'week') {
+    conditions.push(`(order_date >= CURRENT_DATE - INTERVAL '7 days' OR created_at >= CURRENT_DATE - INTERVAL '7 days')`);
+  }
+
   if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
   sql += ' ORDER BY created_at DESC LIMIT 20';
 
@@ -313,21 +319,23 @@ async function listBuyerOrdersByStatus(pool, args = {}) {
   try {
     result = params.length > 0 ? await pool.query(sql, params) : await pool.query(sql);
   } catch (e) {
-    return { ai_message: `❌ Database error: ${e.message}`, orders: [] };
+    return { ai_message: `❌ ڈیٹا بیس میں خرابی: ${e.message}`, orders: [] };
   }
 
   const orders = result.rows;
 
   if (!orders.length) {
     const statusMsg = status_filter ? ` "${ORDER_STATUS_LABEL[status_filter.toUpperCase()] || status_filter}"` : '';
+    const dateMsg = date_filter === 'today' ? ' آج کا' : (date_filter === 'week' ? ' اس ہفتے کا' : '');
     return {
-      ai_message: `Aapka koi${statusMsg} order nahi mila.\n\nTry karein:\n- *"Mere sary orders dikhao"*\n- *"Shipped orders dikhao"*\n- *"Delivered orders dikhao"*`,
+      ai_message: `آپ کا کوئی${dateMsg}${statusMsg} آرڈر نہیں ملا۔\n\nآزمائیں:\n- *"میرے سارے آرڈرز دکھائیں"*\n- *"شپڈ آرڈرز دکھائیں"*\n- *"ڈلیورڈ آرڈرز دکھائیں"*`,
       orders: []
     };
   }
 
   const emoji = status_filter ? (ORDER_STATUS_EMOJI[status_filter.toUpperCase()] || '📋') : '📋';
-  const statusLabel = status_filter ? (ORDER_STATUS_LABEL[status_filter.toUpperCase()] || status_filter) : 'All';
+  const statusLabel = status_filter ? (ORDER_STATUS_LABEL[status_filter.toUpperCase()] || status_filter) : 'تمام';
+  const dateLabel = date_filter === 'today' ? ' — آج' : (date_filter === 'week' ? ' — اس ہفتے' : '');
 
   // Status breakdown counts
   const statusCounts = {};
@@ -347,15 +355,15 @@ async function listBuyerOrdersByStatus(pool, args = {}) {
   }).join('\n');
 
   const md = [
-    `### ${emoji} ${statusLabel} Orders — ${orders.length} Found`,
+    `### ${emoji} ${statusLabel} آرڈرز${dateLabel} — ${orders.length} ملے`,
     ``,
     statusSummary,
     ``,
-    `| Order Number | Status | Date | Amount |`,
+    `| آرڈر نمبر | حیثیت | تاریخ | رقم |`,
     `| --- | --- | --- | --- |`,
     tableRows,
     ``,
-    `💬 Ask: *"Track order ORD-2026-XXXX"* for full details on any order.`
+    `💬 پوچھیں: *"ORD-2026-XXXX ٹریک کریں"* کسی بھی آرڈر کی مکمل تفصیل کے لیے۔`
   ].join('\n');
 
   return { ai_message: md, orders };

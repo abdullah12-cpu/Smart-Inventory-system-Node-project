@@ -92,6 +92,31 @@ async function getOllamaChatEndpoint() {
   return null;
 }
 
+// The remote ngrok tunnel enforces the same API key on every route (not just /api/tags),
+// so any request to it -- chat completions included -- needs the key appended or it 401s.
+function ollamaUrl(endpoint, path) {
+  const url = `${endpoint.baseUrl}${path}`;
+  if (!endpoint.isRemote) return url;
+  const apiKey = process.env.TTS_API_KEY || 'az5nD6ceT-c4lslqzadpNA-b';
+  if (!apiKey) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey.trim())}`;
+}
+
+async function fetchOllamaChat(endpoint, body, timeoutMs = 25000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(ollamaUrl(endpoint, '/v1/chat/completions'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // â”€â”€â”€ Buyer session memory (in-process, per user email) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Stores: { lastProducts, lastCategory, lastMinPrice, lastMaxPrice, lastSortBy, lastQuery }
 // TTL: sessions expire after 30 minutes of inactivity
@@ -1269,6 +1294,28 @@ async function handleAnalyticalQuery(pool, sqlQuery) {
   return `### 📊 رپورٹ\n\n${mdHeader}\n${mdRows}`;
 }
 
+function buildProductRecommendationMd(products) {
+  if (!products || products.length === 0) {
+    return 'معذرت، اس وقت کوئی مناسب مصنوع نہیں ملی۔ براہ کرم مختلف الفاظ سے تلاش کریں۔';
+  }
+  return `### 🛍️ آپ کے لیے تجویزدہ مصنوعات\n\n` + products.map((p, idx) => {
+    const stockStatus = p.available_stock > 0 ? `اسٹاک میں موجود (${p.available_stock} عدد)` : `⚠️ اسٹاک ختم`;
+    return `**${idx + 1}. ${p.product_name}**\n` +
+      `- **برانڈ**: ${p.brand || 'N/A'} | **کیٹیگری**: ${p.category || 'عام'}\n` +
+      `- **قیمت**: **Rs ${p.retail_price.toLocaleString()}**\n` +
+      `- **دستیابی**: ${stockStatus}`;
+  }).join('\n\n');
+}
+
+// Guards against LLM output that leaks stray non-Urdu scripts into the reply -- a known
+// failure mode of the local qwen model on this prompt. Urdu uses the Arabic script block
+// (U+0600-U+06FF) plus Arabic Presentation Forms; anything from Cyrillic, the Indic scripts
+// (Devanagari, Gurmukhi, Gujarati, Bengali, Tamil, Telugu, ...), Thai, CJK, or Hangul means
+// the model wandered into a different script mid-reply.
+function hasForeignScriptLeak(text) {
+  return /[Ѐ-ӿऀ-෿฀-๿一-鿿぀-ヿ가-힯]/.test(text || '');
+}
+
 function getRelevantCards(ragProducts, llmText, maxCards = 6, userMessage = '') {
   if (!ragProducts || ragProducts.length === 0) return [];
   const lower = (llmText || '').toLowerCase();
@@ -1336,14 +1383,29 @@ function registerCopilotRoutes(app, pool) {
 
         const endpoint = await getOllamaChatEndpoint();
         if (endpoint) {
-          const resOllama = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: endpoint.modelName, messages: [{ role: 'system', content: distributorRagPrompt }, { role: 'user', content: message }], options: { temperature: 0.2 } })
+          const resOllama = await fetchOllamaChat(endpoint, {
+            model: endpoint.modelName,
+            messages: [{ role: 'system', content: distributorRagPrompt }, { role: 'user', content: message }],
+            options: { temperature: 0.15, top_p: 0.9, num_predict: 220 }
           });
-          const data = await resOllama.json();
-          return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: data.choices[0].message.content });
+          if (resOllama.ok) {
+            const data = await resOllama.json();
+            const content = data.choices?.[0]?.message?.content?.trim().replace(/[\t\r]+/g, ' ').replace(/ {2,}/g, ' ');
+            if (content && !hasForeignScriptLeak(content)) {
+              return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: content });
+            }
+          } else {
+            console.error('[Distributor RAG] Ollama HTTP error:', resOllama.status, await resOllama.text());
+          }
         }
+
+        // Deterministic fallback (model unreachable or output was garbled)
+        const wsMd = wholesaleProducts.length === 0
+          ? 'معذرت، اس وقت کوئی مناسب ھول سیل مصنوع نہیں ملی۔'
+          : `### 📦 ھول سیل مصنوعات\n\n` + wholesaleProducts.slice(0, 8).map((p, i) =>
+              `**${i + 1}. ${p.product_name}** (SKU: ${p.sku}) — Rs ${Number(p.wholesale_price).toLocaleString()}`
+            ).join('\n');
+        return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: wsMd });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ غلطی: ${err.message}` });
       }
@@ -1351,31 +1413,68 @@ function registerCopilotRoutes(app, pool) {
 
     if (role === 'BUYER') {
       try {
+        const userEmail = req.body.user_email || 'guest@commerceiq.com';
+        const emailForOrders = userEmail !== 'guest@commerceiq.com' ? userEmail : null;
 
-        // â”€â”€ Broad fallback: still 0 â†’ send entire catalog so LLM can say "we don't have X" â”€â”€
-        if (ragProducts.length === 0) {
+        // Fast deterministic routing for order tracking/listing — skips the LLM entirely so
+        // these are instant, always correct (real DB data), and never derailed into product search.
+        const orderNumMatch = !attached_image && message.match(/ORD[-_]?\d+/i);
+        const mentionsOrder = /\border(s)?\b/i.test(message);
+        if (!attached_image && (orderNumMatch || mentionsOrder)) {
+          if (orderNumMatch) {
+            const trackResult = await trackBuyerOrder(pool, { order_id_query: orderNumMatch[0], customer_email: emailForOrders });
+            return res.json({ success: true, action_executed: 'trackBuyerOrder', ai_message: trackResult.ai_message, orders: trackResult.orders });
+          }
+
+          const lowerMsg = message.toLowerCase();
+          const STATUS_PATTERNS = {
+            SHIPPED:    /\bshipped|shipping|bhej/i,
+            DELIVERED:  /\bdelivered|pahonch|pohunch|pohonch/i,
+            PROCESSING: /\bprocessing\b/i,
+            CONFIRMED:  /\bconfirmed\b/i,
+            CANCELLED:  /\bcancelled|cancel|mansookh/i,
+            RETURNED:   /\breturned|\breturn\b|wapis/i,
+            PENDING:    /\bpending|zair|zer/i,
+          };
+          let statusFilter = null;
+          for (const [status, re] of Object.entries(STATUS_PATTERNS)) {
+            if (re.test(lowerMsg)) { statusFilter = status; break; }
+          }
+          const dateFilter = /\b(today|aaj|aj)\b/i.test(lowerMsg) ? 'today' : (/\b(week|hafte|hafta)\b/i.test(lowerMsg) ? 'week' : null);
+
+          const listResult = await listBuyerOrdersByStatus(pool, { status_filter: statusFilter, customer_email: emailForOrders, date_filter: dateFilter });
+          return res.json({ success: true, action_executed: 'listBuyerOrders', ai_message: listResult.ai_message, orders: listResult.orders });
+        }
+
+        // Fast deterministic routing for side-by-side product comparisons.
+        if (!attached_image && /\bcompare|\bvs\b|versus|difference\s+between/i.test(message)) {
+          const compareResult = await compareBuyerProductsInDb(pool, { message });
+          return res.json({ success: true, action_executed: 'compareBuyerProducts', ai_message: compareResult.ai_message, products: compareResult.products });
+        }
+
+        let ragProducts = await getBuyerProductRecommendationsFromDb(pool, { query: message });
+        if (!ragProducts || ragProducts.length === 0) {
           ragProducts = await getBuyerProductRecommendationsFromDb(pool, { query: '', sort_by: 'price_low' });
         }
 
-        // Save session context after resolving
         saveBuyerSession(userEmail, {
           lastProducts:  ragProducts,
-          lastCategory:  ragCategory,
-          lastMinPrice:  ragMinPrice,
-          lastMaxPrice:  ragMaxPrice,
-          lastSortBy:    ragSortBy,
-          lastQuery:     ragQuery
+          lastCategory:  null,
+          lastMinPrice:  null,
+          lastMaxPrice:  null,
+          lastSortBy:    null,
+          lastQuery:     message
         });
 
-        // 4. Build RAG prompt â€” inject ONLY real DB products, no hallucination possible
+        // 4. Build RAG prompt — inject ONLY real DB products, no hallucination possible
         const productContext = ragProducts.slice(0, 15).map((p, i) => {
-          const simNote = p.similarity ? ` [match: ${p.similarity}]` : '';
-          return `${i + 1}. "${p.product_name}" | Brand: ${p.brand || 'N/A'} | Category: ${p.category || 'General'} | Price: Rs ${p.retail_price.toLocaleString()} | Stock: ${p.available_stock > 0 ? `In Stock (${p.available_stock})` : 'Out of Stock'} | ${p.short_description || ''}${simNote}`;
+          const simNote = p.similarity ? ` [موازنہ: ${p.similarity}]` : '';
+          return `${i + 1}. "${p.product_name}" | برانڈ: ${p.brand || 'N/A'} | کیٹیگری: ${p.category || 'عام'} | قیمت: Rs ${p.retail_price.toLocaleString()} | اسٹاک: ${p.available_stock > 0 ? `دستیاب (${p.available_stock})` : 'اسٹاک ختم'} | ${p.short_description || ''}${simNote}`;
         }).join('\n');
 
         const conversationHistory = (history || [])
           .slice(-8)
-          .map(m => `${m.sender === 'user' ? 'Customer' : 'Assistant'}: ${m.text || ''}`)
+          .map(m => `${m.sender === 'user' ? 'خریدار' : 'معاون'}: ${m.text || ''}`)
           .join('\n');
 
         // Fetch this buyer's own orders for RAG context (so LLM can answer order questions)
@@ -1386,69 +1485,60 @@ function registerCopilotRoutes(app, pool) {
             const buyerOrdersRes = await listBuyerOrdersByStatus(pool, { customer_email: buyerEmailRag });
             if (buyerOrdersRes.orders && buyerOrdersRes.orders.length > 0) {
               buyerOrderContext = buyerOrdersRes.orders.slice(0, 10).map((o, i) =>
-                `${i+1}. Order #${o.order_number||o.order_id} | Items: ${o.items_summary||'N/A'} | Status: ${o.status||'PENDING'} | Total: Rs ${Number(o.total_amount||0).toLocaleString()} | Date: ${o.order_date ? new Date(o.order_date).toLocaleDateString() : 'N/A'}`
+                `${i+1}. آرڈر #${o.order_number||o.order_id} | حیثيت: ${o.status||'PENDING'} | کل: Rs ${Number(o.total_amount||0).toLocaleString()}`
               ).join('\n');
             }
           }
         } catch (_) {}
 
-        // â”€â”€ SECURITY: Prompt injection guard embedded in system section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        const retrievalNote = retrievalMethod === 'vector'
-          ? 'Products below were retrieved by semantic similarity search â€” they are the closest matches to the customer\'s query.'
-          : 'Products below were retrieved by keyword/filter search from the catalog.';
-
         const ragSystemPrompt = [
-          'You are CIQ Personal Shopping Assistant - a friendly Pakistani retail store assistant.',
+          'آپ CIQ ذاتی شاپنگ اسسٹنٹ ہیں — ایک دوستانہ پاکستانی دکان کے AI نمائندے۔',
           '',
-          '## CRITICAL LANGUAGE RULE:',
-          'Write your ENTIRE response in ROMAN URDU ONLY (Urdu words using English/Latin letters, like Pakistani WhatsApp messages).',
-          'FORBIDDEN: Chinese characters, Arabic/Urdu script (like آپ کا), Hindi script - ALL FORBIDDEN.',
-          'ONLY use English alphabet. Numbers and product names stay in English.',
+          '## اہم ترین زبان کا قانون — صرف اردو رسم الخط (URDU SCRIPT ONLY):',
+          'اپنا پورا جواب صرف اور صرف سلیس اردو رسم الخط (اردو زبان) میں لکھیں۔',
+          'ممنوع (FORBIDDEN): انگریزی جملے، رومن اردو، چینی حروف، ہندی رسم الخط (دیوناگری) — یہ سب سخت ممنوع ہیں۔',
+          'پروڈکٹ کے نام، SKU، Order ID اور قیمت (PKR) انگریزی حروف/اعداد میں رکھے جا سکتے ہیں، لیکن تمام جملے اور تفصیلات 100% اردو رسم الخط میں ہونے چاہئیں۔',
           '',
-          'CORRECT Roman Urdu examples:',
-          '- Yeh rahe aapke liye best gaming products:',
-          '- Is budget mein yeh options available hain:',
-          '- Yeh product abhi hamare store mein available nahi hai.',
+          'صحیح اردو کی مثالیں:',
+          '- یہ رہے آپ کے لیے بہترین مصنوعات:',
+          '- اس بجٹ میں یہ آپشنز دستیاب ہیں:',
+          '- یہ مصنوع ابھی ہمارے اسٹور میں دستیاب نہیں ہے۔',
           '',
-          '## STRICT RULES:',
-          '1. ONLY recommend products from PRODUCT DATA below. Use exact product names from the data.',
-          '2. If product not in data: say "Yeh product abhi hamare store mein available nahi hai."',
-          '3. Use ONLY prices from PRODUCT DATA. Never invent prices.',
-          `4. ${retrievalNote}`,
+          '## قواعد:',
+          '1. صرف نیچے دی گئی PRODUCT DATA میں سے مصنوعات تجویز کریں۔',
+          '2. اگر مصنوع ڈیٹا میں نہیں ہے تو کہیں: "یہ مصنوع ابھی ہمارے اسٹور میں دستیاب نہیں ہے۔"',
+          '3. صرف ڈیٹا میں دی گئی قیمتیں بتائیں۔ اپنے پاس سے قیمت نہ بنائیں۔',
+          '4. اگر خریدار کا پیغام شاپنگ، مصنوعات، یا آرڈرز سے غیر متعلق ہو (مثلاً کھیل، گپ شپ، یا کوئی اور موضوع)، تو شائستگی سے وضاحت کریں کہ آپ صرف شاپنگ اسسٹنٹ ہیں اور صرف مصنوعات تلاش کرنے یا آرڈرز دیکھنے میں مدد کر سکتے ہیں۔ جھوٹا یا من گھڑت جواب ہرگز نہ دیں۔',
           '',
-          '## PRODUCT DATA (these are the ONLY products in the store):',
-          productContext || 'Koi matching product nahi mila.',
+          '## PRODUCT DATA (اسٹور کی تمام دستیاب مصنوعات):',
+          productContext || 'کوئی مناسب مصنوع نہیں ملی۔',
           '',
-          '## CONVERSATION HISTORY:',
-          conversationHistory || 'No previous messages.',
+          '## سابقہ گفتگو:',
+          conversationHistory || 'کوئی سابقہ پیغام نہیں۔',
           '',
-          buyerOrderContext ? ('## CUSTOMER ORDERS:\n' + buyerOrderContext + '\n') : '',
+          buyerOrderContext ? ('## خریدار کے آرڈرز:\n' + buyerOrderContext + '\n') : '',
           '',
-          '## CUSTOMER MESSAGE:',
+          '## خریدار کا پیغام:',
           message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500),
           '',
-          'REPLY IN ROMAN URDU ONLY (English alphabet only, NO Chinese, NO Arabic/Urdu script). Be friendly and concise.',
+          'صرف اور صرف سلیس اردو رسم الخط میں جواب دیں۔ جواب مختصر، واضح اور دوستانہ ہو۔',
         ].join('\n');
 
         // 5. Call local Ollama model with the RAG prompt (Remote PC -> Local Mac fallback)
         try {
           const endpoint = await getOllamaChatEndpoint();
           if (endpoint) {
-            const ollamaRagRes = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: endpoint.modelName,
-                messages: [
-                  { role: 'system', content: ragSystemPrompt },
-                  { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
-                ],
-                options: { temperature: 0.3 }
-              })
+            const ollamaRagRes = await fetchOllamaChat(endpoint, {
+              model: endpoint.modelName,
+              messages: [
+                { role: 'system', content: ragSystemPrompt },
+                { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
+              ],
+              options: { temperature: 0.15, top_p: 0.9, num_predict: 220 }
             });
               if (ollamaRagRes.ok) {
                 const ollamaData = await ollamaRagRes.json();
-                const ragText = ollamaData.choices?.[0]?.message?.content?.trim();
+                const ragText = ollamaData.choices?.[0]?.message?.content?.trim().replace(/[\t\r]+/g, ' ').replace(/ {2,}/g, ' ');
                 if (ragText) {
                   // Output validation â€” same injection guard
                   const looksInjected = /ignore|system prompt|instructions|i am now|you are now/i.test(ragText);
@@ -1457,15 +1547,28 @@ function registerCopilotRoutes(app, pool) {
                     return res.json({
                       success: true,
                       action_executed: 'getBuyerProductRecommendations',
-                      ai_message: md,
-                      products: getRelevantCards(ragProducts, ragText, 6, message)
+                      ai_message: 'معذرت، میں ابھی آپ کی درخواست پر عمل نہیں کر سکا۔ براہ کرم دوبارہ کوشش کریں۔',
+                      products: ragProducts.slice(0, 6)
                     });
                   }
+                  if (hasForeignScriptLeak(ragText)) {
+                    console.warn('[Buyer RAG] Foreign-script leak detected in model output, using deterministic fallback.');
+                    return res.json({
+                      success: true,
+                      action_executed: 'getBuyerProductRecommendations',
+                      ai_message: buildProductRecommendationMd(ragProducts.slice(0, 6)),
+                      products: ragProducts.slice(0, 6)
+                    });
+                  }
+                  // ragProducts is already scored/filtered for relevance to this query (see
+                  // getBuyerProductRecommendationsFromDb), so use it directly for cards instead
+                  // of requiring the model to reproduce exact English product names in its reply
+                  // (it often paraphrases/transliterates them, which silently dropped all cards).
                   return res.json({
                     success: true,
                     action_executed: 'getBuyerProductRecommendations',
                     ai_message: ragText,
-                    products: getRelevantCards(ragProducts, ragText, 6, message)
+                    products: ragProducts.slice(0, 6)
                   });
                 }
               } else {
@@ -1477,17 +1580,22 @@ function registerCopilotRoutes(app, pool) {
           console.error('[Buyer RAG] Ollama connection error:', ollamaErr.message);
         }
 
-        // Final fallback: return structured regex result using ragProducts for cards
+        // Final fallback: the AI model is unreachable — build a deterministic Urdu reply
+        // from the real product data instead of a bare apology, so the buyer still gets
+        // a useful answer.
+        const fallbackCards = ragProducts ? ragProducts.slice(0, 6) : [];
         return res.json({
           success: true,
           action_executed: 'getBuyerProductRecommendations',
-          ai_message: md,
-          products: getRelevantCards(ragProducts && ragProducts.length > 0 ? ragProducts : products, md, 6, message)
+          ai_message: buildProductRecommendationMd(fallbackCards),
+          products: fallbackCards
         });
       } catch (err) {
-        return res.json({ success: true, ai_message: `âŒ Error finding products: ${err.message}` });
+        return res.json({ success: true, ai_message: `❌ مصنوعات تلاش کرنے میں خرابی: ${err.message}` });
       }
     }
+
+    const effectiveSystemPrompt = role === 'DISTRIBUTOR' ? DISTRIBUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     // 2. Allowed business keywords (Static list + Platform tabs + Synonyms)
     const STATIC_KEYWORDS = [
@@ -1516,7 +1624,7 @@ function registerCopilotRoutes(app, pool) {
     }
 
     const ALLOWED_KEYWORDS = [...STATIC_KEYWORDS, ...dbKeywords];
-    const hasKeyword = ALLOWED_KEYWORDS.some(kw => lowerMsg.includes(kw));
+    const hasKeyword = ALLOWED_KEYWORDS.some(kw => message.toLowerCase().includes(kw));
 
     if (!hasKeyword) {
       return res.json({
@@ -1546,17 +1654,11 @@ function registerCopilotRoutes(app, pool) {
           }
         ];
 
-        const response = await fetch(`${endpoint.baseUrl}/v1/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: modelName,
-            messages: messages,
-            tools: getAdminTools(false),
-            tool_choice: 'auto'
-          })
+        const response = await fetchOllamaChat(endpoint, {
+          model: modelName,
+          messages: messages,
+          tools: getAdminTools(false),
+          tool_choice: 'auto'
         });
 
         if (response.ok) {
@@ -1794,8 +1896,19 @@ function registerCopilotRoutes(app, pool) {
     return handleLocalFallback(pool, message, attached_image, res, role);
   };
 
-  app.post('/api/copilot/chat', (req, res) => handleChat(req, res, 'ADMIN'));
-  app.post('/api/copilot/distributor/chat', (req, res) => handleChat(req, res, 'DISTRIBUTOR'));
+  // Any uncaught error inside handleChat would otherwise become an unhandled promise
+  // rejection and crash the whole Node process -- taking down chat for every portal at once.
+  const safeHandleChat = (defaultRole) => (req, res) => {
+    handleChat(req, res, defaultRole).catch(err => {
+      console.error(`[Copilot Chat] Unhandled error (${defaultRole}):`, err);
+      if (!res.headersSent) {
+        res.status(200).json({ success: true, ai_message: `❌ غیر متوقع خرابی پیش آگئی۔ براہ کرم دوبارہ کوشش کریں۔` });
+      }
+    });
+  };
+
+  app.post('/api/copilot/chat', safeHandleChat('ADMIN'));
+  app.post('/api/copilot/distributor/chat', safeHandleChat('DISTRIBUTOR'));
   // Urdu & Multilingual TTS — ElevenLabs (when ELEVENLABS_API_KEY is present) or Edge Neural TTS
   app.post('/api/copilot/tts', async (req, res) => {
     const { text, voice = 'ur-PK-UzmaNeural' } = req.body || {};
@@ -1935,7 +2048,58 @@ function registerCopilotRoutes(app, pool) {
     }
   });
 
-  app.post('/api/copilot/buyer/chat', (req, res) => handleChat(req, res, 'BUYER'));
+  // ─── Speech-to-Text (buyer mic input) — proxies to local faster-whisper microservice ──
+  const STT_SERVICE_URL = process.env.STT_SERVICE_URL || 'http://localhost:8021/api/stt';
+
+  app.post('/api/copilot/stt', async (req, res) => {
+    const { audio, language } = req.body || {};
+    if (!audio || typeof audio !== 'string') {
+      return res.status(400).json({ success: false, error: 'audio (base64 data URL) is required' });
+    }
+
+    try {
+      // Data URLs look like "data:<mime>[;params...];base64,<data>" -- the mime itself can
+      // carry parameters (Chrome reports MediaRecorder's mimeType as "audio/webm;codecs=opus",
+      // so the header becomes "data:audio/webm;codecs=opus;base64"). Split on the first comma
+      // rather than assuming ";base64," follows the mime type directly, or codec params here
+      // cause the whole data URL (including the "data:...;base64," prefix) to be mis-decoded
+      // as if it were the audio payload.
+      const commaIdx = audio.indexOf(',');
+      const header = commaIdx >= 0 ? audio.slice(0, commaIdx) : '';
+      const mimeMatch = header.match(/^data:([^;,]+)/);
+      const mimeType = mimeMatch ? mimeMatch[1] : 'audio/webm';
+      const base64Data = commaIdx >= 0 && /;base64$/.test(header) ? audio.slice(commaIdx + 1) : audio;
+      const audioBuffer = Buffer.from(base64Data, 'base64');
+      if (audioBuffer.length === 0) {
+        return res.status(400).json({ success: false, error: 'empty audio payload' });
+      }
+
+      const ext = mimeType.includes('wav') ? 'wav' : mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') || mimeType.includes('m4a') ? 'm4a' : 'webm';
+      const form = new FormData();
+      form.append('audio', new Blob([audioBuffer], { type: mimeType }), `voice.${ext}`);
+      if (language) form.append('language', language);
+
+      const sttResp = await fetch(STT_SERVICE_URL, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(30000)
+      });
+
+      if (!sttResp.ok) {
+        const errText = await sttResp.text();
+        console.error('[STT] service error:', sttResp.status, errText);
+        return res.status(502).json({ success: false, error: 'Speech recognition service unavailable.' });
+      }
+
+      const data = await sttResp.json();
+      return res.json({ success: true, text: (data.text || '').trim(), language: data.language });
+    } catch (err) {
+      console.error('[STT] proxy error:', err.message);
+      return res.status(502).json({ success: false, error: 'Speech recognition service unavailable.' });
+    }
+  });
+
+  app.post('/api/copilot/buyer/chat', safeHandleChat('BUYER'));
 }
 
 module.exports = { registerCopilotRoutes };

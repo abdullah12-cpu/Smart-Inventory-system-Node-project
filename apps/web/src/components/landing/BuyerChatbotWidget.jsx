@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, MessageSquare, X, Send, ShoppingBag, Check, Camera, Trash2, Package, Truck, Clock, CheckCircle2, XCircle, Volume2, Square } from "lucide-react";
+import { Sparkles, MessageSquare, X, Send, ShoppingBag, Check, Camera, Trash2, Package, Truck, Clock, CheckCircle2, XCircle, Volume2, Square, Mic } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/data";
 
@@ -197,13 +197,17 @@ function cleanForSpeech(raw) {
     .replace(/\s{2,}/g, ' ')
     .trim();
 
-  // Cap speech to first 2 key sentences (~180 chars) for ultra-fast 3-4s latency
-  const sentences = text.split(/(?<=[۔!؟?.])/);
-  if (sentences.length > 2) {
-    text = sentences.slice(0, 2).join(' ').trim();
-  }
-  if (text.length > 200) {
-    text = text.substring(0, 200).trim();
+  // Speak the full answer (not just a fragment) so it stays meaningful, but cap very long
+  // replies to a sane length for latency -- cutting at a sentence boundary, never mid-thought.
+  const MAX_SPEECH_CHARS = 500;
+  if (text.length > MAX_SPEECH_CHARS) {
+    const sentences = text.split(/(?<=[۔!؟?.])\s*/);
+    let capped = '';
+    for (const s of sentences) {
+      if ((capped + s).length > MAX_SPEECH_CHARS) break;
+      capped += (capped ? ' ' : '') + s;
+    }
+    text = capped.trim() || text.substring(0, MAX_SPEECH_CHARS).trim();
   }
   return text;
 }
@@ -289,10 +293,16 @@ export default function BuyerChatbotWidget() {
   ]);
   const [addedItemIds, setAddedItemIds] = useState([]);
   const [pendingImage, setPendingImage] = useState(null); // { dataUrl, fileName }
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const { addToCart, currentUser } = useStore();
 
   const chatEndRef = useRef(null);
   const imageInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const vadAudioCtxRef = useRef(null);
+  const vadRafRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -310,6 +320,135 @@ export default function BuyerChatbotWidget() {
     };
     reader.readAsDataURL(file);
     e.target.value = "";
+  };
+
+  const teardownVAD = () => {
+    if (vadRafRef.current) {
+      cancelAnimationFrame(vadRafRef.current);
+      vadRafRef.current = null;
+    }
+    if (vadAudioCtxRef.current) {
+      vadAudioCtxRef.current.close().catch(() => {});
+      vadAudioCtxRef.current = null;
+    }
+  };
+
+  // Voice Activity Detection: watches mic volume and auto-stops recording the moment the
+  // buyer goes quiet, so there's no manual "stop" tap and no dead air added to the round trip.
+  const startVAD = (stream) => {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    vadAudioCtxRef.current = audioCtx;
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    const SILENCE_RMS_THRESHOLD = 8;    // below this = silence (0-128 scale)
+    const SILENCE_HANG_MS = 900;        // pause length that confirms "done speaking"
+    const MAX_RECORDING_MS = 15000;     // hard safety cap
+    const startedAt = Date.now();
+    let hasSpoken = false;
+    let silenceSince = null;
+
+    const tick = () => {
+      if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') return;
+
+      analyser.getByteTimeDomainData(dataArray);
+      let sumSquares = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] - 128;
+        sumSquares += v * v;
+      }
+      const rms = Math.sqrt(sumSquares / dataArray.length);
+
+      if (rms > SILENCE_RMS_THRESHOLD) {
+        hasSpoken = true;
+        silenceSince = null;
+      } else if (hasSpoken) {
+        if (silenceSince === null) silenceSince = Date.now();
+        else if (Date.now() - silenceSince > SILENCE_HANG_MS) {
+          stopRecording();
+          return;
+        }
+      }
+
+      if (Date.now() - startedAt > MAX_RECORDING_MS) {
+        stopRecording();
+        return;
+      }
+
+      vadRafRef.current = requestAnimationFrame(tick);
+    };
+    tick();
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        teardownVAD();
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size < 1500) { setIsRecording(false); return; } // too short / no speech captured
+
+        setIsRecording(false);
+        setIsTranscribing(true);
+        try {
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+
+          const resp = await fetch('/api/copilot/stt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: dataUrl, language: 'ur' }),
+            signal: AbortSignal.timeout(30000)
+          });
+          const data = await resp.json();
+          if (data.success && data.text) {
+            handleSendMessage(data.text);
+          } else {
+            setMessages(prev => [...prev, { sender: "ai", text: "معذرت، آواز سمجھ نہیں آئی۔ براہ کرم دوبارہ بولیں۔" }]);
+          }
+        } catch (err) {
+          setMessages(prev => [...prev, { sender: "ai", text: "معذرت، آواز کی پہچان میں خرابی ہوئی۔" }]);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+      startVAD(stream);
+    } catch (err) {
+      setMessages(prev => [...prev, { sender: "ai", text: "مائیک تک رسائی نہیں مل سکی۔ براہ کرم مائیک کی اجازت دیں۔" }]);
+    }
+  };
+
+  const stopRecording = () => {
+    teardownVAD();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const handleMicClick = () => {
+    if (isRecording) stopRecording();
+    else startRecording();
   };
 
   const handleSendMessage = async (customText) => {
@@ -576,20 +715,39 @@ export default function BuyerChatbotWidget() {
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
                   title="Upload product photo for visual search"
-                  className="p-2.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-500 rounded-xl transition-all cursor-pointer border-0 shrink-0"
+                  disabled={isRecording || isTranscribing}
+                  className="p-2.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-500 rounded-xl transition-all cursor-pointer border-0 shrink-0 disabled:opacity-40"
                 >
                   <Camera className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMicClick}
+                  disabled={isTranscribing || loading}
+                  title={isRecording ? "Stop recording" : "Speak your request"}
+                  className={`p-2.5 rounded-xl transition-all cursor-pointer border-0 shrink-0 disabled:opacity-40 ${
+                    isRecording
+                      ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                      : "bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-500"
+                  }`}
+                >
+                  <Mic className="w-4 h-4" />
                 </button>
                 <input
                   type="text"
                   value={inputMsg}
                   onChange={(e) => setInputMsg(e.target.value)}
-                  placeholder={pendingImage ? "Add a budget or details (optional)..." : "Track order, search products, compare specs..."}
-                  className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-600 bg-slate-50/50"
+                  placeholder={
+                    isRecording ? "سن رہا ہوں... بولیں" :
+                    isTranscribing ? "آواز سمجھی جا رہی ہے..." :
+                    pendingImage ? "Add a budget or details (optional)..." : "Track order, search products, compare specs..."
+                  }
+                  disabled={isRecording || isTranscribing}
+                  className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-600 bg-slate-50/50 disabled:opacity-60"
                 />
                 <button
                   type="submit"
-                  disabled={(!inputMsg.trim() && !pendingImage) || loading}
+                  disabled={(!inputMsg.trim() && !pendingImage) || loading || isRecording || isTranscribing}
                   className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer border-0 shrink-0"
                 >
                   <Send className="w-4 h-4" />
