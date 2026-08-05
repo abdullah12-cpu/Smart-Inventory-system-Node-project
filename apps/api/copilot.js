@@ -3543,7 +3543,7 @@ function registerCopilotRoutes(app, pool) {
             'x-api-key': ttsApiKey
           },
           body: JSON.stringify({ text: spoken, voice: targetVoice }),
-          signal: AbortSignal.timeout(35000)
+          signal: AbortSignal.timeout(120000)
         });
 
         if (gpuResp.ok) {

@@ -221,7 +221,7 @@ function TTSPlayButton({ text, autoPlay = false }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: fullText, voice: 'ur-PK-UzmaNeural' }),
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(120000)
       });
 
       if (!resp.ok || resp.status === 204 || stopRef.current) { setIsPlaying(false); return; }
