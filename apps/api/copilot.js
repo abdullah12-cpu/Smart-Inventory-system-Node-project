@@ -41,7 +41,15 @@ async function getOllamaChatEndpoint() {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(`${remoteUrl}/api/tags`, { signal: controller.signal });
+      const apiKey = process.env.TTS_API_KEY || 'az5nD6ceT-c4lslqzadpNA-b';
+      let tagUrl = `${remoteUrl}/api/tags`;
+      if (apiKey && !tagUrl.includes('key=')) {
+        tagUrl += `?key=${encodeURIComponent(apiKey.trim())}`;
+      }
+      const res = await fetch(tagUrl, {
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+        signal: controller.signal
+      });
       clearTimeout(timeoutId);
 
       if (res.ok) {
