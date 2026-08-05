@@ -442,14 +442,28 @@ async function createDistributorDirectOrderInDb(pool, customerEmail, customerNam
     throw new Error(`Minimum Wholesale Order Quantity (MOQ) for ${product.product_name} is ${minQty} units.`);
   }
 
-  // Stock deduction
+  // Reserve stock across all warehouses (not just the first) -- checking only inventory[0]
+  // let orders through even when that specific warehouse was low but others weren't empty,
+  // while still under-detecting the reverse case. Reserving (rather than directly deducting
+  // `quantity`) also keeps this consistent with the ship-time physical deduction in
+  // PUT /api/orders/:order_id/status, so stock isn't deducted twice when this order ships.
   let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : product.inventory;
   if (Array.isArray(inventory) && inventory.length > 0) {
-    if (inventory[0].available_quantity < qty) {
-      throw new Error(`Insufficient stock for ${product.product_name}. Available: ${inventory[0].available_quantity} units.`);
+    const totalAvailable = inventory.reduce((sum, inv) => sum + (inv.available_quantity || 0), 0);
+    if (totalAvailable < qty) {
+      throw new Error(`Insufficient stock for ${product.product_name}. Available: ${totalAvailable} units.`);
     }
-    inventory[0].quantity = Math.max(0, inventory[0].quantity - qty);
-    inventory[0].available_quantity = Math.max(0, inventory[0].available_quantity - qty);
+
+    let remaining = qty;
+    inventory = inventory.map(inv => {
+      if (remaining <= 0) return inv;
+      const avail = inv.available_quantity || 0;
+      const toReserve = Math.min(avail, remaining);
+      remaining -= toReserve;
+      const newReserved = (inv.reserved_quantity || 0) + toReserve;
+      const newAvail = Math.max(0, inv.quantity - newReserved);
+      return { ...inv, reserved_quantity: newReserved, available_quantity: newAvail };
+    });
 
     await pool.query(
       'UPDATE products SET inventory = $1 WHERE product_id = $2',

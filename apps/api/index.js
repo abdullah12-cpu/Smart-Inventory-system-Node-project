@@ -881,9 +881,11 @@ app.post('/api/orders', async (req, res) => {
   }
 
   try {
-    // Stock validation for B2B orders before creating the order
+    // Stock validation before creating the order -- applies to every order type (B2C
+    // buyer checkout included). Previously this only ran for B2B/DISTRIBUTOR, which let
+    // buyers order more units than were actually in stock.
     const orderItems = typeof ord.items === 'string' ? JSON.parse(ord.items) : (ord.items || []);
-    if ((ord.order_type === 'B2B' || ord.order_type === 'DISTRIBUTOR') && orderItems.length > 0) {
+    if (orderItems.length > 0) {
       for (const item of orderItems) {
         const qty = parseInt(item.qty || item.quantity || 0);
         if (qty <= 0) continue;
@@ -936,8 +938,11 @@ app.post('/api/orders', async (req, res) => {
     // Buyer orders (B2C) remain exclusively as orders and do not create quotations
     const row = result.rows[0];
 
-    // Reserve stock for B2B orders on placement
-    if ((ord.order_type === 'B2B' || ord.order_type === 'DISTRIBUTOR') && orderItems.length > 0) {
+    // Reserve stock on placement -- for every order type. Reserving (rather than physically
+    // decrementing `quantity`) immediately drops `available_quantity`, which is what the
+    // buyer/admin stock views read, while the physical count is only decremented at actual
+    // shipment (see PUT /api/orders/:order_id/status below).
+    if (orderItems.length > 0) {
       for (const item of orderItems) {
         const qty = parseInt(item.qty || item.quantity || 0);
         if (qty <= 0) continue;

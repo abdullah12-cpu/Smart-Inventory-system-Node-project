@@ -263,12 +263,16 @@ async function getCategoryProductsFromDb(pool, category) {
 }
 
 async function getLowStockProductsFromDb(pool) {
-  const getRes = await pool.query(
-    `SELECT * FROM products 
-     WHERE (inventory->0->>'available_quantity')::int <= low_stock_threshold
-     LIMIT 20`
-  );
-  return getRes.rows;
+  // Sum available_quantity across ALL warehouses, not just inventory[0] -- a product can be
+  // low/out of stock in one depot while still healthy overall in another, and the previous
+  // inventory[0]-only check both missed real low-stock cases and could flag false ones.
+  const getRes = await pool.query('SELECT * FROM products');
+  const lowStock = getRes.rows.filter(r => {
+    const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : (r.inventory || []);
+    const totalAvailable = inv.reduce((sum, i) => sum + (i.available_quantity || 0), 0);
+    return totalAvailable <= (r.low_stock_threshold || 0);
+  }).slice(0, 20);
+  return lowStock;
 }
 
 async function deleteProductFromDb(pool, identifier) {
@@ -450,11 +454,43 @@ async function getOrdersByAmountFilterFromDb(pool, operator, amount, orderType =
 }
 
 async function updateOrderStatusInDb(pool, identifier, newStatus) {
+  const status = newStatus.toUpperCase();
   const res = await pool.query(
     `UPDATE orders SET status = $1 WHERE order_id ILIKE $2 OR order_number ILIKE $2 RETURNING *`,
-    [newStatus.toUpperCase(), `%${identifier}%`]
+    [status, `%${identifier}%`]
   );
   if (res.rows.length === 0) throw new Error(`Order not found: "${identifier}"`);
+
+  // Release reserved stock back to available when an order is rejected/cancelled via the
+  // chatbot -- mirrors the same reversal PUT /api/orders/:order_id/status performs, so stock
+  // stays correct regardless of which surface (admin UI or AI copilot) changed the status.
+  if (status === 'REJECTED' || status === 'CANCELLED') {
+    const order = res.rows[0];
+    const orderItems = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+    for (const item of orderItems) {
+      const qty = parseInt(item.qty || item.quantity || 0);
+      if (qty <= 0) continue;
+      const prodRes = await pool.query(
+        'SELECT * FROM products WHERE product_id = $1 OR sku = $2 OR product_name ILIKE $3 LIMIT 1',
+        [item.product_id || '', item.sku || '', `%${item.name || item.product_name || ''}%`]
+      );
+      if (prodRes.rows.length === 0) continue;
+      const product = prodRes.rows[0];
+      let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : (product.inventory || []);
+      let remaining = qty;
+      inventory = inventory.map(inv => {
+        if (remaining <= 0) return inv;
+        const reserved = inv.reserved_quantity || 0;
+        const toRelease = Math.min(reserved, remaining);
+        remaining -= toRelease;
+        const newReserved = reserved - toRelease;
+        const newAvail = Math.max(0, inv.quantity - newReserved);
+        return { ...inv, reserved_quantity: newReserved, available_quantity: newAvail };
+      });
+      await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inventory), product.product_id]);
+    }
+  }
+
   return formatOrder(res.rows[0]);
 }
 

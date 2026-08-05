@@ -772,9 +772,11 @@ export function StoreProvider({ children }) {
   );
   const updateCartQty = useCallback((productId, dir) => {
     setCart((prev) => {
-      const updated = prev.map(
-        (item) => item.product.product_id === productId ? { ...item, qty: item.qty + dir } : item
-      );
+      const updated = prev.map((item) => {
+        if (item.product.product_id !== productId) return item;
+        const totalAvail = item.product.inventory.reduce((sum, i) => sum + i.available_quantity, 0);
+        return { ...item, qty: Math.min(item.qty + dir, totalAvail) };
+      });
       return updated.filter((item) => item.qty > 0);
     });
   }, []);
