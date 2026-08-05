@@ -53,17 +53,23 @@ async function getDistributorQuotationsFromDb(pool, customerEmail) {
   return res.rows;
 }
 
-async function getDistributorQuotationsByStatusFromDb(pool, status) {
+async function getDistributorQuotationsByStatusFromDb(pool, status, customerEmail = null) {
   const normStatus = status.toUpperCase().replace(/\s+/g, '_');
+
   if (normStatus === 'DRAFT' || normStatus === 'UNDER_REVIEW' || normStatus === 'PENDING') {
+    const emailClause = customerEmail ? ' AND customer_email ILIKE $1' : '';
     const res = await pool.query(
-      "SELECT * FROM quotations WHERE UPPER(status) IN ('DRAFT', 'UNDER_REVIEW', 'PENDING') ORDER BY created_at DESC LIMIT 30"
+      `SELECT * FROM quotations WHERE UPPER(status) IN ('DRAFT', 'UNDER_REVIEW', 'PENDING')${emailClause} ORDER BY created_at DESC LIMIT 30`,
+      customerEmail ? [`%${customerEmail}%`] : []
     );
     return res.rows;
   }
+
+  const emailClause = customerEmail ? ' AND customer_email ILIKE $2' : '';
+  const params = customerEmail ? [normStatus, `%${customerEmail}%`] : [normStatus];
   const res = await pool.query(
-    'SELECT * FROM quotations WHERE UPPER(status) = $1 ORDER BY created_at DESC LIMIT 30',
-    [normStatus]
+    `SELECT * FROM quotations WHERE UPPER(status) = $1${emailClause} ORDER BY created_at DESC LIMIT 30`,
+    params
   );
   return res.rows;
 }
@@ -158,12 +164,14 @@ async function getDistributorQuotationsByProductFromDb(pool, productName) {
   return res.rows;
 }
 
-async function getExpiringDistributorQuotationsFromDb(pool, days = 7) {
+async function getExpiringDistributorQuotationsFromDb(pool, days = 7, customerEmail = null) {
+  const emailClause = customerEmail ? ' AND customer_email ILIKE $1' : '';
   const res = await pool.query(
-    `SELECT * FROM quotations 
-     WHERE valid_until IS NOT NULL 
-       AND CAST(valid_until AS DATE) <= CURRENT_DATE + INTERVAL '${parseInt(days)} days'
-     ORDER BY valid_until ASC LIMIT 20`
+    `SELECT * FROM quotations
+     WHERE valid_until IS NOT NULL
+       AND CAST(valid_until AS DATE) <= CURRENT_DATE + INTERVAL '${parseInt(days)} days'${emailClause}
+     ORDER BY valid_until ASC LIMIT 20`,
+    customerEmail ? [`%${customerEmail}%`] : []
   );
   return res.rows;
 }
@@ -523,6 +531,30 @@ async function createDistributorDirectOrderInDb(pool, customerEmail, customerNam
   };
 }
 
+async function getDistributorInvoicesFromDb(pool, customerEmail, statusFilter) {
+  let query = 'SELECT * FROM invoices';
+  const conditions = [];
+  const params = [];
+
+  if (customerEmail) {
+    conditions.push(`customer_email ILIKE $${params.length + 1}`);
+    params.push(`%${customerEmail}%`);
+  }
+  if (statusFilter === 'unpaid') {
+    conditions.push(`UPPER(status) != 'PAID'`);
+  } else if (statusFilter === 'paid') {
+    conditions.push(`UPPER(status) = 'PAID'`);
+  } else if (statusFilter === 'overdue') {
+    conditions.push(`UPPER(status) != 'PAID' AND due_date IS NOT NULL AND due_date::date < CURRENT_DATE`);
+  }
+
+  if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');
+  query += ' ORDER BY id DESC LIMIT 50';
+
+  const res = await pool.query(query, params);
+  return res.rows;
+}
+
 async function payDistributorInvoiceInDb(pool, invoiceIdOrNumber, paymentAmount, customerEmail) {
   let invQuery = 'SELECT * FROM invoices WHERE invoice_id ILIKE $1 OR invoice_number ILIKE $1';
   let invRes = await pool.query(invQuery, [`%${invoiceIdOrNumber || ''}%`]);
@@ -567,6 +599,7 @@ module.exports = {
   getDistributorLedgerStatusFromDb,
   createDistributorQuotationInDb,
   createDistributorDirectOrderInDb,
+  getDistributorInvoicesFromDb,
   payDistributorInvoiceInDb,
   counterOfferQuotationInDb,
   buildQuotationDescription

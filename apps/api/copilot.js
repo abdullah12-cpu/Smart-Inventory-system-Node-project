@@ -21,6 +21,7 @@ const {
   getDistributorLedgerStatusFromDb,
   createDistributorQuotationInDb,
   createDistributorDirectOrderInDb,
+  getDistributorInvoicesFromDb,
   payDistributorInvoiceInDb,
   counterOfferQuotationInDb,
   buildQuotationDescription
@@ -1019,6 +1020,29 @@ function formatQuotationsTable(rows, title) {
     rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'حالیہ'} | ${r.valid_until || '14 دن'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join('\n');
 }
 
+function formatInvoicesTable(rows, title) {
+  if (!rows || rows.length === 0) return `ℹ️ کوئی انوائس نہیں ملی۔`;
+  return `### ${title}\n\n| انوائس نمبر | کل رقم | ادا شدہ | باقی رقم | حیثیت | آخری تاریخ |\n|---|---|---|---|---|---|\n` +
+    rows.map(r => {
+      const total = parseFloat(r.total_amount || 0);
+      const paid = parseFloat(r.amount_paid || 0);
+      const remaining = Math.max(0, total - paid);
+      return `| **${r.invoice_number}** | Rs ${total.toLocaleString()} | Rs ${paid.toLocaleString()} | Rs ${remaining.toLocaleString()} | \`${r.status || 'UNPAID'}\` | ${r.due_date || 'N/A'} |`;
+    }).join('\n');
+}
+
+function formatLedgerMd(ledger) {
+  return [
+    `### 💳 مالی لیجر اور کریڈٹ کی صورتحال`,
+    ``,
+    `- **کریڈٹ لیمٹ**: Rs ${Number(ledger.credit_limit_pkr).toLocaleString()}`,
+    `- **استعمال شدہ کریڈٹ**: Rs ${Number(ledger.used_credit_pkr).toLocaleString()}`,
+    `- **دستیاب کریڈٹ**: **Rs ${Number(ledger.available_credit_pkr).toLocaleString()}**`,
+    `- **زیر التواء انوائسز**: ${ledger.outstanding_invoices_count ?? 0}`,
+    `- **ادائیگی کی شرائط**: ${ledger.payment_terms || 'NET-30'}`,
+  ].join('\n');
+}
+
 async function handleManageOrders(pool, args, message) {
   let action = args.action_type;
   let identifier = args.identifier || '';
@@ -1363,22 +1387,118 @@ function registerCopilotRoutes(app, pool) {
 
     if (role === 'DISTRIBUTOR') {
       try {
-        const userEmail = req.body.user_email || 'partner@commerceiq.com';
-        
-        const isOrderTrack = /\b(where is my order|track|order\s+status)\b/i.test(message);
-        if (isOrderTrack && !attached_image) {
-          const trackResult = await trackBuyerOrder(pool, { order_id_query: message.match(/ORD[-_]?\d+/i)?.[0] || '' });
+        // Only trust an explicit, real distributor email -- never fall back to the shared
+        // demo account here, or every partner's chat would silently read Asim Distribution's
+        // orders/quotations/invoices instead of their own.
+        const userEmail = req.body.user_email || null;
+        const lowerMsg = message.toLowerCase();
+
+        // ── Fast, deterministic intent routing ──────────────────────────────────────
+        // Mirrors the buyer copilot's approach: each category below is answered directly
+        // from the DB, scoped to this distributor's own email, so it's instant, always
+        // numerically correct, and never leaks another partner's data or the buyer's context.
+
+        // 1) Track a specific order by number
+        const orderNumMatch = !attached_image && message.match(/\bORD[-_][\w-]+/i);
+        if (orderNumMatch) {
+          const trackResult = await trackBuyerOrder(pool, { order_id_query: orderNumMatch[0], customer_email: userEmail });
           return res.json({ success: true, action_executed: 'trackBuyerOrder', ai_message: trackResult.ai_message, orders: trackResult.orders });
         }
 
+        const ORDER_STATUS_PATTERNS = {
+          PENDING:    /\bpending|awaiting\b/i,
+          PROCESSING: /\bprocessing\b/i,
+          CONFIRMED:  /\bconfirmed\b/i,
+          SHIPPED:    /\bshipped|shipping|dispatch(ed)?\b/i,
+          DELIVERED:  /\bdelivered\b/i,
+          CANCELLED:  /\bcancell?ed\b/i,
+          REJECTED:   /\brejected|declined\b/i,
+          RETURNED:   /\breturned\b/i,
+        };
+        const extractOrderStatus = (msg) => {
+          for (const [status, re] of Object.entries(ORDER_STATUS_PATTERNS)) {
+            if (re.test(msg)) return status;
+          }
+          return null;
+        };
+
+        // 2) Invoices -- unpaid / paid / overdue / all
+        if (!attached_image && /\b(invoice|invoices|bill|billing|receipt)\b/i.test(lowerMsg)) {
+          let statusFilter = null;
+          if (/\b(unpaid|outstanding|due|pending)\b/i.test(lowerMsg)) statusFilter = 'unpaid';
+          else if (/\boverdue|late\b/i.test(lowerMsg)) statusFilter = 'overdue';
+          else if (/\bpaid\b/i.test(lowerMsg)) statusFilter = 'paid';
+
+          const rows = await getDistributorInvoicesFromDb(pool, userEmail, statusFilter);
+          const title = statusFilter === 'unpaid' ? '💳 غیر ادا شدہ انوائسز'
+            : statusFilter === 'overdue' ? '⚠️ زائد المیعاد انوائسز'
+            : statusFilter === 'paid' ? '✅ ادا شدہ انوائسز'
+            : '📄 آپ کی تمام انوائسز';
+          return res.json({ success: true, action_executed: 'getDistributorInvoices', ai_message: formatInvoicesTable(rows, title) });
+        }
+
+        // 3) Quotations / negotiations -- active / rejected / accepted / expiring / all
+        if (!attached_image && /\b(quotation|quote|negotiat|bid|counter[- ]?offer)/i.test(lowerMsg)) {
+          let rows, title;
+          if (/\bexpir/i.test(lowerMsg)) {
+            rows = await getExpiringDistributorQuotationsFromDb(pool, 7, userEmail);
+            title = '⏳ جلد ختم ہونے والی کوٹیشنز';
+          } else if (/\breject|declin/i.test(lowerMsg)) {
+            rows = await getDistributorQuotationsByStatusFromDb(pool, 'REJECTED', userEmail);
+            title = '❌ مسترد شدہ کوٹیشنز';
+          } else if (/\baccept|approv|won|confirm/i.test(lowerMsg)) {
+            rows = await getDistributorQuotationsByStatusFromDb(pool, 'APPROVED', userEmail);
+            title = '✅ منظور شدہ کوٹیشنز';
+          } else if (/\bactive|pending|negotiat|open|awaiting/i.test(lowerMsg)) {
+            rows = await getDistributorQuotationsByStatusFromDb(pool, 'PENDING', userEmail);
+            title = '📋 فعال کوٹیشنز (زیر گفتگو)';
+          } else {
+            rows = await getDistributorQuotationsFromDb(pool, userEmail);
+            title = '📋 آپ کی تمام کوٹیشنز';
+          }
+          return res.json({ success: true, action_executed: 'manageDistributorQuotations', ai_message: formatQuotationsTable(rows, title) });
+        }
+
+        // 4) Credit / ledger status
+        if (!attached_image && /\bcredit|ledger|financial account\b/i.test(lowerMsg)) {
+          const ledger = await getDistributorLedgerStatusFromDb(pool, userEmail);
+          return res.json({ success: true, action_executed: 'getDistributorLedgerStatus', ai_message: formatLedgerMd(ledger) });
+        }
+
+        // 5) Generic order listing (no specific order number) -- all / by status
+        if (!attached_image && /\border(s)?\b/i.test(lowerMsg)) {
+          const statusFilter = extractOrderStatus(lowerMsg);
+          let rows = await getDistributorOrdersFromDb(pool, userEmail);
+          if (statusFilter) rows = rows.filter(r => (r.status || '').toUpperCase() === statusFilter);
+          const title = statusFilter ? `📦 ${statusFilter} آرڈرز` : '📦 آپ کے تمام آرڈرز';
+          return res.json({ success: true, action_executed: 'getDistributorOrders', ai_message: formatOrdersTable(rows, title), orders: rows });
+        }
+
+        // 6) Otherwise: open-ended wholesale product / catalog question -- RAG over real
+        // catalog data via the LLM, with the same reliability hardening as the buyer copilot.
         const wholesaleProducts = await vectorSearchDistributorProducts(pool, message);
-        const productContext = wholesaleProducts.map((p, i) => `${i + 1}. "${p.product_name}" (SKU: ${p.sku}) | قیمت: Rs ${p.wholesale_price}`).join('\n');
+        const productContext = wholesaleProducts.slice(0, 15).map((p, i) =>
+          `${i + 1}. "${p.product_name}" | برانڈ: ${p.brand || 'N/A'} | کیٹیگری: ${p.category || 'عام'} | تھوک قیمت: Rs ${Number(p.wholesale_price).toLocaleString()} | کم از کم آرڈر مقدار (MOQ): ${p.min_wholesale_qty} | زیادہ سے زیادہ رعایت: ${p.max_discount}% | اسٹاک: ${p.available_stock > 0 ? `دستیاب (${p.available_stock})` : 'اسٹاک ختم'}`
+        ).join('\n');
 
         const distributorRagPrompt = [
-          'آپ CIQ ڈسٹری بیوٹر کو پائلٹ ہیں (Urdu Script only).',
-          'ڈیٹا:', productContext,
-          'سوال:', message,
-          'جواب صرف سلیس اردو رسم الخط میں دیں۔'
+          'آپ CIQ ڈسٹری بیوٹر کوپائلٹ ہیں — ایک ذہین B2B ھول سیل شراکت مشیر۔',
+          '',
+          '## زبان — صرف اردو رسم الخط:',
+          'اپنا پورا جواب صرف سلیس اردو رسم الخط میں لکھیں۔ رومن اردو یا کوئی اور رسم الخط استعمال نہ کریں۔',
+          'پروڈکٹ ناموں، SKU، اور قیمتوں (PKR) کو انگریزی حروف/اعداد میں رکھا جا سکتا ہے۔',
+          '',
+          '## قواعد:',
+          '1. صرف نیچے دی گئی WHOLESALE DATA میں سے مصنوعات تجویز کریں — اپنے پاس سے قیمت یا اسٹاک نہ بنائیں۔',
+          '2. اگر مصنوع ڈیٹا میں نہیں ہے تو کہیں: "یہ مصنوع ابھی ھول سیل کیٹلاگ میں دستیاب نہیں ہے۔"',
+          '3. اگر خریدار کا سوال شاپنگ/ھول سیل کاروبار سے غیر متعلق ہو، تو شائستگی سے وضاحت کریں کہ آپ صرف B2B ڈسٹری بیوٹر اسسٹنٹ ہیں۔',
+          '4. جواب مختصر، درست اور کاروباری ہو۔',
+          '',
+          '## WHOLESALE DATA:',
+          productContext || 'کوئی مناسب مصنوع نہیں ملی۔',
+          '',
+          '## سوال:',
+          message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500),
         ].join('\n');
 
         const endpoint = await getOllamaChatEndpoint();
@@ -1392,7 +1512,7 @@ function registerCopilotRoutes(app, pool) {
             const data = await resOllama.json();
             const content = data.choices?.[0]?.message?.content?.trim().replace(/[\t\r]+/g, ' ').replace(/ {2,}/g, ' ');
             if (content && !hasForeignScriptLeak(content)) {
-              return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: content });
+              return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: content, products: wholesaleProducts.slice(0, 6) });
             }
           } else {
             console.error('[Distributor RAG] Ollama HTTP error:', resOllama.status, await resOllama.text());
@@ -1403,9 +1523,9 @@ function registerCopilotRoutes(app, pool) {
         const wsMd = wholesaleProducts.length === 0
           ? 'معذرت، اس وقت کوئی مناسب ھول سیل مصنوع نہیں ملی۔'
           : `### 📦 ھول سیل مصنوعات\n\n` + wholesaleProducts.slice(0, 8).map((p, i) =>
-              `**${i + 1}. ${p.product_name}** (SKU: ${p.sku}) — Rs ${Number(p.wholesale_price).toLocaleString()}`
+              `**${i + 1}. ${p.product_name}** (SKU: ${p.sku}) — Rs ${Number(p.wholesale_price).toLocaleString()} | MOQ: ${p.min_wholesale_qty}`
             ).join('\n');
-        return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: wsMd });
+        return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: wsMd, products: wholesaleProducts.slice(0, 6) });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ غلطی: ${err.message}` });
       }
@@ -1418,7 +1538,7 @@ function registerCopilotRoutes(app, pool) {
 
         // Fast deterministic routing for order tracking/listing — skips the LLM entirely so
         // these are instant, always correct (real DB data), and never derailed into product search.
-        const orderNumMatch = !attached_image && message.match(/ORD[-_]?\d+/i);
+        const orderNumMatch = !attached_image && message.match(/\bORD[-_][\w-]+/i);
         const mentionsOrder = /\border(s)?\b/i.test(message);
         if (!attached_image && (orderNumMatch || mentionsOrder)) {
           if (orderNumMatch) {
