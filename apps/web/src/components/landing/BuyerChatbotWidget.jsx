@@ -180,7 +180,7 @@ function OrderStatusCard({ order }) {
 
 // ── TTS helpers ────────────────────────────────────────────────────────────
 
-/** Clean full AI response for speech: strip markdown/tables/URLs, keep readable prose */
+/** Clean Urdu-script AI response for TTS: strip markdown/tables/URLs, preserve Urdu text */
 function cleanForSpeech(raw) {
   if (!raw) return '';
   return raw
@@ -189,15 +189,15 @@ function cleanForSpeech(raw) {
     .replace(/^\s*[-|#*>]+\s*/gm, '')            // remove markdown symbols at line start
     .replace(/[*_#`~]/g, '')                     // remaining inline markdown
     .replace(/https?:\/\/\S+/g, '')              // URLs
-    // Remove all non-Latin/non-Urdu script characters (Chinese, etc.)
-    .replace(/[\u4e00-\u9fff\u3000-\u303f\u30a0-\u30ff\u3040-\u309f]+/g, '')
-    // Rs amounts → spoken
-    .replace(/Rs\.?\s*([\d,]+)/gi, (_, n) => n.replace(/,/g, '') + ' rupees')
-    .replace(/\n{2,}/g, '. ')
+    // Convert PKR amounts to Urdu spoken form
+    .replace(/Rs\.?\s*([\d,]+)/gi, (_, n) => n.replace(/,/g, '') + ' روپے')
+    .replace(/PKR\s*([\d,]+)/gi, (_, n) => n.replace(/,/g, '') + ' روپے')
+    .replace(/\n{2,}/g, '۔ ')
     .replace(/\n/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
+
 
 function TTSPlayButton({ text, autoPlay = false }) {
   const [isPlaying, setIsPlaying]   = useState(false);
@@ -274,7 +274,7 @@ export default function BuyerChatbotWidget() {
   const [messages, setMessages] = useState([
     {
       sender: "ai",
-      text: "👋 Salam! Main aapka AI Personal Shopping Assistant hoon. Mujhe batayein aap kya dhoond rahe hain, PKR mein budget limit, ya specific features (jaise wireless, noise cancellation), aur main aap ke liye behtareen products dhoond launga! Aap 📷 photo upload karke bhi search kar sakte hain!"
+      text: "👋 السلام علیکم! میں آپ کا ذاتی شاپنگ اسسٹنٹ ہوں۔ مجھے بتائیں آپ کیا تلاش کر رہے ہیں — بجٹ، کیٹیگری، یا خصوصیات کے مطابق بہترین مصنوعات تلاش کریں گا! آپ 📷 تصویر اپلوڈ کر کے بھی تلاش کر سکتے ہیں!"
     }
   ]);
   const [addedItemIds, setAddedItemIds] = useState([]);

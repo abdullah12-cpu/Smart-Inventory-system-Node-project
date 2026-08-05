@@ -1,4 +1,4 @@
-﻿const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { 
   createProductInDb, deleteProductFromDb, updateProductInDb, bulkUpdateProductsInDb, searchProductsInDb, getCategoryProductsFromDb, getLowStockProductsFromDb,
   createSupplierInDb, updateSupplierInDb, deleteSupplierFromDb, searchSuppliersInDb, filterSuppliersByLocationInDb,
@@ -130,72 +130,51 @@ function clearDistributorSession(email) {
   distributorSessions.delete(key);
 }
 
-const ROMAN_URDU_INSTRUCTION = ` LANGUAGE â€” ROMAN URDU ONLY:
+const URDU_SCRIPT_INSTRUCTION = ` زبان — صرف اردو رسم الخط:
 
-RULE: Apna POORA jawab simple Roman Urdu mein likhein. Roman Urdu matlab â€” Urdu ko English haroof mein likhna, jaise Pakistani log WhatsApp par likhte hain.
+قاعدہ: اپنا پورا جواب صحیح اردو رسم الخط میں لکھیں — جیسا پاکستانی اخبارات اور سرکاری دستاویزات میں لکھا جاتا ہے۔
 
-SAHI EXAMPLES (isi tarah likhein):
-- "Aapke aaj ke 4 orders hain."
-- "Yeh rahe aapke unpaid invoices:"
-- "Is hafte koi order nahi mila."
-- "Game khelne ke liye PS5 best option hai â€” Rs 215,000 mein available hai."
-- "Aapka sabse bada order Rs 2,00,000 ka tha."
-- "Gaming products mein yeh items available hain:"
-- "Koi shipped order nahi hai is week mein."
+صحیح مثالیں:
+- "آپ کے آج کے 4 آرڈر ہیں۔"
+- "یہ رہے آپ کے ان پیڈ انوئسس:"
+- "اس ہفتے کوئی آرڈر نہیں ملا۔"
+- "PS5 گیمنگ کے لیے بہترین آپشن ہے — 2 لاکھ 15 ہزار روپے میں دستیاب ہے۔"
+- "کوئی ریکارڈ نہیں ملا۔"
 
-GALAT EXAMPLES (kabhi mat likhein):
-- "YÄd karÄ den tÄjzÄ«dÄt" â€” BILKUL GALAT
-- "dohÄo durr-gÄhem" â€” BILKUL GALAT
-- "tanha", "aarzoo hone wale", "badhaati hain", "yaadein" â€” AWKWARD, AVOID
-- "tarike ki orders", "unn tarike" â€” GALAT
-- Any word with accent marks like Ä, Ä«, Å«, Ä“ â€” KABHI MAT USE KAREIN
-- Literal word-by-word Urdu translation â€” AVOID, natural bolchaal use karein
+قواعد:
+1. صرف اردو رسم الخط استعمال کریں — کوئی رومن اردو یا انگریزی الفاظ نہیں
+2. پروڈکٹ ناماجات، SKU، Order ID، رقم (PKR)، تاریخ — یہ انگریزی میں لکھیں
+3. پہلا جملہ سیدھے سوال کا جواب ہو
+4. متعدد ریکارڈز کے لیے ٹیبل فارمیٹ استعمال کریں
+5. اگر کوئی ڈیٹا نہیں ملا: "کوئی ریکارڈ نہیں ملا۔" یا "آج کا کوئی آرڈر نہیں ہے۔"`;
 
-RULES:
-1. Sirf simple Roman Urdu â€” jaise "aaj", "kal", "orders", "yeh rahe", "nahi mila", "available hai"
-2. Product names, SKUs, Order IDs, amounts (PKR), dates â€” English mein likhein
-3. Pehla sentence seedha user ke sawal ka jawab ho
-4. Multiple records ke liye table format use karein
-5. Koi data na mile toh: "Koi record nahi mila." ya "Aaj ka koi order nahi hai."`;
+const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline in Urdu. Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.' + URDU_SCRIPT_INSTRUCTION;
 
-const SYSTEM_PROMPT = 'You are CIQ Admin Copilot, an AI catalog, vendor, and order management assistant. You are strictly restricted to: creating products ("createProduct"), updating products ("updateProduct"), deleting products ("deleteProduct"), bulk updating categories ("bulkUpdateProducts"), reading product/stock data ("readProductData"), creating suppliers ("createSupplier"), updating suppliers ("updateSupplier"), deleting suppliers ("deleteSupplier"), reading/searching supplier records ("readSupplierData"), and all order management operations including listing, filtering, searching, approving, rejecting, shipping orders, and running order analytics ("manageOrders"). If the user asks about anything outside this scope, decline stating: "Main sirf registered catalog, supplier management aur orders ke bare mein madad kar sakta hoon." Keep answers short and direct. IMPORTANT: For create operations, do NOT invent default details if not explicitly specified.' + ROMAN_URDU_INSTRUCTION;
-
-const DISTRIBUTOR_SYSTEM_PROMPT = `You are CIQ Distributor Copilot â€” ek intelligent B2B wholesale partner assistant. Aap distributors ki madad karte hain:
-(1) Wholesale products discover karna â€” pricing, MOQ, stock, discounts
-(2) Orders track karna â€” aaj ke, kal ke, kisi bhi date ke, category ke, ya status ke hisaab se
-(3) Quotations aur negotiations dekhna aur submit karna
-(4) Invoices aur payments check karna â€” paid, unpaid, overdue
-(5) Credit limit aur financial ledger check karna
-(6) Direct B2B orders place karna
-
-RESPONSE STYLE â€” VERY IMPORTANT:
-- Bilkul natural Roman Urdu mein jawab dein â€” jaise ek samajhdar business partner bolta hai
-- Sahi examples: "Aapke aaj ke 4 orders hain:", "Yeh rahe aapke unpaid invoices:", "Koi shipped order nahi mila is week mein.", "Aaj ka sabse bada order Rs 2,00,000 ka tha."
-- GALAT phrases kabhi mat use karein: "tarike ki orders", "unn tarike", "ke bare mein aaj ki tarike"
-- Jab multiple records hon â€” table format use karein
-- Jab koi record na mile â€” seedha batao: "Aaj ka koi order nahi hai." ya "Koi unpaid invoice nahi mili."
-- Har jawab ka pehla sentence user ki query ka direct aur clear jawab ho
-- Product names, Order IDs, SKUs, amounts (PKR), dates standard notation mein likhein
+const DISTRIBUTOR_SYSTEM_PROMPT = `آپ CIQ ڈسٹریبیوٹر کوپائلٹ ہیں — ایک ذہین B2B ھول سیل شراکت مشیر۔ آپ ڈسٹریبیوٹرز کی مدد کرتے ہیں:
+(1) ھول سیل مصنوعات دریافت کرنا — قیمت، MOQ، اسٹاک، ڈسکاؤنٹ
+(2) آرڈرز کی نگرانی — آج، کل، کسی بھی تاریخ، کیٹیگری، یا اسٹیٹس کے مطابق
+(3) اقتباسات اور مذاکرات دیکھنا اور جمع کرنا
+(4) انوئسس اور ادائیگی جانچنا — ادا شدہ، نہ ادا شدہ، واجب الادا
+(5) کریڈٹ لیمٹ اور مالی اکاؤنٹ جانچنا
+(6) براه راست B2B آرڈر دینا
 
 RESTRICTIONS:
-- Admin tasks (product create/delete/update, supplier management) bilkul nahi karein
-- Agar koi admin operation maange toh: "Yeh kaam sirf Admin kar sakta hai. Aapko admin portal access karna hoga."` + ROMAN_URDU_INSTRUCTION;
+- ایڈمن کے کام (پروڈکٹ بنانا/حذف/اپڈیٹ، سپلائر مینیجمنٹ) بالکل نہیں کریں
+- اگر کوئی ایڈمن آپریشن مانگے تو: "یہ کام صرف ایڈمن کر سکتا ہے۔ آپ کو ایڈمن پورٹل ایکسیس کرنا ہو گا۔"` + URDU_SCRIPT_INSTRUCTION;
 
-const BUYER_SYSTEM_PROMPT = `You are CIQ Personal Shopping Assistant â€” ek friendly retail store assistant jo customers ki shopping mein madad karta hai.
+const BUYER_SYSTEM_PROMPT = `آپ CIQ ذاتی شاپنگ اسسٹنٹ ہیں — ایک دوستانہ دکان کا ساتھی جو گراہکوں کی شاپنگ میں مدد کرتا ہے۔
 
-Aap in cheezon mein madad karte hain:
-- Products dhundna â€” budget, category, brand, features ke hisaab se
-- Orders track karna â€” "mera order kahan hai", "aaj ke orders", "delivered orders"
-- Price comparison aur recommendations
-- Stock availability check karna
+آپ ان چیزوں میں مدد کرتے ہیں:
+- مصنوعات تلاش کرنا — بجٹ، کیٹیگری، برینڈ، خصوصیات کے مطابق
+- آرڈرز کی نگرانی — آرڈر کہاں ہے، آج کے آرڈرز، ڈلیورڈ آرڈرز
+- قیمت کا موازنہ اور سفارشات
+- اسٹاک دستیابی جانچنا
 
 RESPONSE STYLE:
-- Bilkul natural Roman Urdu mein jawab dein â€” jaise ek dukandaar ya dost bolta hai
-- Sahi: "Yeh rahe aapke liye gaming products:", "Aapka order ship ho gaya hai.", "Is budget mein yeh options hain:"
-- Galat: "tÄjzÄ«dÄt", "durr-gÄhem", koi bhi diacritic marks â€” KABHI MAT USE KAREIN
-- Products show karte waqt price PKR mein dikhayein
-- Koi product na mile: "Abhi yeh product store mein available nahi hai."
-- Admin ya wholesale kaam nahi karein â€” "Yeh sirf Admin portal mein hota hai."` + ROMAN_URDU_INSTRUCTION;
+- بالکل فطری اور سلیس اردو رسم الخط میں جواب دیں
+- مصنوعات دکھاتے وقت قیمت PKR میں دکھائیں
+- اگر کوئی مصنوع نہ ملے: "ابھی یہ مصنوع ہمارے اسٹور میں دستیاب نہیں ہے۔"
+- ایڈمن یا ھول سیل کام نہیں کریں — "یہ صرف ایڈمن پورٹل میں ہوتا ہے۔"` + URDU_SCRIPT_INSTRUCTION;
 
 
 function filterProductsByMessage(rows, message) {
@@ -3522,7 +3501,7 @@ function registerCopilotRoutes(app, pool) {
 
   app.post('/api/copilot/chat', (req, res) => handleChat(req, res, 'ADMIN'));
   app.post('/api/copilot/distributor/chat', (req, res) => handleChat(req, res, 'DISTRIBUTOR'));
-  // Urdu TTS — Microsoft Edge Neural TTS (ur-PK-UzmaNeural)
+  // Urdu & Multilingual TTS — ElevenLabs (when ELEVENLABS_API_KEY is present) or Edge Neural TTS
   app.post('/api/copilot/tts', async (req, res) => {
     const { text, voice = 'ur-PK-UzmaNeural' } = req.body || {};
     if (!text || typeof text !== 'string' || !text.trim()) {
@@ -3535,6 +3514,56 @@ function registerCopilotRoutes(app, pool) {
       .replace(/\s{2,}/g, ' ')
       .trim();
     if (!spoken) return res.status(204).send();
+
+    // 1. Try ElevenLabs API if key is provided (reload .env dynamically)
+    try { require('dotenv').config(); } catch {}
+    const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY ? process.env.ELEVENLABS_API_KEY.trim() : '';
+    if (elevenLabsApiKey) {
+      try {
+        const isElevenLabsId = (v) => typeof v === 'string' && /^[a-zA-Z0-9]{15,32}$/.test(v.trim()) && !/neural|edge|ur-pk/i.test(v);
+        const voiceId = isElevenLabsId(voice) ? voice.trim() : (process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM');
+        const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
+        const elevenUrl = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+        
+        console.log(`[TTS] 🎙️ Attempting ElevenLabs API (model=${modelId}, voiceId=${voiceId})...`);
+        const elevenResp = await fetch(elevenUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': elevenLabsApiKey,
+            'Accept': 'audio/mpeg'
+          },
+          body: JSON.stringify({
+            text: spoken,
+            model_id: modelId,
+            voice_settings: {
+              stability: parseFloat(process.env.ELEVENLABS_STABILITY || '0.5'),
+              similarity_boost: parseFloat(process.env.ELEVENLABS_SIMILARITY_BOOST || '0.75')
+            }
+          }),
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (elevenResp.ok) {
+          console.log(`[TTS] ✅ ElevenLabs speech synthesis successful! Returning audio...`);
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('X-TTS-Engine', 'ElevenLabs');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          const { Readable } = require('stream');
+          return Readable.fromWeb(elevenResp.body).pipe(res);
+        } else {
+          const errBody = await elevenResp.text();
+          console.warn(`[TTS] ⚠️ ElevenLabs API returned HTTP ${elevenResp.status}: ${errBody}`);
+          console.warn(`[TTS] 🔄 Falling back to local Edge-TTS microservice...`);
+        }
+      } catch (err) {
+        console.warn(`[TTS] ⚠️ ElevenLabs request error: ${err.message}. Falling back to Edge-TTS...`);
+      }
+    } else {
+      console.log(`[TTS] ℹ️ ELEVENLABS_API_KEY is not set. Using local Edge-TTS microservice...`);
+    }
+
+    // 2. Fallback: Edge Neural TTS Microservice
     const TTS_URL = process.env.TTS_SERVICE_URL || 'http://localhost:8020/api/tts';
     try {
       const ttsResp = await fetch(TTS_URL, {
@@ -3548,7 +3577,9 @@ function registerCopilotRoutes(app, pool) {
         return res.status(502).json({ success: false, error: err });
       }
       const contentType = ttsResp.headers.get('content-type') || 'audio/mpeg';
+      console.log(`[TTS] 🔊 Edge-TTS speech synthesis returning audio (${contentType})...`);
       res.setHeader('Content-Type', contentType);
+      res.setHeader('X-TTS-Engine', 'Edge-TTS');
       res.setHeader('Cache-Control', 'public, max-age=3600');
       const { Readable } = require('stream');
       Readable.fromWeb(ttsResp.body).pipe(res);

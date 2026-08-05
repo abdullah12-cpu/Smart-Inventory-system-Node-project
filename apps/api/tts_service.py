@@ -27,28 +27,21 @@ app = FastAPI(title="Urdu Edge TTS Microservice")
 #   ur-PK-UzmaNeural   (Female, clear, natural)
 DEFAULT_VOICE = "ur-PK-UzmaNeural"
 
-ROMAN_TO_URDU = {
-    "salam": "سلام", "aap": "آپ", "main": "میں", "hun": "ہوں", "hoon": "ہوں",
-    "ka": "کا", "ki": "کی", "ke": "کے", "ko": "کو", "se": "سے", "ne": "نے",
-    "par": "پر", "me": "میں", "mein": "میں", "hai": "ہے", "hain": "ہیں",
-    "aur": "اور", "ya": "یا", "bhi": "بھی", "to": "تو", "toh": "تو",
-    "jo": "جو", "agar": "اگر", "lekin": "لیکن", "kya": "کیا",
-    "kyun": "کیوں", "kab": "کب", "kahan": "کہاں", "kaise": "کیسے",
-    "bohat": "بہت", "bahut": "بہت", "zyada": "زیادہ", "kam": "کم",
-    "acha": "اچھا", "sahi": "صحیح", "galat": "غلط", "best": "بہترین",
-    "order": "آرڈر", "product": "پروڈکٹ", "products": "پروڈکٹس",
-    "price": "قیمت", "budget": "بجٹ", "laptop": "لیپ ٹاپ",
-    "keyboard": "کی بورڈ", "monitor": "مانیٹر", "gaming": "گیمنگ",
-}
-
-
 def clean_text(raw: str) -> str:
-    """Strip markdown, convert amounts, collapse whitespace."""
-    text = re.sub(r'[*_#`~]', '', raw)
-    text = re.sub(r'https?://\S+', '', text)
+    """Strip markdown, convert amounts, collapse whitespace for Urdu script TTS."""
+    text = re.sub(r'```[\s\S]*?```', '', raw)       # remove code blocks
+    text = re.sub(r'\|.*?\|', '', text)              # remove table rows
+    text = re.sub(r'^[\s\-#*>|]+', '', text, flags=re.MULTILINE)  # markdown symbols at line start
+    text = re.sub(r'[*_#`~]', '', text)              # inline markdown
+    text = re.sub(r'https?://\S+', '', text)         # URLs
+    # Convert PKR amounts to spoken Urdu
     text = re.sub(r'Rs\.?\s*([\d,]+)', lambda m: m.group(1).replace(',', '') + ' روپے', text)
+    text = re.sub(r'PKR\s*([\d,]+)', lambda m: m.group(1).replace(',', '') + ' روپے', text)
+    text = re.sub(r'\n{2,}', '۔ ', text)
+    text = re.sub(r'\n', ' ', text)
     text = re.sub(r'\s{2,}', ' ', text).strip()
     return text
+
 
 
 class TTSRequest(BaseModel):
@@ -57,9 +50,54 @@ class TTSRequest(BaseModel):
     voice: str = DEFAULT_VOICE
 
 
+import os
+import json
+import urllib.request
+
+def synthesize_elevenlabs(text: str, voice: str = None) -> bytes:
+    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    if not api_key:
+        return None
+    
+    def is_eleven_voice(v: str) -> bool:
+        if not v or not isinstance(v, str):
+            return False
+        v_clean = v.strip()
+        return bool(re.match(r'^[a-zA-Z0-9]{15,32}$', v_clean)) and not re.search(r'neural|edge|ur-pk', v_clean, re.IGNORECASE)
+
+    voice_id = voice.strip() if is_eleven_voice(voice) else os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+    model_id = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    
+    payload = {
+        "text": text,
+        "model_id": model_id,
+        "voice_settings": {
+            "stability": float(os.getenv("ELEVENLABS_STABILITY", "0.5")),
+            "similarity_boost": float(os.getenv("ELEVENLABS_SIMILARITY_BOOST", "0.75"))
+        }
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "xi-api-key": api_key,
+        "Accept": "audio/mpeg"
+    }
+    
+    try:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status == 200:
+                return resp.read()
+    except Exception as e:
+        print(f"[ElevenLabs Python] Synthesis failed: {e}. Falling back to edge-tts...")
+    return None
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "engine": "edge-tts", "default_voice": DEFAULT_VOICE}
+    engine = "elevenlabs" if os.getenv("ELEVENLABS_API_KEY") else "edge-tts"
+    return {"status": "ok", "engine": engine, "default_voice": DEFAULT_VOICE}
 
 
 @app.post("/api/tts")
@@ -71,9 +109,18 @@ async def synthesize(req: TTSRequest):
     if not spoken:
         raise HTTPException(status_code=400, detail="text is empty after cleaning")
 
-    # Pick voice
+    # Try ElevenLabs first if API Key is configured
+    eleven_audio = synthesize_elevenlabs(spoken, req.voice)
+    if eleven_audio:
+        buf = io.BytesIO(eleven_audio)
+        return StreamingResponse(
+            buf,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
+
+    # Fallback to Edge TTS
     voice = req.voice if req.voice else DEFAULT_VOICE
-    # If caller passes 'female' / 'male' shorthand
     if req.voice == "female":
         voice = "ur-PK-UzmaNeural"
     elif req.voice == "male":
