@@ -1387,16 +1387,16 @@ function registerCopilotRoutes(app, pool) {
 
     if (role === 'DISTRIBUTOR') {
       try {
-        // Only trust an explicit, real distributor email -- never fall back to the shared
-        // demo account here, or every partner's chat would silently read Asim Distribution's
-        // orders/quotations/invoices instead of their own.
         const userEmail = req.body.user_email || null;
         const lowerMsg = message.toLowerCase();
 
         // ── Fast, deterministic intent routing ──────────────────────────────────────
         // Mirrors the buyer copilot's approach: each category below is answered directly
-        // from the DB, scoped to this distributor's own email, so it's instant, always
-        // numerically correct, and never leaks another partner's data or the buyer's context.
+        // from the DB, scoped to this distributor's own email everywhere the underlying
+        // query supports it -- store.js's "/api/orders", "/api/quotations", "/api/invoices"
+        // fetches are scoped the same way now, so the chatbot's answers always match what
+        // this specific partner account can see on screen, and never surface another
+        // distributor's orders, quotations, or invoices.
 
         // 1) Track a specific order by number
         const orderNumMatch = !attached_image && message.match(/\bORD[-_][\w-]+/i);

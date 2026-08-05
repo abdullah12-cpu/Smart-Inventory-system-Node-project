@@ -1243,7 +1243,10 @@ app.post('/api/warehouses', async (req, res) => {
 // GET all quotations
 app.get('/api/quotations', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM quotations ORDER BY id DESC');
+    const { customer_email } = req.query;
+    const result = customer_email
+      ? await pool.query('SELECT * FROM quotations WHERE LOWER(customer_email) = $1 ORDER BY id DESC', [customer_email.toLowerCase()])
+      : await pool.query('SELECT * FROM quotations ORDER BY id DESC');
     const quotations = result.rows.map(row => ({
       ...row,
       total_amount: parseFloat(row.total_amount || 0),
@@ -1545,7 +1548,10 @@ app.delete('/api/suppliers/:id', async (req, res) => {
 // GET all invoices
 app.get('/api/invoices', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM invoices ORDER BY id DESC');
+    const { customer_email } = req.query;
+    const result = customer_email
+      ? await pool.query('SELECT * FROM invoices WHERE LOWER(customer_email) = $1 ORDER BY id DESC', [customer_email.toLowerCase()])
+      : await pool.query('SELECT * FROM invoices ORDER BY id DESC');
     const invoices = result.rows.map(row => ({
       invoice_id: row.invoice_id,
       invoice_number: row.invoice_number,

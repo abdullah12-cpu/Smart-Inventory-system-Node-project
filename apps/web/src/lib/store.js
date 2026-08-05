@@ -62,19 +62,30 @@ export function StoreProvider({ children }) {
         const whRes = await fetch("/api/warehouses");
         if (whRes.ok) setWarehouses(await whRes.json());
 
+        // Admin needs the full cross-tenant dataset; buyer and distributor accounts must
+        // only ever see their own orders/quotations/invoices, never another buyer's or
+        // another distributor partner's data.
         const ordersUrl = (portal === "buyer" && currentUser?.email)
           ? `/api/orders?customer_email=${encodeURIComponent(currentUser.email)}&order_type=B2C`
+          : (portal === "distributor" && currentUser?.email)
+          ? `/api/orders?customer_email=${encodeURIComponent(currentUser.email)}&order_type=B2B`
           : "/api/orders";
         const ordersRes = await fetch(ordersUrl);
         if (ordersRes.ok) setOrders(await ordersRes.json());
 
-        const quotesRes = await fetch("/api/quotations");
+        const quotesUrl = (portal === "distributor" && currentUser?.email)
+          ? `/api/quotations?customer_email=${encodeURIComponent(currentUser.email)}`
+          : "/api/quotations";
+        const quotesRes = await fetch(quotesUrl);
         if (quotesRes.ok) setQuotations(await quotesRes.json());
 
         const suppliersRes = await fetch("/api/suppliers");
         if (suppliersRes.ok) setSuppliers(await suppliersRes.json());
 
-        const invoicesRes = await fetch("/api/invoices");
+        const invoicesUrl = (portal === "distributor" && currentUser?.email)
+          ? `/api/invoices?customer_email=${encodeURIComponent(currentUser.email)}`
+          : "/api/invoices";
+        const invoicesRes = await fetch(invoicesUrl);
         if (invoicesRes.ok) setInvoices(await invoicesRes.json());
 
         const paymentsRes = await fetch("/api/payments");
