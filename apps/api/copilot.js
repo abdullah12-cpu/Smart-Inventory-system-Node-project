@@ -5,7 +5,10 @@ const {
   listOrdersFromDb, getOrderByIdFromDb, getOrdersByStatusFromDb, getOrdersByCustomerFromDb, getOrdersByDateRangeFromDb,
   getOrdersByAmountFilterFromDb, updateOrderStatusInDb, bulkApproveOrdersInDb, getOrderAnalyticsFromDb,
   getTopBuyersFromDb, getMostOrderedProductsFromDb, getOverdueOrdersFromDb, getOrdersByProductFromDb,
-  getOrdersAwaitingShipmentFromDb, shipOrderInDb, shipAllOrdersInDb
+  getOrdersAwaitingShipmentFromDb, shipOrderInDb, shipAllOrdersInDb,
+  getAdminInvoicesFromDb, getInvoiceStatusCountsFromDb, getPartnerAccountsFromDb,
+  getAllQuotationsFromDb, getQuotationsByStatusFromDb, approveQuotationInDb,
+  rejectQuotationInDb, sendCounterOfferToDistributorInDb, getQuotationKpisFromDb
 } = require('./adminOperations');
 const { 
   getDistributorWholesaleProductsFromDb, 
@@ -1630,6 +1633,28 @@ function narrowProductsToQueryType(products, message) {
   return narrowed.length > 0 ? narrowed : products;
 }
 
+// Guardrail for the admin agent's free-form replies.
+//
+// Deliberately more permissive than isCleanUrduReply: admin answers legitimately quote
+// English product names, supplier names and order IDs, so the "no stray Latin words" rule
+// used for buyer/distributor product replies would reject perfectly good output here.
+// This only catches the unambiguous corruption seen in practice -- the model sliding into
+// Chinese mid-sentence, or emitting Latin letters fused onto Urdu words.
+function isGarbledReply(text) {
+  if (!text || !text.trim()) return true;
+  if (hasForeignScriptLeak(text)) return true;              // CJK / Devanagari / Cyrillic / ...
+  if (/[؀-ۿ][A-Za-z]|[A-Za-z][؀-ۿ]/.test(text)) return true; // "مicrosoft", "ہoon"
+  return false;
+}
+
+const ADMIN_GARBLED_FALLBACK =
+  'معذرت، میں آپ کی بات ٹھیک سے سمجھ نہیں سکا۔ براہ کرم دوبارہ واضح الفاظ میں پوچھیں — مثلاً "کم اسٹاک والی مصنوعات دکھائیں"، "غیر ادا شدہ انوائسز دکھائیں"، یا "آج کے آرڈرز دکھائیں"۔';
+
+/** Returns model text when usable, otherwise a deterministic Urdu prompt for a retry. */
+function guardAdminReply(text) {
+  return isGarbledReply(text) ? ADMIN_GARBLED_FALLBACK : text;
+}
+
 // Deterministic, always-correct Urdu reply for product results -- the same approach the
 // orders/invoices/quotations paths already use, which is why those never garble. Product
 // names stay in English exactly as stored, so card matching downstream is exact by
@@ -1669,6 +1694,234 @@ function getRelevantCards(ragProducts, llmText, maxCards = 6, userMessage = '') 
   });
 
   return scored.filter(p => p._score >= 3).sort((a, b) => b._score - a._score).slice(0, maxCards);
+}
+
+// ─── ADMIN deterministic query routing ───────────────────────────────────────
+// Every branch returns the raw rows alongside the rendered table, so the admin chat widget
+// can attach inline action buttons (approve / reject / ship / counter-offer) to what it
+// just showed, instead of the admin having to leave chat and hunt for the record.
+
+function adminOrderTypeFilter(msg) {
+  // "buyer orders" -> retail (B2C), "distributor/partner orders" -> wholesale (B2B).
+  if (/\b(distributor|wholesale|partner|b2b)\b/i.test(msg)) return { type: 'B2B', label: 'ڈسٹری بیوٹر' };
+  if (/\b(buyer|retail|customer|b2c)\b/i.test(msg)) return { type: 'B2C', label: 'خریدار' };
+  return { type: null, label: null };
+}
+
+function formatAdminOrdersTable(rows, title) {
+  if (!rows || rows.length === 0) return `ℹ️ کوئی آرڈر نہیں ملا۔`;
+  return `### ${title} — ${rows.length}\n\n| آرڈر # | حیثیت | قسم | رقم (PKR) | کسٹمر | تاریخ |\n|---|---|---|---|---|---|\n` +
+    rows.map(r => `| ${r.order_number || r.order_id} | ${r.status} | ${r.order_type || '-'} | Rs ${Number(r.total_amount || 0).toLocaleString()} | ${r.customer_email || r.customer_name || '-'} | ${formatTableDate(r.order_date || r.created_at)} |`).join('\n');
+}
+
+function formatAdminInvoicesTable(rows, title) {
+  if (!rows || rows.length === 0) return `ℹ️ کوئی انوائس نہیں ملی۔`;
+  return `### ${title} — ${rows.length}\n\n| انوائس نمبر | کسٹمر | کل رقم | باقی رقم | حیثیت | آخری تاریخ |\n|---|---|---|---|---|---|\n` +
+    rows.map(r => {
+      const total = Number(r.total_amount || 0);
+      const remaining = Math.max(0, total - Number(r.amount_paid || 0));
+      return `| ${r.invoice_number} | ${r.distributor_name || r.customer_email || '-'} | Rs ${total.toLocaleString()} | Rs ${remaining.toLocaleString()} | ${r.status} | ${formatTableDate(r.due_date)} |`;
+    }).join('\n');
+}
+
+// Products keep their price tiers in a `prices` JSON column ({RETAIL, DISTRIBUTOR, VIP,
+// CUSTOM}) rather than a flat retail_price column, so read through that -- falling back to
+// the flat columns used by the buyer/distributor search projections.
+function productPriceOf(product, tier = 'RETAIL') {
+  let prices = product.prices;
+  try { if (typeof prices === 'string') prices = JSON.parse(prices); } catch { prices = null; }
+  if (prices && typeof prices === 'object') {
+    const v = prices[tier] ?? prices.RETAIL ?? prices.DISTRIBUTOR;
+    if (v != null) return Number(v);
+  }
+  return Number(product.retail_price ?? product.wholesale_price ?? product.price ?? 0);
+}
+
+function formatAdminProductsTable(rows, title) {
+  if (!rows || rows.length === 0) return `ℹ️ کوئی مصنوع نہیں ملی۔`;
+  return `### ${title} — ${rows.length}\n\n| مصنوع | SKU | برانڈ | کیٹیگری | اسٹاک | ریٹیل (PKR) | ڈسٹری بیوٹر (PKR) |\n|---|---|---|---|---|---|---|\n` +
+    rows.map(r => {
+      const stock = r.total_stock ?? r.available_stock ?? r.quantity ?? 0;
+      return `| ${r.product_name} | ${r.sku || '-'} | ${r.brand || '-'} | ${r.category || '-'} | ${stock} | Rs ${productPriceOf(r, 'RETAIL').toLocaleString()} | Rs ${productPriceOf(r, 'DISTRIBUTOR').toLocaleString()} |`;
+    }).join('\n');
+}
+
+function formatPartnersTable(rows, title) {
+  if (!rows || rows.length === 0) return `ℹ️ کوئی اکاؤنٹ نہیں ملا۔`;
+  return `### ${title} — ${rows.length}\n\n| نام | ای میل | کردار | شہر | ملک | حیثیت |\n|---|---|---|---|---|---|\n` +
+    rows.map(r => {
+      const name = r.business_name || r.buyer_store_name || r.contact_name || r.buyer_contact_name || '-';
+      const city = r.city || r.warehouse_region || r.buyer_region || '-';
+      return `| ${name} | ${r.email} | ${r.role} | ${city} | ${r.country || '-'} | ${r.status || '-'} |`;
+    }).join('\n');
+}
+
+// Sums stock across every warehouse. The inventory JSON holds one entry per warehouse, so
+// reading only the first (as some older call sites did) under-reports multi-warehouse items.
+function totalStockOf(product) {
+  let inv = product.inventory;
+  try { if (typeof inv === 'string') inv = JSON.parse(inv); } catch { inv = null; }
+  if (Array.isArray(inv)) {
+    return inv.reduce((s, w) => s + Number(w.available_quantity ?? w.quantity ?? 0), 0);
+  }
+  return Number(product.quantity ?? 0);
+}
+
+async function routeAdminQuery(pool, message) {
+  const msg = message || '';
+  const lower = msg.toLowerCase();
+  const dateRange = getUrduDateRange(lower);
+  const dateSuffix = dateRange ? ` — ${dateRange.label}` : '';
+
+  // 1) Low stock -----------------------------------------------------------
+  if (/\b(low stock|low-stock|understock|out of stock|stock ?out|reorder|running out|kam stock)\b/i.test(lower)) {
+    const rows = await getLowStockProductsFromDb(pool);
+    const speech = rows.length
+      ? `${rows.length} مصنوعات کا اسٹاک کم ہے۔`
+      : 'کسی بھی مصنوع کا اسٹاک کم نہیں ہے۔';
+    return {
+      action_executed: 'getLowStockProducts',
+      ai_message: formatAdminProductsTable(rows, '⚠️ کم اسٹاک والی مصنوعات'),
+      speech_text: speech,
+      products: rows,
+    };
+  }
+
+  // 2) Invoices ------------------------------------------------------------
+  if (/\b(invoice|invoices|billing|receivable)\b/i.test(lower)) {
+    let statusFilter = null;
+    if (/\b(unpaid|outstanding|pending|due|not paid)\b/i.test(lower)) statusFilter = 'unpaid';
+    else if (/\boverdue|late\b/i.test(lower)) statusFilter = 'overdue';
+    else if (/\bpaid|settled|cleared\b/i.test(lower)) statusFilter = 'paid';
+
+    // "unpaid invoices of Zain" / "Asim ki invoices"
+    const nameMatch = msg.match(/\b(?:of|for|from|ki|ke)\s+([A-Za-z][\w.@'-]{2,})/i);
+    const customer = nameMatch ? nameMatch[1] : null;
+
+    let rows = await getAdminInvoicesFromDb(pool, statusFilter, customer);
+    if (dateRange) rows = filterRowsByDateRange(rows, dateRange, ['due_date', 'issue_date']);
+
+    const title = (statusFilter === 'unpaid' ? '💳 غیر ادا شدہ انوائسز'
+      : statusFilter === 'overdue' ? '⚠️ زائد المیعاد انوائسز'
+      : statusFilter === 'paid' ? '✅ ادا شدہ انوائسز'
+      : '📄 تمام انوائسز') + (customer ? ` — ${customer}` : '') + dateSuffix;
+
+    const outstanding = rows.reduce((s, r) => s + Math.max(0, Number(r.total_amount || 0) - Number(r.amount_paid || 0)), 0);
+    const speech = rows.length
+      ? `${rows.length} انوائسز ملیں، باقی رقم ${Math.round(outstanding).toLocaleString()} روپے۔`
+      : 'کوئی انوائس نہیں ملی۔';
+    return { action_executed: 'getAdminInvoices', ai_message: formatAdminInvoicesTable(rows, title), speech_text: speech, invoices: rows };
+  }
+
+  // 3) Quotations ----------------------------------------------------------
+  if (/\b(quotation|quotations|quote|quotes|negotiat|counter[- ]?offer)\b/i.test(lower)) {
+    let rows, title;
+    if (/\breject|declin/i.test(lower)) {
+      rows = await getQuotationsByStatusFromDb(pool, 'REJECTED');
+      title = '❌ مسترد شدہ کوٹیشنز';
+    } else if (/\bapprov|accept|confirm|won/i.test(lower)) {
+      rows = await getQuotationsByStatusFromDb(pool, 'APPROVED');
+      title = '✅ منظور شدہ کوٹیشنز';
+    } else if (/\bpending|awaiting|negotiat|review/i.test(lower)) {
+      rows = await getQuotationsByStatusFromDb(pool, 'PENDING');
+      title = '📋 زیر التواء کوٹیشنز';
+    } else {
+      rows = await getAllQuotationsFromDb(pool);
+      title = '📋 تمام کوٹیشنز';
+    }
+    if (dateRange) rows = filterRowsByDateRange(rows, dateRange, ['created_at', 'valid_until']);
+    const speech = rows.length ? `${rows.length} کوٹیشنز ملیں۔` : 'کوئی کوٹیشن نہیں ملی۔';
+    return {
+      action_executed: 'getAdminQuotations',
+      ai_message: formatQuotationsTable(rows, title + dateSuffix),
+      speech_text: speech,
+      quotations: rows,
+    };
+  }
+
+  // 4) Distributor / buyer accounts, optionally by city or country ----------
+  if (/\b(distributors?|buyers?|partners?|accounts?|vendors?)\b/i.test(lower) && !/\border|invoice|quotation/i.test(lower)) {
+    const role = /\bdistributors?\b/i.test(lower) ? 'distributor'
+      : /\bbuyers?\b/i.test(lower) ? 'buyer' : null;
+    // "distributors in Karachi" / "distributors from USA"
+    const locMatch = msg.match(/\b(?:in|from|at|of)\s+([A-Za-z][A-Za-z\s]{2,25}?)(?:\s*[?.,]|$)/i);
+    const loc = locMatch ? locMatch[1].trim() : null;
+    const status = /\bpending|approval\b/i.test(lower) ? 'PENDING_APPROVAL'
+      : /\bactive\b/i.test(lower) ? 'ACTIVE'
+      : /\breject/i.test(lower) ? 'REJECTED' : null;
+
+    let rows = await getPartnerAccountsFromDb(pool, { role, city: loc, status });
+    // A location word can be either a city or a country -- retry as country before giving up.
+    if (rows.length === 0 && loc) {
+      rows = await getPartnerAccountsFromDb(pool, { role, country: loc, status });
+    }
+    const label = role === 'distributor' ? 'ڈسٹری بیوٹرز' : role === 'buyer' ? 'خریدار' : 'پارٹنر اکاؤنٹس';
+    const title = `🏢 ${label}${loc ? ` — ${loc}` : ''}`;
+    const speech = rows.length ? `${rows.length} ${label} ملے۔` : `کوئی ${label} نہیں ملے۔`;
+    return { action_executed: 'getPartnerAccounts', ai_message: formatPartnersTable(rows, title), speech_text: speech, partners: rows };
+  }
+
+  // 5) Orders --------------------------------------------------------------
+  if (/\border|orders\b/i.test(lower)) {
+    const { type: orderType, label: typeLabel } = adminOrderTypeFilter(lower);
+
+    const STATUS_MAP = {
+      SHIPPED:    /\bshipped|shipping|dispatch/i,
+      PENDING:    /\bpending|awaiting|new\b/i,
+      APPROVED:   /\bapproved\b/i,
+      CONFIRMED:  /\bconfirmed\b/i,
+      PROCESSING: /\bprocessing\b/i,
+      DELIVERED:  /\bdelivered|completed\b/i,
+      REJECTED:   /\brejected|declined\b/i,
+      CANCELLED:  /\bcancell?ed\b/i,
+      RETURNED:   /\breturned\b/i,
+    };
+    let matchedStatus = null;
+    for (const [s, re] of Object.entries(STATUS_MAP)) {
+      if (re.test(lower)) { matchedStatus = s; break; }
+    }
+
+    let rows = matchedStatus
+      ? await getOrdersByStatusFromDb(pool, matchedStatus, orderType)
+      : await listOrdersFromDb(pool, 40, orderType);
+    if (dateRange) rows = filterRowsByDateRange(rows, dateRange, ['order_date', 'created_at']);
+
+    const title = `📦 ${matchedStatus ? matchedStatus + ' ' : ''}${typeLabel ? typeLabel + ' ' : ''}آرڈرز${dateSuffix}`;
+    const total = rows.reduce((s, r) => s + Number(r.total_amount || 0), 0);
+    const speech = rows.length
+      ? `${rows.length} آرڈرز ملے، کل رقم ${Math.round(total).toLocaleString()} روپے۔`
+      : 'کوئی آرڈر نہیں ملا۔';
+    return { action_executed: 'getAdminOrders', ai_message: formatAdminOrdersTable(rows, title), speech_text: speech, orders: rows };
+  }
+
+  // 6) Specific product lookup (stock / quantity / price of a named product) -
+  if (/\b(stock|quantity|qty|how many|price|rate|available)\b/i.test(lower)) {
+    // Strip the question scaffolding to leave just the product name.
+    const cleaned = msg
+      .replace(/\b(show|me|what|whats|what's|is|the|of|for|how|many|much|check|tell|give|please|current|available|in|do|we|have|there|any)\b/gi, ' ')
+      .replace(/\b(stock|quantity|qty|price|rate)\b/gi, ' ')
+      .replace(/[?.,!]/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (cleaned.length >= 3) {
+      const rows = await searchProductsInDb(pool, cleaned);
+      if (rows.length > 0) {
+        const withStock = rows.map(r => ({ ...r, total_stock: totalStockOf(r) }));
+        const top = withStock[0];
+        const speech = withStock.length === 1
+          ? `${top.product_name} کا اسٹاک ${top.total_stock} ہے، ریٹیل قیمت ${productPriceOf(top, 'RETAIL').toLocaleString()} روپے۔`
+          : `${withStock.length} مصنوعات ملیں۔`;
+        return {
+          action_executed: 'searchProducts',
+          ai_message: formatAdminProductsTable(withStock, `🔎 "${cleaned}" کے نتائج`),
+          speech_text: speech,
+          products: withStock,
+        };
+      }
+    }
+  }
+
+  return null; // Not an admin query we handle deterministically -- fall through to the LLM.
 }
 
 function registerCopilotRoutes(app, pool) {
@@ -2134,6 +2387,21 @@ function registerCopilotRoutes(app, pool) {
       }
     }
 
+    // ─── ADMIN: deterministic intent routing ─────────────────────────────────
+    // Answered straight from the DB before the LLM tool-calling path below, for the same
+    // reasons it was done for buyer/distributor: instant, always accurate, and immune to
+    // the model garbling Urdu or picking the wrong tool. Anything not matched here still
+    // falls through to the full tool-calling agent, so this only adds reliability.
+    if (role === 'ADMIN' && !attached_image) {
+      try {
+        const adminResult = await routeAdminQuery(pool, message);
+        if (adminResult) return res.json({ success: true, ...adminResult });
+      } catch (err) {
+        console.error('[Admin routing] error:', err.message);
+        // Fall through to the LLM agent rather than failing the request.
+      }
+    }
+
     const effectiveSystemPrompt = role === 'DISTRIBUTOR' ? DISTRIBUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     // 2. Allowed business keywords (Static list + Platform tabs + Synonyms)
@@ -2219,7 +2487,9 @@ function registerCopilotRoutes(app, pool) {
               return res.json({
                 success: true,
                 ...executionResult,
-                ai_message: executionResult.ai_message + `\n\n*(Local Ollama Model: ${modelName})*`
+                // No model-name suffix: it is developer diagnostics, and because the reply
+                // is also sent to TTS it ended up being read aloud to the user.
+                ai_message: executionResult.ai_message
               });
             } catch (err) {
               return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
@@ -2228,7 +2498,7 @@ function registerCopilotRoutes(app, pool) {
 
           return res.json({
             success: true,
-            ai_message: choice.message.content
+            ai_message: guardAdminReply(choice.message.content)
           });
         }
       }
@@ -2305,7 +2575,7 @@ function registerCopilotRoutes(app, pool) {
 
         return res.json({
           success: true,
-          ai_message: choice.message.content
+          ai_message: guardAdminReply(choice.message.content)
         });
 
       } catch (err) {
@@ -2375,7 +2645,7 @@ function registerCopilotRoutes(app, pool) {
 
         return res.json({
           success: true,
-          ai_message: choice.message.content
+          ai_message: guardAdminReply(choice.message.content)
         });
 
       } catch (err) {
@@ -2551,6 +2821,61 @@ function registerCopilotRoutes(app, pool) {
     } catch (err) {
       console.error(`[TTS] ❌ XTTS v2 (Office PC) unreachable: ${err.message}`);
       return res.status(502).json({ success: false, error: `XTTS v2 (Office PC) unreachable: ${err.message}` });
+    }
+  });
+
+  // ─── Admin inline actions from chat ──────────────────────────────────────────
+  // Lets the admin act on a record straight from the chat message that surfaced it
+  // (approve/reject/ship an order, approve/reject/counter a quotation) instead of leaving
+  // chat to find it. Deliberately a separate endpoint from /chat: these mutate data, so
+  // they take an explicit action + id rather than being inferred from free text -- a
+  // mistranscribed voice command must never be able to approve an order by accident.
+  app.post('/api/copilot/admin/action', async (req, res) => {
+    const { action, target_id, value, reason, portal_role } = req.body || {};
+
+    if ((portal_role || '').toUpperCase() !== 'ADMIN') {
+      return res.status(403).json({ success: false, error: 'Admin role required for this action.' });
+    }
+    if (!action || !target_id) {
+      return res.status(400).json({ success: false, error: 'action and target_id are required.' });
+    }
+
+    try {
+      switch (String(action).toLowerCase()) {
+        case 'approve_order': {
+          const r = await updateOrderStatusInDb(pool, target_id, 'APPROVED');
+          return res.json({ success: true, message: `✅ آرڈر ${target_id} منظور کر دیا گیا۔`, result: r });
+        }
+        case 'reject_order': {
+          // Rejection reverses any reserved stock -- handled inside updateOrderStatusInDb.
+          const r = await updateOrderStatusInDb(pool, target_id, 'REJECTED');
+          return res.json({ success: true, message: `❌ آرڈر ${target_id} مسترد کر دیا گیا اور اسٹاک واپس ہو گیا۔`, result: r });
+        }
+        case 'ship_order': {
+          const r = await shipOrderInDb(pool, target_id);
+          return res.json({ success: true, message: `🚚 آرڈر ${target_id} روانہ کر دیا گیا۔`, result: r });
+        }
+        case 'approve_quotation': {
+          const r = await approveQuotationInDb(pool, target_id, value != null ? Number(value) : null);
+          return res.json({ success: true, message: `✅ کوٹیشن ${target_id} منظور کر دی گئی۔`, result: r });
+        }
+        case 'reject_quotation': {
+          const r = await rejectQuotationInDb(pool, target_id, reason || '');
+          return res.json({ success: true, message: `❌ کوٹیشن ${target_id} مسترد کر دی گئی۔`, result: r });
+        }
+        case 'counter_quotation': {
+          if (value == null || isNaN(Number(value))) {
+            return res.status(400).json({ success: false, error: 'A numeric counter price (value) is required.' });
+          }
+          const r = await sendCounterOfferToDistributorInDb(pool, target_id, Number(value), reason || '');
+          return res.json({ success: true, message: `🤝 کوٹیشن ${target_id} پر Rs ${Number(value).toLocaleString()} کی کاؤنٹر آفر بھیج دی گئی۔`, result: r });
+        }
+        default:
+          return res.status(400).json({ success: false, error: `Unknown action "${action}".` });
+      }
+    } catch (err) {
+      console.error('[Admin action] error:', err.message);
+      return res.status(400).json({ success: false, error: err.message });
     }
   });
 

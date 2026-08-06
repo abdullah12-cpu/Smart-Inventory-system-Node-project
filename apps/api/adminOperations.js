@@ -378,6 +378,99 @@ async function filterSuppliersByLocationInDb(pool, city, country) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// INVOICES (admin-wide view -- unscoped, unlike the distributor's own-invoices query)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// SENT means issued-but-unpaid, so it belongs with UNPAID whenever the admin asks about
+// outstanding money -- treating only literal 'UNPAID' as unpaid hides most of the ledger.
+const INVOICE_STATUS_GROUPS = {
+  unpaid:  ['UNPAID', 'SENT', 'PARTIAL', 'OVERDUE'],
+  paid:    ['PAID', 'SETTLED', 'CLOSED'],
+  overdue: ['OVERDUE'],
+};
+
+/**
+ * @param {string|null} statusFilter  'unpaid' | 'paid' | 'overdue' | null (all)
+ * @param {string|null} customer      Partial email/name match, for "X ki invoices"
+ */
+async function getAdminInvoicesFromDb(pool, statusFilter = null, customer = null) {
+  const conditions = [];
+  const params = [];
+
+  if (statusFilter === 'overdue') {
+    // Overdue is a date fact, not just a status -- anything unpaid past its due date.
+    params.push(INVOICE_STATUS_GROUPS.unpaid);
+    conditions.push(`UPPER(status) = ANY($${params.length})`);
+    conditions.push(`due_date IS NOT NULL AND due_date::timestamptz < NOW()`);
+  } else if (statusFilter && INVOICE_STATUS_GROUPS[statusFilter]) {
+    params.push(INVOICE_STATUS_GROUPS[statusFilter]);
+    conditions.push(`UPPER(status) = ANY($${params.length})`);
+  }
+
+  if (customer) {
+    params.push(`%${customer}%`);
+    conditions.push(`(customer_email ILIKE $${params.length} OR distributor_name ILIKE $${params.length})`);
+  }
+
+  const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  const res = await pool.query(
+    `SELECT * FROM invoices${where} ORDER BY due_date DESC NULLS LAST LIMIT 40`,
+    params
+  );
+  return res.rows;
+}
+
+async function getInvoiceStatusCountsFromDb(pool) {
+  const res = await pool.query(
+    'SELECT UPPER(status) AS status, COUNT(*)::int AS count, SUM(total_amount - COALESCE(amount_paid,0))::float AS outstanding FROM invoices GROUP BY UPPER(status) ORDER BY count DESC'
+  );
+  return res.rows;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DISTRIBUTORS / BUYERS (registered accounts, filterable by location)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Registered partner accounts, optionally filtered by role, city/country, or status.
+ * Distinct from filterSuppliersByLocationInDb -- suppliers are who we buy FROM, these are
+ * the distributor/buyer accounts that trade ON the platform.
+ */
+async function getPartnerAccountsFromDb(pool, { role = null, city = null, country = null, status = null } = {}) {
+  const conditions = [];
+  const params = [];
+
+  if (role) {
+    params.push(role.toLowerCase());
+    conditions.push(`LOWER(role) = $${params.length}`);
+  } else {
+    conditions.push(`LOWER(role) IN ('distributor', 'buyer')`);
+  }
+  if (city) {
+    params.push(`%${city}%`);
+    // warehouse_region / buyer_region often carry the city when the city column is blank.
+    conditions.push(`(city ILIKE $${params.length} OR warehouse_region ILIKE $${params.length} OR buyer_region ILIKE $${params.length})`);
+  }
+  if (country) {
+    params.push(`%${country}%`);
+    conditions.push(`country ILIKE $${params.length}`);
+  }
+  if (status) {
+    params.push(status.toUpperCase());
+    conditions.push(`UPPER(status) = $${params.length}`);
+  }
+
+  const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  const res = await pool.query(
+    `SELECT id, email, role, status, business_name, contact_name, buyer_store_name,
+            buyer_contact_name, city, country, warehouse_region, buyer_region, created_at
+     FROM users${where} ORDER BY created_at DESC LIMIT 40`,
+    params
+  );
+  return res.rows;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ORDER MANAGEMENT FUNCTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -727,6 +820,9 @@ module.exports = {
   deleteSupplierFromDb,
   searchSuppliersInDb,
   filterSuppliersByLocationInDb,
+  getAdminInvoicesFromDb,
+  getInvoiceStatusCountsFromDb,
+  getPartnerAccountsFromDb,
   // Orders
   listOrdersFromDb,
   getOrderByIdFromDb,
@@ -743,7 +839,19 @@ module.exports = {
   getOrdersByProductFromDb,
   getOrdersAwaitingShipmentFromDb,
   shipOrderInDb,
-  shipAllOrdersInDb
+  shipAllOrdersInDb,
+  // Quotations (defined below this block -- function declarations hoist, so exporting
+  // them here is fine and keeps all exports in one place)
+  getAllQuotationsFromDb,
+  getQuotationsByStatusFromDb,
+  getPendingQuotationsFromDb,
+  getQuotationByIdFromDb,
+  approveQuotationInDb,
+  rejectQuotationInDb,
+  sendCounterOfferToDistributorInDb,
+  getQuotationKpisFromDb,
+  getQuotationsByCustomerFromDb,
+  getHighValueQuotationsFromDb
 };
 
 

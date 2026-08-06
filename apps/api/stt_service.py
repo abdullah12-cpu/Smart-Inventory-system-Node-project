@@ -132,16 +132,22 @@ async def transcribe(audio: UploadFile = File(...), language: str = Form(default
             # greedy decoding. beam_size=5 + temperature=0.0 trades a bit of latency for a
             # meaningfully more accurate/deterministic transcript.
             beam_size=5,
-            temperature=0.0,
             condition_on_previous_text=False,
             no_speech_threshold=0.6,
             # Biases decoding toward this app's vocabulary -- see DOMAIN_PROMPT above.
             initial_prompt=DOMAIN_PROMPT,
-            # Drops low-confidence hallucinations rather than emitting confident-looking
-            # nonsense. Whisper invents plausible sentences from noise/silence, and a
-            # hallucinated transcript routes the chatbot to a completely wrong intent.
+            # Hallucination suppression. Whisper will happily invent a fluent sentence from
+            # noise ("show me unpaid invoices" came back as "I don't want to show you the
+            # payment, so I am going to show you the unpaid payment"), and a hallucinated
+            # transcript routes the chatbot to entirely the wrong intent. These thresholds
+            # mark a decode as failed when it looks degenerate...
             log_prob_threshold=-1.0,
             compression_ratio_threshold=2.4,
+            # ...and this temperature ladder is what makes the thresholds actionable: on a
+            # failed decode Whisper retries at the next temperature instead of returning the
+            # bad result. A scalar temperature disables that fallback entirely, so the
+            # thresholds above would only ever detect the problem, never recover from it.
+            temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
         )
         text = "".join(seg.text for seg in segments).strip()
         return {

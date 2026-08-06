@@ -9,7 +9,40 @@
       "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId=2696\")",
       "Bash(node -e ' *)",
       "Bash(node --check distributorOperations.js)",
-      "Bash(PORT=5057 node index.js)"
+      "Bash(PORT=5057 node index.js)",
+      "Bash(node --check adminOperations.js)",
+      "Bash(PORT=5058 node index.js)",
+      "Bash(curl -s -X POST http://localhost:5058/api/copilot/chat -H \"Content-Type: application/json\" -d '{\"message\":\"show me approved quotations\",\"portal_role\":\"ADMIN\",\"history\":[]}' --max-time 60)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\(\\(j.ai_message||''\\).split\\('\\\\n'\\).slice\\(0,3\\).join\\('\\\\n'\\)\\);console.log\\('speech:',j.speech_text\\);console.log\\('quotations returned:',\\(j.quotations||[]\\).length\\)}\\)\")",
+      "Bash(curl -s -X POST http://localhost:5058/api/copilot/admin/action -H \"Content-Type: application/json\" -d '{\"action\":\"approve_order\",\"target_id\":\"ORD-PO-1734\",\"portal_role\":\"BUYER\"}' --max-time 30)",
+      "Bash(curl -s -X POST http://localhost:5058/api/copilot/admin/action -H \"Content-Type: application/json\" -d '{\"action\":\"delete_everything\",\"target_id\":\"X\",\"portal_role\":\"ADMIN\"}' --max-time 30)",
+      "Bash(curl -s -X POST http://localhost:5058/api/copilot/admin/action -H \"Content-Type: application/json\" -d '{\"action\":\"counter_quotation\",\"target_id\":\"QUO-2026-13225\",\"portal_role\":\"ADMIN\"}' --max-time 30)",
+      "Bash(awk 'NR>=2614 && NR<=2619 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(awk 'NR>=3029 && NR<=3048 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(python -)",
+      "Bash(awk 'NR>=170 && NR<=199 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(awk 'NR>=1 && NR<=12 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(awk 'NR>=294 && NR<=310 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(awk 'NR>=366 && NR<=374 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(curl -s -X POST http://localhost:5058/api/copilot/admin/action -H \"Content-Type: application/json\" -d '{\"action\":\"reject_quotation\",\"target_id\":\"QUO-2026-88888\",\"reason\":\"test run\",\"portal_role\":\"ADMIN\"}' --max-time 30)",
+      "Bash(git diff *)",
+      "Bash(awk 'NR>=2530 && NR<=2560 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(npx --no-install playwright --version)",
+      "Bash(npx --no-install eslint src/components/AdminPortal.jsx src/components/AdminChatbotWidget.jsx)",
+      "Bash(cd \"c:/Users/PC/Documents/Intelligent_IQ_Ecommerce_App/apps/web\" && rm -f __ssrtest.jsx && rm -f /tmp/ssrtest.cjs && echo \"test files removed\" && git status --short | head -10)",
+      "Bash(curl -s \"http://localhost:5173/src/components/AdminPortal.jsx\" --max-time 20)",
+      "Bash(curl -s \"http://localhost:5173/src/lib/store.js\" --max-time 20)",
+      "Bash(npm init *)",
+      "Bash(node -e \"require\\('jsdom'\\);console.log\\('jsdom ready'\\)\")",
+      "Bash(awk 'NR>=210 && NR<=240 {print NR\": \"$0}' src/components/AdminPortal.jsx)",
+      "Bash(cd \"c:/Users/PC/Documents/Intelligent_IQ_Ecommerce_App/apps/web\" && git status --short src/ && echo \"--- build ---\" && npx vite build 2>&1 | tail -2 && rm -f \"C:/Users/PC/AppData/Local/Temp/domtest.js\" \"C:/Users/PC/AppData/Local/Temp/dt.js\")",
+      "Bash(curl -s --max-time 10 http://localhost:8021/health)",
+      "Bash(node -e \"console.log\\(Object.entries\\(require\\('./package.json'\\).scripts\\).map\\(\\([k,v]\\)=>k+': '+v\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"console.log\\(Object.entries\\(require\\('./apps/web/package.json'\\).scripts\\).map\\(\\([k,v]\\)=>k+': '+v\\).join\\('\\\\n'\\)\\)\")"
+    ],
+    "additionalDirectories": [
+      "\\tmp",
+      "C:\\Users\\PC\\AppData\\Local\\Temp"
     ]
   }
 }

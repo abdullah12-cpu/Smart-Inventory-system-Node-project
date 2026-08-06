@@ -47,8 +47,10 @@ export function StoreProvider({ children }) {
   const [cart, setCart] = useState([]);
   const [distributors, setDistributors] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
-  useEffect(() => {
-    const fetchAllData = async () => {
+  // Defined outside the effect and exposed on the context so callers that mutate server
+  // data (e.g. the admin copilot approving or rejecting an order from chat) can refresh the
+  // whole portal afterwards, instead of the UI silently showing stale rows until reload.
+  const fetchAllData = useCallback(async () => {
       try {
         // Fetch all products regardless of warehouse — distributor sees full catalog
         let prodUrl = "/api/products";
@@ -102,9 +104,11 @@ export function StoreProvider({ children }) {
       } catch (err) {
         console.error("Error fetching data from database:", err);
       }
-    };
+  }, [portal, currentUser?.email, currentUser?.warehouse_region]);
+
+  useEffect(() => {
     fetchAllData();
-  }, [portal, currentUser?.warehouse_region]);
+  }, [fetchAllData]);
   const markNotificationRead = useCallback((id) => {
     setNotifications(
       (prev) => prev.map((n) => n.notification_id === id ? { ...n, is_read: true } : n)
@@ -1157,6 +1161,7 @@ export function StoreProvider({ children }) {
         markNotificationRead,
         addNotification,
         addNewProduct,
+        fetchAllData,
         addSupplier,
         updateSupplier,
         deleteSupplier,

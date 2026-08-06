@@ -368,7 +368,12 @@ export function getMicUnavailableReason() {
  * Hands-free voice capture: records from the mic, auto-stops on a pause via voice activity
  * detection, sends the clip to the STT service, and hands back the transcript.
  */
-export function useVoiceRecorder({ onTranscript, onError, language = "ur" }) {
+/**
+ * `language` is intentionally null by default: users here mix English, Urdu and Roman Urdu
+ * freely, and pinning the decoder to one language forces Whisper to interpret the other as
+ * that language. Auto-detection is the safer default; pass a code only to override it.
+ */
+export function useVoiceRecorder({ onTranscript, onError, language = null }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
 

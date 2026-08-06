@@ -505,7 +505,9 @@ export default function DistributorChatbotWidget({ currentUser, products = [], o
           const resp = await fetch('/api/copilot/stt', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audio: dataUrl, language: 'ur' }),
+            // No forced language: users mix English/Urdu/Roman Urdu, and pinning the
+            // decoder to Urdu makes it interpret English speech as Urdu.
+            body: JSON.stringify({ audio: dataUrl }),
             signal: AbortSignal.timeout(30000)
           });
           const data = await resp.json();
