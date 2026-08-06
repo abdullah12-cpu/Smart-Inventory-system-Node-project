@@ -1,0 +1,34 @@
+# Python dependencies for the local voice microservices in apps/api:
+#   - stt_service.py  (Urdu/English speech-to-text via faster-whisper, port 8021)
+#   - tts_service.py  (edge-tts fallback TTS -- currently NOT called by the live app;
+#                       copilot.js talks only to the Office PC's XTTS v2 service. Kept
+#                       installable in case it's ever wired back in as a fallback.)
+#
+# Setup on a fresh machine:
+#   python -m venv venv
+#   venv\Scripts\activate          (Windows)   /   source venv/bin/activate   (macOS/Linux)
+#   pip install -r requirements.txt
+#
+# Then run each service in its own terminal (from apps/api, with the venv active):
+#   python stt_service.py
+#   python tts_service.py
+#
+# IMPORTANT -- read before installing on Windows:
+#   av MUST stay pinned to 13.1.0. Version 18.0.0 (the version pip installs by default)
+#   was blocked outright by Windows Application Control Policy on this project's dev
+#   machine ("An Application Control policy has blocked this file" when importing av,
+#   which faster-whisper imports internally). 13.1.0 is confirmed working. If a future
+#   machine also blocks 13.1.0, try the next-older 1x.x release rather than jumping to
+#   a newer major version.
+
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4
+python-multipart==0.0.32
+
+# Speech-to-text (stt_service.py)
+faster-whisper==1.2.1
+av==13.1.0
+
+# Text-to-speech fallback (tts_service.py) -- see note above, currently unused by the app
+edge-tts==7.2.8
