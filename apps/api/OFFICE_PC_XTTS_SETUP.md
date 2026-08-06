@@ -4,6 +4,15 @@
 Everything runs inside an isolated virtual environment.
 Nothing is installed globally. Nothing existing is uninstalled or changed.
 
+> **Latency fix applied (see `tts_service_gpu.py` in this same folder):** the `tts_service_gpu.py`
+> below in Step 4 was the *original* version and had a real latency bug — it recomputed the
+> speaker conditioning latents from the reference WAV on *every* request, adding a fixed
+> several-second tax regardless of how short the text was. The version of `tts_service_gpu.py`
+> that now lives alongside this doc caches those latents once at startup, runs fp16 on CUDA,
+> and adds an opt-in `stream: true` request mode using true streaming generation. Deploy that
+> file to the Office PC (replacing whatever's currently running) rather than retyping the
+> snippet below.
+
 ---
 
 ## Prerequisites — Check These First

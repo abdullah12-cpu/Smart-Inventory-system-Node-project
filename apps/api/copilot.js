@@ -2031,7 +2031,7 @@ function registerCopilotRoutes(app, pool) {
   app.post('/api/copilot/distributor/chat', safeHandleChat('DISTRIBUTOR'));
   // Urdu & Multilingual TTS — ElevenLabs (when ELEVENLABS_API_KEY is present) or Edge Neural TTS
   app.post('/api/copilot/tts', async (req, res) => {
-    const { text, voice = 'ur-PK-UzmaNeural' } = req.body || {};
+    const { text, voice = 'ur-PK-UzmaNeural', stream = false } = req.body || {};
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ success: false, error: 'text is required' });
     }
@@ -2045,126 +2045,70 @@ function registerCopilotRoutes(app, pool) {
 
     try { require('dotenv').config(); } catch {}
 
-    // 1. Primary: Office PC GPU TTS Service (RTX 4090 GPU Urdu Neural TTS)
+    // XTTS v2 on the Office PC GPU is the ONLY voice engine used here -- no edge-tts /
+    // ElevenLabs fallback. If the Office PC is unreachable, this fails loudly (502/204)
+    // rather than silently switching to a different voice.
+    // Note for manual diagnostics against this service: its health endpoint is
+    // /api/health, not /health (confirmed against the live service).
     const ttsServiceUrl = process.env.TTS_SERVICE_URL || 'https://bronco-antsy-magnetize.ngrok-free.dev/api/tts';
     const ttsApiKey = process.env.TTS_API_KEY || 'az5nD6ceT-c4lslqzadpNA-b';
     const defaultVoice = process.env.TTS_DEFAULT_VOICE || 'demo-urdu-male.wav';
 
-    if (ttsServiceUrl) {
-      try {
-        let targetUrl = ttsServiceUrl;
-        if (ttsApiKey && !targetUrl.includes('key=')) {
-          targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(ttsApiKey.trim());
-        }
-
-        let targetVoice = voice;
-        if (!targetVoice || targetVoice.includes('Neural') || targetVoice.includes('ur-PK') || targetVoice === 'default') {
-          targetVoice = defaultVoice;
-        }
-
-        console.log(`[TTS] 🚀 Attempting Office PC GPU TTS (${targetUrl}, voice=${targetVoice})...`);
-        const gpuResp = await fetch(targetUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
-            'x-api-key': ttsApiKey
-          },
-          body: JSON.stringify({
-            text: spoken,
-            voice: targetVoice,
-            max_chars: 120,
-            temperature: 0.1,
-            top_p: 0.3,
-            speed: 1.05
-          }),
-          signal: AbortSignal.timeout(120000)
-        });
-
-        if (gpuResp.ok) {
-          const contentType = gpuResp.headers.get('content-type') || 'audio/wav';
-          console.log(`[TTS] ✅ Office PC GPU TTS speech synthesis successful! Returning audio (${contentType})...`);
-          res.setHeader('Content-Type', contentType);
-          res.setHeader('X-TTS-Engine', 'Office-GPU-TTS');
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          const { Readable } = require('stream');
-          return Readable.fromWeb(gpuResp.body).pipe(res);
-        } else {
-          const errText = await gpuResp.text();
-          console.warn(`[TTS] ⚠️ Office PC GPU TTS returned HTTP ${gpuResp.status}: ${errText}. Falling back...`);
-        }
-      } catch (err) {
-        console.warn(`[TTS] ⚠️ Office PC GPU TTS request error: ${err.message}. Falling back...`);
-      }
-    }
-
-    // 2. Secondary Fallback: ElevenLabs API if key is provided
-    const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY ? process.env.ELEVENLABS_API_KEY.trim() : '';
-    if (elevenLabsApiKey) {
-      try {
-        const isElevenLabsId = (v) => typeof v === 'string' && /^[a-zA-Z0-9]{15,32}$/.test(v.trim()) && !/neural|edge|ur-pk/i.test(v);
-        const voiceId = isElevenLabsId(voice) ? voice.trim() : (process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM');
-        const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
-        const elevenUrl = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-        
-        console.log(`[TTS] 🎙️ Attempting ElevenLabs API (model=${modelId}, voiceId=${voiceId})...`);
-        const elevenResp = await fetch(elevenUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'xi-api-key': elevenLabsApiKey,
-            'Accept': 'audio/mpeg'
-          },
-          body: JSON.stringify({
-            text: spoken,
-            model_id: modelId,
-            voice_settings: {
-              stability: parseFloat(process.env.ELEVENLABS_STABILITY || '0.5'),
-              similarity_boost: parseFloat(process.env.ELEVENLABS_SIMILARITY_BOOST || '0.75')
-            }
-          }),
-          signal: AbortSignal.timeout(15000)
-        });
-
-        if (elevenResp.ok) {
-          console.log(`[TTS] ✅ ElevenLabs speech synthesis successful! Returning audio...`);
-          res.setHeader('Content-Type', 'audio/mpeg');
-          res.setHeader('X-TTS-Engine', 'ElevenLabs');
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          const { Readable } = require('stream');
-          return Readable.fromWeb(elevenResp.body).pipe(res);
-        } else {
-          const errBody = await elevenResp.text();
-          console.warn(`[TTS] ⚠️ ElevenLabs API returned HTTP ${elevenResp.status}: ${errBody}`);
-        }
-      } catch (err) {
-        console.warn(`[TTS] ⚠️ ElevenLabs request error: ${err.message}...`);
-      }
-    }
-
-    // 3. Final Fallback: Edge Neural TTS Microservice
-    const LOCAL_TTS_URL = 'http://localhost:8020/api/tts';
     try {
-      const ttsResp = await fetch(LOCAL_TTS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: spoken, voice: 'ur-PK-UzmaNeural' }),
-        signal: AbortSignal.timeout(12000)
-      });
-      if (!ttsResp.ok) {
-        const err = await ttsResp.text();
-        return res.status(502).json({ success: false, error: err });
+      let targetUrl = ttsServiceUrl;
+      if (ttsApiKey && !targetUrl.includes('key=')) {
+        targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(ttsApiKey.trim());
       }
-      const contentType = ttsResp.headers.get('content-type') || 'audio/mpeg';
-      console.log(`[TTS] 🔊 Edge-TTS speech synthesis returning audio (${contentType})...`);
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('X-TTS-Engine', 'Edge-TTS');
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      const { Readable } = require('stream');
-      Readable.fromWeb(ttsResp.body).pipe(res);
+
+      let targetVoice = voice;
+      if (!targetVoice || targetVoice.includes('Neural') || targetVoice.includes('ur-PK') || targetVoice === 'default') {
+        targetVoice = defaultVoice;
+      }
+
+      console.log(`[TTS] 🚀 XTTS v2 (Office PC GPU) request (${targetUrl}, voice=${targetVoice})...`);
+      const gpuResp = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          'X-API-Key': ttsApiKey
+        },
+        body: JSON.stringify({
+          text: spoken,
+          voice: targetVoice,
+          max_chars: 120,
+          temperature: 0.1,
+          top_p: 0.3,
+          speed: 1.05,
+          stream: !!stream
+        }),
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (gpuResp.ok) {
+        const contentType = gpuResp.headers.get('content-type') || 'audio/wav';
+        console.log(`[TTS] ✅ XTTS v2 synthesis successful! Returning audio (${contentType}, stream=${!!stream})...`);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('X-TTS-Engine', 'XTTS-v2-Office-GPU');
+        // Streamed responses are generated progressively and must reach the browser as
+        // each chunk arrives -- caching (which implies a complete, static response) and
+        // buffering both defeat the point, so only apply Cache-Control to the
+        // non-streaming path, and explicitly disable any proxy/compression buffering.
+        if (stream) {
+          res.setHeader('X-Accel-Buffering', 'no');
+        } else {
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+        }
+        const { Readable } = require('stream');
+        return Readable.fromWeb(gpuResp.body).pipe(res);
+      }
+
+      const errText = await gpuResp.text();
+      console.error(`[TTS] ❌ XTTS v2 (Office PC) returned HTTP ${gpuResp.status}: ${errText}`);
+      return res.status(502).json({ success: false, error: `XTTS v2 service error (${gpuResp.status}): ${errText}` });
     } catch (err) {
-      console.error('[TTS] proxy error:', err.message);
-      return res.status(204).send();
+      console.error(`[TTS] ❌ XTTS v2 (Office PC) unreachable: ${err.message}`);
+      return res.status(502).json({ success: false, error: `XTTS v2 (Office PC) unreachable: ${err.message}` });
     }
   });
 

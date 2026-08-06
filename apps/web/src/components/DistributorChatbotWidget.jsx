@@ -197,22 +197,122 @@ function cleanForSpeech(raw) {
   return text;
 }
 
+// XTTS streaming wire format (as specified by the service): one 44-byte WAV header with
+// placeholder sizes, then continuous raw PCM -- signed 16-bit little-endian, mono, 24000 Hz,
+// no per-chunk framing. Sentence chunks are pre-concatenated server-side with ~120ms silence
+// between them, so the client only has to append bytes and schedule playback.
+const XTTS_STREAM_SAMPLE_RATE = 24000;
+const XTTS_WAV_HEADER_BYTES = 44;
+
+/**
+ * Streams TTS audio and schedules PCM chunks back-to-back via the Web Audio API as they
+ * arrive, so playback starts after the first chunk (~0.3s) instead of waiting for the
+ * entire utterance to finish generating (~2-5s). Falls back to the old full-blob approach
+ * (playFullBlob) on any failure -- older/unusual browsers, network hiccups, etc.
+ */
+async function playStreamingTTS(fullText, { stopRef, onFirstAudio, onEnded }) {
+  const resp = await fetch('/api/copilot/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: fullText, voice: 'ur-PK-UzmaNeural', stream: true }),
+    signal: AbortSignal.timeout(120000)
+  });
+  if (!resp.ok || resp.status === 204 || !resp.body) throw new Error('stream unavailable');
+
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const audioCtx = new AudioCtx();
+  const activeSources = [];
+  let nextStartTime = 0;
+  let headerSkipped = false;
+  let leftoverByte = null; // odd trailing byte carried across chunk boundaries (2 bytes/sample)
+  let announcedFirstAudio = false;
+  let scheduledSamples = 0;
+
+  const scheduleChunk = (int16Samples) => {
+    if (int16Samples.length === 0) return;
+    const float32 = new Float32Array(int16Samples.length);
+    for (let i = 0; i < int16Samples.length; i++) float32[i] = int16Samples[i] / 32768;
+
+    const buffer = audioCtx.createBuffer(1, float32.length, XTTS_STREAM_SAMPLE_RATE);
+    buffer.copyToChannel(float32, 0);
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    const startAt = Math.max(nextStartTime, audioCtx.currentTime);
+    source.start(startAt);
+    nextStartTime = startAt + buffer.duration;
+    scheduledSamples += int16Samples.length;
+    activeSources.push(source);
+
+    if (!announcedFirstAudio) { announcedFirstAudio = true; onFirstAudio?.(); }
+  };
+
+  const reader = resp.body.getReader();
+  try {
+    while (true) {
+      if (stopRef.current) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.length === 0) continue;
+
+      let bytes = value;
+      if (!headerSkipped) {
+        bytes = bytes.length > XTTS_WAV_HEADER_BYTES ? bytes.slice(XTTS_WAV_HEADER_BYTES) : bytes.slice(bytes.length);
+        headerSkipped = true;
+        if (bytes.length === 0) continue;
+      }
+
+      let combined = bytes;
+      if (leftoverByte !== null) {
+        combined = new Uint8Array(bytes.length + 1);
+        combined[0] = leftoverByte;
+        combined.set(bytes, 1);
+        leftoverByte = null;
+      }
+
+      let usableLength = combined.length;
+      if (usableLength % 2 !== 0) {
+        leftoverByte = combined[usableLength - 1];
+        usableLength -= 1;
+      }
+      if (usableLength <= 0) continue;
+
+      const int16 = new Int16Array(combined.buffer, combined.byteOffset, usableLength / 2);
+      scheduleChunk(int16);
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+
+  const remainingMs = Math.max(0, (nextStartTime - audioCtx.currentTime) * 1000);
+  const waitAndEnd = () => new Promise(resolve => setTimeout(resolve, remainingMs)).then(() => {
+    onEnded?.();
+  });
+
+  return {
+    stop: () => {
+      activeSources.forEach(s => { try { s.stop(); } catch {} });
+      audioCtx.close().catch(() => {});
+    },
+    finished: scheduledSamples > 0 ? waitAndEnd() : Promise.resolve().then(() => onEnded?.())
+  };
+}
+
 function TTSPlayButton({ text, autoPlay = false }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const stopRef  = useRef(false);
   const audioRef = useRef(null);
+  const streamRef = useRef(null);
 
   const stopAll = () => {
     stopRef.current = true;
     if (audioRef.current) { try { audioRef.current.pause(); audioRef.current.src = ''; } catch {} audioRef.current = null; }
+    if (streamRef.current) { try { streamRef.current.stop(); } catch {} streamRef.current = null; }
     setIsPlaying(false);
   };
 
-  const playFull = async (fullText) => {
-    if (!fullText) return;
-    stopRef.current = false;
-    setIsPlaying(true);
-
+  /** Full-blob fallback: waits for the whole response before playing anything. */
+  const playFullBlob = async (fullText) => {
     try {
       const resp = await fetch('/api/copilot/tts', {
         method: 'POST',
@@ -234,6 +334,23 @@ function TTSPlayButton({ text, autoPlay = false }) {
       await audio.play();
     } catch {
       setIsPlaying(false);
+    }
+  };
+
+  const playFull = async (fullText) => {
+    if (!fullText) return;
+    stopRef.current = false;
+    setIsPlaying(true);
+
+    try {
+      const handle = await playStreamingTTS(fullText, {
+        stopRef,
+        onEnded: () => { if (!stopRef.current) setIsPlaying(false); }
+      });
+      streamRef.current = handle;
+      await handle.finished;
+    } catch {
+      if (!stopRef.current) await playFullBlob(fullText);
     }
   };
 

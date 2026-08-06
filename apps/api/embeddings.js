@@ -15,6 +15,16 @@
 const EMBED_MODEL = 'nomic-embed-text';
 const EMBED_DIMS  = 768;
 
+// The remote ngrok tunnel requires this API key on every route, not just chat -- without
+// it, every remote request here 401s and silently falls through to the (usually absent)
+// local fallback, even when the remote instance is perfectly reachable.
+function authedOllamaUrl(baseUrl, path) {
+  if (baseUrl === 'http://localhost:11434') return `${baseUrl}${path}`;
+  const apiKey = process.env.TTS_API_KEY || 'az5nD6ceT-c4lslqzadpNA-b';
+  const sep = path.includes('?') ? '&' : '?';
+  return apiKey ? `${baseUrl}${path}${sep}key=${encodeURIComponent(apiKey.trim())}` : `${baseUrl}${path}`;
+}
+
 /**
  * Dynamically resolves working Ollama base URL (Remote PC via OLLAMA_URL -> Local Mac)
  */
@@ -24,7 +34,10 @@ async function getWorkingOllamaBase() {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(`${remoteUrl}/api/tags`, { signal: controller.signal });
+      const res = await fetch(authedOllamaUrl(remoteUrl, '/api/tags'), {
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+        signal: controller.signal
+      });
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
@@ -61,7 +74,7 @@ async function generateEmbedding(text) {
     throw new Error('No working Ollama instance found with nomic-embed-text');
   }
 
-  const res = await fetch(`${baseUrl}/api/embed`, {
+  const res = await fetch(authedOllamaUrl(baseUrl, '/api/embed'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: EMBED_MODEL, input: text })
