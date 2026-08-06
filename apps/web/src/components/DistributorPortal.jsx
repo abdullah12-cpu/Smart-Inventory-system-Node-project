@@ -107,7 +107,7 @@ function QuoteStatusBadge({ status }) {
   );
 }
 export default function DistributorPortal({ onLogout }) {
-  const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices, recordPaymentAllocation, currentUser, placeOrder } = useStore();
+  const { orders, products, quotations, setQuotations, setOrders, submitQuotationRequest, updateQuotationStatus, invoices, recordPaymentAllocation, currentUser, placeOrder, fetchAllData } = useStore();
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
@@ -425,6 +425,54 @@ export default function DistributorPortal({ onLogout }) {
       }
     }
   };
+  /**
+   * Order line items for a quotation being converted to an order.
+   *
+   * Quotations store their lines two ways depending on how they were created: an `items`
+   * JSON array (multi-line quotes) or flat product_name/sku/quantity/unit_price columns
+   * (single-line quotes from the catalog). Both are handled, because the server matches
+   * order items to products by product_id/sku/name in order to reserve stock -- a line that
+   * carries none of those reserves nothing, silently decoupling the order from inventory.
+   */
+  const buildOrderItemsFromQuote = (quote) => {
+    let items = quote.items;
+    if (typeof items === "string") {
+      try { items = JSON.parse(items); } catch { items = null; }
+    }
+
+    if (Array.isArray(items) && items.length > 0) {
+      return items.map((it) => ({
+        product_id: it.product_id || it.productId || "",
+        sku: it.sku || "",
+        name: it.name || it.product_name || "",
+        product_name: it.product_name || it.name || "",
+        qty: parseInt(it.qty || it.quantity || 1) || 1,
+        price: parseFloat(it.price || it.unit_price || 0) || 0
+      }));
+    }
+
+    if (quote.product_name || quote.sku) {
+      return [{
+        product_id: quote.product_id || "",
+        sku: quote.sku || "",
+        name: quote.product_name || "",
+        product_name: quote.product_name || "",
+        qty: parseInt(quote.quantity || 1) || 1,
+        price: parseFloat(quote.unit_price || quote.total_amount || 0) || 0
+      }];
+    }
+
+    // Nothing identifiable to reserve against -- keep the order value correct rather than
+    // inventing a product line that would silently match the wrong item.
+    return [{
+      product_id: "",
+      name: `Quotation ${quote.quotation_number}`,
+      product_name: `Quotation ${quote.quotation_number}`,
+      qty: 1,
+      price: parseFloat(quote.total_amount || 0) || 0
+    }];
+  };
+
   const handleAcceptQuote = async () => {
     setQuoteDetailsOpen(false);
 
@@ -458,14 +506,12 @@ export default function DistributorPortal({ onLogout }) {
               currency: "PKR",
               order_date: new Date().toISOString(),
               items_summary: `B2B Order Conversion from ${activeQuote.quotation_number}`,
-              items: [
-                {
-                  product_id: "b2b-stock",
-                  product_name: "B2B Stock Replenishment Bulk Purchase",
-                  price: activeQuote.total_amount,
-                  qty: 1
-                }
-              ],
+              // Carry the quotation's REAL product lines onto the order. This previously
+              // sent a single placeholder line ({ product_id: "b2b-stock", qty: 1 }), which
+              // matched no actual product -- so the server's reservation step found nothing
+              // to reserve and the order never affected stock at all: quantity didn't drop
+              // when it shipped, and nothing came back when it was rejected.
+              items: buildOrderItemsFromQuote(activeQuote),
               customer_email: currentUser.email
             };
             await fetch("/api/orders", {
@@ -474,8 +520,9 @@ export default function DistributorPortal({ onLogout }) {
               body: JSON.stringify(orderPayload)
             });
           }
-          const ordRes = await fetch("/api/orders");
-          if (ordRes.ok) setOrders(await ordRes.json());
+          // Converting a quote to an order reserves stock server-side, so orders AND the
+          // catalog's availability figures are both stale until re-read.
+          await fetchAllData();
         }
       } catch (err) {
         console.error(err);

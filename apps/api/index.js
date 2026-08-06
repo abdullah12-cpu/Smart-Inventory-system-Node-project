@@ -992,6 +992,13 @@ app.post('/api/orders', async (req, res) => {
 });
 
 // PUT update order status
+// The :order_id path segment is matched against BOTH order_id and order_number. Callers
+// legitimately hold one or the other (the UI passes order_id; the AI copilot's own
+// updateOrderStatusInDb already accepted either), and matching only order_id made a request
+// carrying an order number fail as a silent 404 -- the status never changed, so stock was
+// never deducted or released and the order simply appeared stuck.
+const ORDER_MATCH_CLAUSE = (n) => `WHERE order_id = $${n} OR order_number = $${n}`;
+
 app.put('/api/orders/:order_id/status', async (req, res) => {
   const { order_id } = req.params;
   const { status, total_amount, subtotal, items, warehouse_id } = req.body;
@@ -1003,17 +1010,17 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
     let result;
     if (total_amount !== undefined && subtotal !== undefined && items !== undefined) {
       result = await pool.query(
-        'UPDATE orders SET status = $1, total_amount = $2, subtotal = $3, items = $4 WHERE order_id = $5 RETURNING *',
+        `UPDATE orders SET status = $1, total_amount = $2, subtotal = $3, items = $4 ${ORDER_MATCH_CLAUSE(5)} RETURNING *`,
         [status, total_amount, subtotal, JSON.stringify(items), order_id]
       );
     } else if (total_amount !== undefined) {
       result = await pool.query(
-        'UPDATE orders SET status = $1, total_amount = $2, subtotal = $2 WHERE order_id = $3 RETURNING *',
+        `UPDATE orders SET status = $1, total_amount = $2, subtotal = $2 ${ORDER_MATCH_CLAUSE(3)} RETURNING *`,
         [status, total_amount, order_id]
       );
     } else {
       result = await pool.query(
-        'UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *',
+        `UPDATE orders SET status = $1 ${ORDER_MATCH_CLAUSE(2)} RETURNING *`,
         [status, order_id]
       );
     }

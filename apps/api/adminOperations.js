@@ -729,6 +729,50 @@ async function getOrdersAwaitingShipmentFromDb(pool, categoryFilter = null) {
   };
 }
 
+/**
+ * Applies a physical shipment to an inventory array, following the stock model used
+ * everywhere else in the app:
+ *
+ *   place order  -> reserve  (available drops, physical `quantity` untouched)
+ *   ship         -> consume the reservation AND decrement physical `quantity`
+ *   reject/cancel-> release the reservation back to available
+ *
+ * The previous ship logic decremented `available_quantity` directly and never cleared
+ * `reserved_quantity`. Because placement had already reduced availability by reserving,
+ * that double-counted every shipment, and the stranded reservation suppressed availability
+ * permanently -- so stock appeared to shrink a little more with each order shipped.
+ * `available_quantity` is derived here (quantity - reserved), never decremented on its own.
+ *
+ * Ships from the requested depot first, then falls back to other warehouses so a multi-
+ * warehouse product doesn't fail just because the default depot is short.
+ */
+function applyShipmentToInventory(inventory, qty, preferredWarehouseId) {
+  if (!Array.isArray(inventory) || !(qty > 0)) return inventory;
+
+  const next = inventory.map(inv => ({ ...inv }));
+  const order = next
+    .map((_, i) => i)
+    .sort((a, b) =>
+      (next[a].warehouse_id === preferredWarehouseId ? 0 : 1) -
+      (next[b].warehouse_id === preferredWarehouseId ? 0 : 1)
+    );
+
+  let remaining = qty;
+  for (const i of order) {
+    if (remaining <= 0) break;
+    const inv = next[i];
+    const physical = Number(inv.quantity || 0);
+    if (physical <= 0) continue;
+
+    const take = Math.min(physical, remaining);
+    remaining -= take;
+    inv.quantity = physical - take;
+    inv.reserved_quantity = Math.max(0, Number(inv.reserved_quantity || 0) - take);
+    inv.available_quantity = Math.max(0, inv.quantity - inv.reserved_quantity);
+  }
+  return next;
+}
+
 async function shipOrderInDb(pool, identifier, warehouseId = 'wh-1') {
   const res = await pool.query(
     `SELECT * FROM orders WHERE order_id ILIKE $1 OR order_number ILIKE $1 LIMIT 1`,
@@ -760,12 +804,8 @@ async function shipOrderInDb(pool, identifier, warehouseId = 'wh-1') {
         const prod = pRes.rows[0];
         const inv = typeof prod.inventory === 'string' ? JSON.parse(prod.inventory) : prod.inventory;
         if (Array.isArray(inv)) {
-          let whItem = inv.find(w => w.warehouse_id === warehouseId) || inv[0];
-          if (whItem) {
-            whItem.available_quantity = Math.max(0, (whItem.available_quantity || 0) - qty);
-            whItem.quantity = Math.max(0, (whItem.quantity || 0) - qty);
-            await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inv), prod.product_id]);
-          }
+          const updatedInv = applyShipmentToInventory(inv, qty, warehouseId);
+          await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(updatedInv), prod.product_id]);
         }
       }
     }
@@ -840,6 +880,7 @@ module.exports = {
   getOrdersAwaitingShipmentFromDb,
   shipOrderInDb,
   shipAllOrdersInDb,
+  applyShipmentToInventory,
   // Quotations (defined below this block -- function declarations hoist, so exporting
   // them here is fine and keeps all exports in one place)
   getAllQuotationsFromDb,

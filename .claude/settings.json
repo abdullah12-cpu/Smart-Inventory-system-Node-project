@@ -38,7 +38,10 @@
       "Bash(cd \"c:/Users/PC/Documents/Intelligent_IQ_Ecommerce_App/apps/web\" && git status --short src/ && echo \"--- build ---\" && npx vite build 2>&1 | tail -2 && rm -f \"C:/Users/PC/AppData/Local/Temp/domtest.js\" \"C:/Users/PC/AppData/Local/Temp/dt.js\")",
       "Bash(curl -s --max-time 10 http://localhost:8021/health)",
       "Bash(node -e \"console.log\\(Object.entries\\(require\\('./package.json'\\).scripts\\).map\\(\\([k,v]\\)=>k+': '+v\\).join\\('\\\\n'\\)\\)\")",
-      "Bash(node -e \"console.log\\(Object.entries\\(require\\('./apps/web/package.json'\\).scripts\\).map\\(\\([k,v]\\)=>k+': '+v\\).join\\('\\\\n'\\)\\)\")"
+      "Bash(node -e \"console.log\\(Object.entries\\(require\\('./apps/web/package.json'\\).scripts\\).map\\(\\([k,v]\\)=>k+': '+v\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(awk -F: '{print $1}')",
+      "Bash(node \"C:/Users/PC/AppData/Local/Temp/claude/c--Users-PC-Documents-Intelligent-IQ-Ecommerce-App/e03babb3-81a7-4e2c-b77b-cb9c70808b5e/scratchpad/stock_flow_test.js\")",
+      "Bash(node stock_flow_test.js)"
     ],
     "additionalDirectories": [
       "\\tmp",
