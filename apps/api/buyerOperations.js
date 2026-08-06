@@ -225,6 +225,7 @@ async function trackBuyerOrder(pool, args = {}) {
   if (!order_id_query.trim()) {
     return {
       ai_message: "کون سا آرڈر ٹریک کرنا ہے؟ براہ کرم آرڈر نمبر بتائیں۔\n\nمثال: *\"ORD-2026-7781 ٹریک کریں\"*",
+      speech_text: "کون سا آرڈر ٹریک کرنا ہے؟ براہ کرم آرڈر نمبر بتائیں۔",
       orders: []
     };
   }
@@ -257,6 +258,7 @@ async function trackBuyerOrder(pool, args = {}) {
   if (!result.rows.length) {
     return {
       ai_message: `⚠️ آرڈر **"${order_id_query}"** نہیں ملا۔\n\nآرڈر نمبر دوبارہ چیک کریں، یا آزمائیں:\n- *"میرے سارے آرڈرز دکھائیں"*\n- *"شپڈ آرڈرز دکھائیں"*\n- *"پینڈنگ آرڈرز دکھائیں"*`,
+      speech_text: `آرڈر ${order_id_query} نہیں ملا۔ براہ کرم نمبر دوبارہ چیک کریں۔`,
       orders: []
     };
   }
@@ -283,14 +285,24 @@ async function trackBuyerOrder(pool, args = {}) {
     `💬 پوچھیں: *"سارے آرڈرز دکھائیں"*، *"شپڈ آرڈرز دکھائیں"*، یا نمبر کے ذریعے کوئی اور آرڈر ٹریک کریں۔`
   ].filter(l => l !== null).join('\n');
 
-  return { ai_message: md, orders: result.rows };
+  // Short, natural sentence for TTS -- the markdown block above is for on-screen display
+  // only; reading it aloud verbatim (headers, blockquotes, bullet examples) is what
+  // produced the "broken words" speech users were hearing.
+  const statusLabelUrdu = {
+    PENDING: 'زیر التوا', CONFIRMED: 'تصدیق شدہ', PROCESSING: 'تیار ہو رہا ہے',
+    SHIPPED: 'شپ ہو چکا ہے', DELIVERED: 'پہنچ چکا ہے', CANCELLED: 'منسوخ شدہ'
+  }[s] || s;
+  const nextStepSpeech = nextStep.replace(/^[^؀-ۿ]+/, '').trim();
+  const speech_text = `آرڈر ${order.order_number || order.order_id} کی حیثیت ${statusLabelUrdu} ہے۔ کل رقم ${Math.round(parseFloat(order.total_amount || 0)).toLocaleString()} روپے۔${nextStepSpeech ? ' ' + nextStepSpeech : ''}`;
+
+  return { ai_message: md, speech_text, orders: result.rows };
 }
 
 /**
  * List orders optionally filtered by status, with a summary table.
  */
 async function listBuyerOrdersByStatus(pool, args = {}) {
-  const { status_filter = null, customer_email = null, date_filter = null } = args;
+  const { status_filter = null, customer_email = null, date_start = null, date_end = null, date_label = null } = args;
 
   let sql = `SELECT * FROM orders`;
   const params = [];
@@ -306,14 +318,16 @@ async function listBuyerOrdersByStatus(pool, args = {}) {
     params.push(status_filter.toUpperCase());
   }
 
-  if (date_filter === 'today') {
-    conditions.push(`(order_date::date = CURRENT_DATE OR created_at::date = CURRENT_DATE)`);
-  } else if (date_filter === 'week') {
-    conditions.push(`(order_date >= CURRENT_DATE - INTERVAL '7 days' OR created_at >= CURRENT_DATE - INTERVAL '7 days')`);
+  // Covers "today", "yesterday", "this/last week", "this/last month", "this/last year",
+  // and specific dates ("6 august", "2026-08-06") -- date_start/date_end come pre-computed
+  // from copilot.js's getUrduDateRange() so this stays a single generic range condition.
+  if (date_start && date_end) {
+    conditions.push(`(order_date BETWEEN $${params.length + 1} AND $${params.length + 2} OR created_at BETWEEN $${params.length + 1} AND $${params.length + 2})`);
+    params.push(date_start, date_end);
   }
 
   if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
-  sql += ' ORDER BY created_at DESC LIMIT 20';
+  sql += ' ORDER BY created_at DESC LIMIT 50';
 
   let result;
   try {
@@ -326,16 +340,18 @@ async function listBuyerOrdersByStatus(pool, args = {}) {
 
   if (!orders.length) {
     const statusMsg = status_filter ? ` "${ORDER_STATUS_LABEL[status_filter.toUpperCase()] || status_filter}"` : '';
-    const dateMsg = date_filter === 'today' ? ' آج کا' : (date_filter === 'week' ? ' اس ہفتے کا' : '');
+    const dateMsg = date_label ? ` ${date_label} کا` : '';
+    const noneMsg = `آپ کا کوئی${dateMsg}${statusMsg} آرڈر نہیں ملا۔`;
     return {
-      ai_message: `آپ کا کوئی${dateMsg}${statusMsg} آرڈر نہیں ملا۔\n\nآزمائیں:\n- *"میرے سارے آرڈرز دکھائیں"*\n- *"شپڈ آرڈرز دکھائیں"*\n- *"ڈلیورڈ آرڈرز دکھائیں"*`,
+      ai_message: `${noneMsg}\n\nآزمائیں:\n- *"میرے سارے آرڈرز دکھائیں"*\n- *"شپڈ آرڈرز دکھائیں"*\n- *"ڈلیورڈ آرڈرز دکھائیں"*`,
+      speech_text: noneMsg,
       orders: []
     };
   }
 
   const emoji = status_filter ? (ORDER_STATUS_EMOJI[status_filter.toUpperCase()] || '📋') : '📋';
   const statusLabel = status_filter ? (ORDER_STATUS_LABEL[status_filter.toUpperCase()] || status_filter) : 'تمام';
-  const dateLabel = date_filter === 'today' ? ' — آج' : (date_filter === 'week' ? ' — اس ہفتے' : '');
+  const dateLabel = date_label ? ` — ${date_label}` : '';
 
   // Status breakdown counts
   const statusCounts = {};
@@ -366,7 +382,13 @@ async function listBuyerOrdersByStatus(pool, args = {}) {
     `💬 پوچھیں: *"ORD-2026-XXXX ٹریک کریں"* کسی بھی آرڈر کی مکمل تفصیل کے لیے۔`
   ].join('\n');
 
-  return { ai_message: md, orders };
+  // Short spoken INTRO only -- "یہ رہے آپ کے آج کے آرڈرز۔" ("Here are your today's
+  // orders.") -- not a spoken report of counts/totals. The actual numbers belong on
+  // screen in the table above; a person handing you a printout doesn't read the totals
+  // aloud first, they just say "here you go."
+  const speech_text = `یہ رہے آپ کے${dateLabel ? ' ' + dateLabel.replace(/[—-]/g, '').trim() + ' کے' : ''} ${statusLabel} آرڈرز۔`;
+
+  return { ai_message: md, speech_text, orders };
 }
 
 module.exports = {

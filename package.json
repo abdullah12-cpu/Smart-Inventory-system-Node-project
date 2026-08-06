@@ -9,7 +9,8 @@
     "dev:web": "npm run dev --prefix apps/web",
     "dev:api": "npm run dev --prefix apps/api",
     "start:api": "npm run start --prefix apps/api",
-    "dev": "concurrently \"npm run dev:web\" \"npm run dev:api\""
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:mobile": "concurrently \"npm run dev:mobile --prefix apps/web\" \"npm run dev:api\""
   },
   "devDependencies": {
     "concurrently": "^10.0.4"

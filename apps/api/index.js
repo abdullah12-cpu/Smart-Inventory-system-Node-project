@@ -1776,6 +1776,18 @@ app.post('/api/admin/distributors/remove', async (req, res) => {
 const { registerCopilotRoutes } = require('./copilot');
 registerCopilotRoutes(app, pool);
 
+// Process-wide safety net: an unhandled 'error' event or rejected promise anywhere
+// (e.g. a stream piping a proxied response, like TTS audio from the Office PC) is
+// fatal to the whole Node process by default -- it takes down every route, not just
+// the one that failed. Logging and continuing here is what makes those failures
+// isolated request errors instead of full server outages.
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL-GUARD] Uncaught exception (server kept alive):', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL-GUARD] Unhandled promise rejection (server kept alive):', reason);
+});
+
 app.listen(port, () => {
   console.log(`CommerceIQ Auth API Server running on port ${port}`);
 

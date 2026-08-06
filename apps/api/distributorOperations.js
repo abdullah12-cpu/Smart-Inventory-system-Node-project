@@ -53,23 +53,44 @@ async function getDistributorQuotationsFromDb(pool, customerEmail) {
   return res.rows;
 }
 
-async function getDistributorQuotationsByStatusFromDb(pool, status, customerEmail = null) {
-  const normStatus = status.toUpperCase().replace(/\s+/g, '_');
+// Quotation lifecycle statuses vary across the code paths that write them (seed data, the
+// distributor portal, the AI tool calls), so asking for one exact status silently misses
+// equivalents -- "active quotations" matching only PENDING returned nothing for a partner
+// whose quotes were all APPROVED, even though an approved quote is very much still active.
+// Queries are therefore grouped by lifecycle stage rather than by a single literal status.
+const QUOTATION_STATUS_GROUPS = {
+  // Anything still live: awaiting a response, mid-negotiation, or agreed but not yet
+  // converted to an order. Deliberately excludes only the terminal states below.
+  ACTIVE:      ['DRAFT', 'UNDER_REVIEW', 'PENDING', 'SENT', 'OPEN', 'NEGOTIATING', 'COUNTER_OFFERED', 'APPROVED', 'ACCEPTED'],
+  NEGOTIATING: ['NEGOTIATING', 'COUNTER_OFFERED', 'UNDER_REVIEW'],
+  CONFIRMED:   ['APPROVED', 'ACCEPTED', 'CONFIRMED', 'WON'],
+  REJECTED:    ['REJECTED', 'DECLINED', 'CANCELLED', 'LOST'],
+  PENDING:     ['DRAFT', 'UNDER_REVIEW', 'PENDING', 'SENT', 'OPEN'],
+};
 
-  if (normStatus === 'DRAFT' || normStatus === 'UNDER_REVIEW' || normStatus === 'PENDING') {
-    const emailClause = customerEmail ? ' AND customer_email ILIKE $1' : '';
-    const res = await pool.query(
-      `SELECT * FROM quotations WHERE UPPER(status) IN ('DRAFT', 'UNDER_REVIEW', 'PENDING')${emailClause} ORDER BY created_at DESC LIMIT 30`,
-      customerEmail ? [`%${customerEmail}%`] : []
-    );
-    return res.rows;
-  }
+/**
+ * @param {string} status  A group name from QUOTATION_STATUS_GROUPS (ACTIVE, NEGOTIATING,
+ *                         CONFIRMED, REJECTED, PENDING) or any literal status value.
+ */
+async function getDistributorQuotationsByStatusFromDb(pool, status, customerEmail = null) {
+  const normStatus = String(status || '').toUpperCase().replace(/\s+/g, '_');
+  const group = QUOTATION_STATUS_GROUPS[normStatus] || [normStatus];
 
   const emailClause = customerEmail ? ' AND customer_email ILIKE $2' : '';
-  const params = customerEmail ? [normStatus, `%${customerEmail}%`] : [normStatus];
+  const params = customerEmail ? [group, `%${customerEmail}%`] : [group];
   const res = await pool.query(
-    `SELECT * FROM quotations WHERE UPPER(status) = $1${emailClause} ORDER BY created_at DESC LIMIT 30`,
+    `SELECT * FROM quotations WHERE UPPER(status) = ANY($1)${emailClause} ORDER BY created_at DESC LIMIT 30`,
     params
+  );
+  return res.rows;
+}
+
+/** Status breakdown for this distributor, used to explain an empty filtered result. */
+async function getDistributorQuotationStatusCounts(pool, customerEmail = null) {
+  const emailClause = customerEmail ? ' WHERE customer_email ILIKE $1' : '';
+  const res = await pool.query(
+    `SELECT UPPER(status) AS status, COUNT(*)::int AS count FROM quotations${emailClause} GROUP BY UPPER(status) ORDER BY count DESC`,
+    customerEmail ? [`%${customerEmail}%`] : []
   );
   return res.rows;
 }
@@ -589,6 +610,7 @@ module.exports = {
   getDistributorWholesaleProductsFromDb,
   getDistributorQuotationsFromDb,
   getDistributorQuotationsByStatusFromDb,
+  getDistributorQuotationStatusCounts,
   getDistributorQuotationByIdFromDb,
   getDistributorQuotationsByAmountFromDb,
   updateDistributorQuotationStatusInDb,

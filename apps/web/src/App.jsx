@@ -7,7 +7,14 @@ import AdminPortal from "./components/AdminPortal";
 import DistributorPortal from "./components/DistributorPortal";
 import BuyerPortal from "./components/BuyerPortal";
 import LandingPage from "./components/landing/LandingPage";
+import MobileChatApp from "./components/mobile/MobileChatApp";
 export default function App() {
+  // ?page=mobile -- the phone-sized AI assistant. Handled before anything else and
+  // outside StoreProvider: it signs in and talks to the copilot endpoints on its own, so it
+  // avoids the store's eager fetch of products/orders/quotations/invoices/suppliers/
+  // payments/stock-movements/audit-logs, none of which that screen renders.
+  const isMobileChat = new URLSearchParams(window.location.search).get("page") === "mobile";
+
   const [appState, setAppState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const page = params.get("page");
@@ -105,6 +112,10 @@ export default function App() {
     setAppState("landing");
     window.location.href = "/";
   };
+
+  // Returned after the hooks above so hook order stays stable across renders.
+  if (isMobileChat) return /* @__PURE__ */ jsx(MobileChatApp, {});
+
   return /* @__PURE__ */ jsxs(StoreProvider, { children: [
     appState === "landing" && /* @__PURE__ */ jsx(
       LandingPage,

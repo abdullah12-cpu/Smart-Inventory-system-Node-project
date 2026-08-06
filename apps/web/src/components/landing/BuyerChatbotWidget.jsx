@@ -317,7 +317,7 @@ async function playStreamingTTS(fullText, { stopRef, onFirstAudio, onEnded }) {
   };
 }
 
-function TTSPlayButton({ text, autoPlay = false }) {
+function TTSPlayButton({ text, speechText, autoPlay = false }) {
   const [isPlaying, setIsPlaying]   = useState(false);
   const stopRef    = useRef(false);
   const audioRef   = useRef(null);
@@ -375,15 +375,21 @@ function TTSPlayButton({ text, autoPlay = false }) {
     }
   };
 
+  // Prefer the backend's dedicated short speech_text (a natural sentence) over stripping
+  // markdown from the display text -- tables/bullet lists in ai_message don't reduce to
+  // clean speech no matter how the regex is tuned, which is what caused garbled/broken-word
+  // playback for order/invoice responses.
+  const spokenText = speechText || cleanForSpeech(text);
+
   const handleClick = () => {
     if (isPlaying) { stopAll(); return; }
-    playFull(cleanForSpeech(text));
+    playFull(spokenText);
   };
 
   // Auto-play on mount for the latest AI message
   useEffect(() => {
     if (!autoPlay) return;
-    const t = setTimeout(() => playFull(cleanForSpeech(text)), 300);
+    const t = setTimeout(() => playFull(spokenText), 300);
     return () => { clearTimeout(t); stopAll(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -613,6 +619,7 @@ export default function BuyerChatbotWidget() {
           {
             sender: "ai",
             text: data.ai_message,
+            speechText: data.speech_text || null,
             products: data.products || [],
             orders: data.orders || []
           }
@@ -722,7 +729,7 @@ export default function BuyerChatbotWidget() {
                     {msg.sender === "ai" && (
                       <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2">
                         <span className="text-[10px] text-slate-400 font-medium">Urdu AI Voice</span>
-                        <TTSPlayButton text={msg.text} autoPlay={idx === messages.length - 1} />
+                        <TTSPlayButton text={msg.text} speechText={msg.speechText} autoPlay={idx === messages.length - 1} />
                       </div>
                     )}
                   </div>

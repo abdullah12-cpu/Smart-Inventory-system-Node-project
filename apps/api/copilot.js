@@ -11,6 +11,7 @@ const {
   getDistributorWholesaleProductsFromDb, 
   getDistributorQuotationsFromDb,
   getDistributorQuotationsByStatusFromDb,
+  getDistributorQuotationStatusCounts,
   getDistributorQuotationByIdFromDb,
   getDistributorQuotationsByAmountFromDb,
   updateDistributorQuotationStatusInDb,
@@ -1008,16 +1009,43 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
   throw new Error(`Unknown tool name: ${name}`);
 }
 
+// Table cells are rendered as plain text by the chat widgets (only headings/paragraphs get
+// inline markdown parsing), so **bold** and `code` markers inside a cell reach the user
+// literally -- e.g. "**INV-2026-5375**" and "`SENT`". Cells therefore stay unformatted.
+// Dates likewise need formatting here: a raw timestamp column rendered as
+// "2026-09-04T22:58:15.718Z" is unreadable next to plain date columns.
+function formatTableDate(value) {
+  if (!value) return 'N/A';
+  const d = new Date(value);
+  if (isNaN(d)) return String(value).slice(0, 10);
+  return d.toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function formatOrdersTable(rows, title) {
   if (rows.length === 0) return `ℹ️ کوئی آرڈر نہیں ملا۔`;
   return `### ${title}\n\n| آرڈر # | حیثیت | رقم (PKR) | صارف | تاریخ |\n|---|---|---|---|---|\n` +
-    rows.map(r => `| ${r.order_number || r.order_id} | ${r.status} | Rs ${parseFloat(r.total_amount).toLocaleString()} | ${r.customer_email} | ${r.order_date ? new Date(r.order_date).toLocaleDateString() : 'N/A'} |`).join('\n');
+    rows.map(r => `| ${r.order_number || r.order_id} | ${r.status} | Rs ${parseFloat(r.total_amount).toLocaleString()} | ${r.customer_email} | ${formatTableDate(r.order_date)} |`).join('\n');
+}
+
+// Short, natural Urdu INTRO sentence for TTS -- kept separate from the markdown table
+// above (which is for on-screen display only, and is where the actual numbers/rows belong).
+// Reading a pipe-delimited table aloud verbatim produced garbled/broken speech, and reading
+// out totals/counts on top of that is still more than a person would naturally say out loud
+// before pointing at the list on screen -- "yeh rahi aapki [X]" is the target, not a report.
+function speechForOrders(rows, title) {
+  if (!rows || rows.length === 0) return `کوئی آرڈر نہیں ملا۔`;
+  return `یہ رہے ${title.replace(/[📦]/g, '').trim()}۔`;
 }
 
 function formatQuotationsTable(rows, title) {
   if (!rows || rows.length === 0) return `ℹ️ کوئی کوٹیشن نہیں ملی۔`;
   return `### ${title}\n\n| کوٹ نمبر | تاریخ | میعاد | حیثیت | رقم (PKR) |\n|---|---|---|---|---|\n` +
-    rows.map(r => `| **${r.quotation_number || r.quotation_id}** | ${r.created_at ? String(r.created_at).slice(0,10) : 'حالیہ'} | ${r.valid_until || '14 دن'} | \`${r.status || 'PENDING'}\` | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join('\n');
+    rows.map(r => `| ${r.quotation_number || r.quotation_id} | ${r.created_at ? formatTableDate(r.created_at) : 'حالیہ'} | ${r.valid_until ? formatTableDate(r.valid_until) : '14 دن'} | ${r.status || 'PENDING'} | Rs ${Number(r.total_amount || 0).toLocaleString()} |`).join('\n');
+}
+
+function speechForQuotations(rows, title) {
+  if (!rows || rows.length === 0) return `کوئی کوٹیشن نہیں ملی۔`;
+  return `یہ رہیں ${title.replace(/[📋❌✅⏳]/g, '').trim()}۔`;
 }
 
 function formatInvoicesTable(rows, title) {
@@ -1027,8 +1055,13 @@ function formatInvoicesTable(rows, title) {
       const total = parseFloat(r.total_amount || 0);
       const paid = parseFloat(r.amount_paid || 0);
       const remaining = Math.max(0, total - paid);
-      return `| **${r.invoice_number}** | Rs ${total.toLocaleString()} | Rs ${paid.toLocaleString()} | Rs ${remaining.toLocaleString()} | \`${r.status || 'UNPAID'}\` | ${r.due_date || 'N/A'} |`;
+      return `| ${r.invoice_number} | Rs ${total.toLocaleString()} | Rs ${paid.toLocaleString()} | Rs ${remaining.toLocaleString()} | ${r.status || 'UNPAID'} | ${formatTableDate(r.due_date)} |`;
     }).join('\n');
+}
+
+function speechForInvoices(rows, title) {
+  if (!rows || rows.length === 0) return `کوئی انوائس نہیں ملی۔`;
+  return `یہ رہیں ${title.replace(/[📄💳⚠️✅]/g, '').trim()}۔`;
 }
 
 function formatLedgerMd(ledger) {
@@ -1041,6 +1074,10 @@ function formatLedgerMd(ledger) {
     `- **زیر التواء انوائسز**: ${ledger.outstanding_invoices_count ?? 0}`,
     `- **ادائیگی کی شرائط**: ${ledger.payment_terms || 'NET-30'}`,
   ].join('\n');
+}
+
+function speechForLedger(ledger) {
+  return `آپ کی کریڈٹ لیمٹ ${Math.round(Number(ledger.credit_limit_pkr)).toLocaleString()} روپے ہے، جس میں سے ${Math.round(Number(ledger.available_credit_pkr)).toLocaleString()} روپے دستیاب ہیں۔ ${Number(ledger.outstanding_invoices_count) || 0} انوائسز زیر التواء ہیں۔`;
 }
 
 async function handleManageOrders(pool, args, message) {
@@ -1331,6 +1368,16 @@ function buildProductRecommendationMd(products) {
   }).join('\n\n');
 }
 
+// Short spoken version of the same fallback -- names + count only, not the full bullet
+// list with brand/category/stock lines for every item.
+function buildProductRecommendationSpeech(products) {
+  if (!products || products.length === 0) {
+    return 'معذرت، اس وقت کوئی مناسب مصنوع نہیں ملی۔';
+  }
+  const names = products.slice(0, 3).map(p => p.product_name).join('، ');
+  return `آپ کے لیے ${products.length} مصنوعات ملیں، جن میں ${names} شامل ہیں۔`;
+}
+
 // Guards against LLM output that leaks stray non-Urdu scripts into the reply -- a known
 // failure mode of the local qwen model on this prompt. Urdu uses the Arabic script block
 // (U+0600-U+06FF) plus Arabic Presentation Forms; anything from Cyrillic, the Indic scripts
@@ -1338,6 +1385,101 @@ function buildProductRecommendationMd(products) {
 // the model wandered into a different script mid-reply.
 function hasForeignScriptLeak(text) {
   return /[Ѐ-ӿऀ-෿฀-๿一-鿿぀-ヿ가-힯]/.test(text || '');
+}
+
+// ─── Natural-language date range parsing (today / yesterday / this-or-last week / month /
+// year / a specific date) shared by both the buyer and distributor order/invoice/quotation
+// listing routes below.
+function getUrduDateRange(lowerMsg) {
+  const now = new Date();
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const endOfDay = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+
+  if (/\b(today|aaj|aj)\b/i.test(lowerMsg)) {
+    return { start: startOfDay(now), end: endOfDay(now), label: 'آج' };
+  }
+  if (/\b(yesterday|kal|gzashta\s*kal)\b/i.test(lowerMsg)) {
+    const y = new Date(now); y.setDate(y.getDate() - 1);
+    return { start: startOfDay(y), end: endOfDay(y), label: 'گزشتہ کل' };
+  }
+  // "tomorrow" is usually a mishearing of "today"/"yesterday", but honour it literally
+  // rather than ignoring it -- an unmatched date word would otherwise silently fall through
+  // and list *every* record, which reads as though the filter worked.
+  if (/\btomorrow\b/i.test(lowerMsg)) {
+    const t = new Date(now); t.setDate(t.getDate() + 1);
+    return { start: startOfDay(t), end: endOfDay(t), label: 'آنے والا کل' };
+  }
+  if (/\blast\s*week\b/i.test(lowerMsg)) {
+    const end = new Date(now); end.setDate(end.getDate() - 7);
+    const start = new Date(end); start.setDate(start.getDate() - 7);
+    return { start: startOfDay(start), end: endOfDay(end), label: 'پچھلا ہفتہ' };
+  }
+  if (/\b(this\s*)?week|hafte|hafta\b/i.test(lowerMsg)) {
+    const start = new Date(now); start.setDate(start.getDate() - 7);
+    return { start: startOfDay(start), end: endOfDay(now), label: 'اس ہفتے' };
+  }
+  if (/\blast\s*month\b/i.test(lowerMsg)) {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    return { start, end, label: 'پچھلے مہینے' };
+  }
+  if (/\b(this\s*)?month\b/i.test(lowerMsg)) {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start, end: endOfDay(now), label: 'اس مہینے' };
+  }
+  if (/\blast\s*year\b/i.test(lowerMsg)) {
+    const start = new Date(now.getFullYear() - 1, 0, 1);
+    const end = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
+    return { start, end, label: 'پچھلے سال' };
+  }
+  if (/\b(this\s*)?year\b/i.test(lowerMsg)) {
+    const start = new Date(now.getFullYear(), 0, 1);
+    return { start, end: endOfDay(now), label: 'اس سال' };
+  }
+
+  // Specific date: "2026-08-06", "06/08/2026" (assumed DD/MM/YYYY), "6 august" / "august 6"
+  const isoMatch = lowerMsg.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (isoMatch) {
+    const d = new Date(+isoMatch[1], +isoMatch[2] - 1, +isoMatch[3]);
+    if (!isNaN(d)) return { start: startOfDay(d), end: endOfDay(d), label: d.toLocaleDateString('en-PK') };
+  }
+  const slashMatch = lowerMsg.match(/\b(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\b/);
+  if (slashMatch) {
+    const d = new Date(+slashMatch[3], +slashMatch[2] - 1, +slashMatch[1]);
+    if (!isNaN(d)) return { start: startOfDay(d), end: endOfDay(d), label: d.toLocaleDateString('en-PK') };
+  }
+  const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const monthPattern = MONTHS.join('|');
+  const md1 = lowerMsg.match(new RegExp(`\\b(${monthPattern})\\s+(\\d{1,2})\\b`, 'i'));
+  const md2 = lowerMsg.match(new RegExp(`\\b(\\d{1,2})\\s+(${monthPattern})\\b`, 'i'));
+  const md = md1 || md2;
+  if (md) {
+    const monthName = (md1 ? md[1] : md[2]).toLowerCase();
+    const day = md1 ? md[2] : md[1];
+    const monthIdx = MONTHS.indexOf(monthName);
+    if (monthIdx >= 0) {
+      const d = new Date(now.getFullYear(), monthIdx, +day);
+      if (!isNaN(d)) return { start: startOfDay(d), end: endOfDay(d), label: d.toLocaleDateString('en-PK') };
+    }
+  }
+
+  return null;
+}
+
+// Filters an already-fetched row array (order_date / created_at / due_date) down to a
+// getUrduDateRange() result. Filtering in JS (rather than adding SQL params everywhere)
+// keeps this usable uniformly across orders/quotations/invoices, whose date columns differ.
+function filterRowsByDateRange(rows, range, dateFields = ['order_date', 'created_at']) {
+  if (!range) return rows;
+  return (rows || []).filter(r => {
+    for (const f of dateFields) {
+      if (r[f]) {
+        const d = new Date(r[f]);
+        if (!isNaN(d) && d >= range.start && d <= range.end) return true;
+      }
+    }
+    return false;
+  });
 }
 
 // Product cards must reflect exactly what the model actually recommended in its reply --
@@ -1368,6 +1510,148 @@ function filterProductsByNameMention(products, text) {
     const name = (p.product_name || '').toLowerCase().trim();
     return name && lowerText.includes(name);
   });
+}
+
+// ─── Urdu reply quality gate ─────────────────────────────────────────────────
+// qwen2.5:14b cannot be trusted to write Urdu prose. Measured against the live model on
+// this exact RAG prompt, at temperature 0 / top_k 1 (i.e. fully deterministic, no sampling
+// randomness to blame), it still:
+//   - phonetically transliterates English product names into nonsense Urdu
+//     ("Microsoft Xbox" -> "میکسوس کسین", "PlayStation" -> "پلاٹ فارم"/"platform"),
+//     which both reads as gibberish AND breaks card matching, since that relies on the
+//     model reproducing real product names verbatim;
+//   - occasionally answers entirely in English instead of Urdu;
+//   - and in the worst observed case collapsed mid-sentence into a long Chinese digression
+//     on non-linear regression -- from a "suggest a gaming console" prompt.
+// Adding the explicit "never transliterate product names" rule to the prompt fixed the
+// name-preservation problem (verified: exact names present in every reply afterwards), but
+// nothing fixed the prose. Hence this gate: anything that doesn't look like clean Urdu is
+// discarded in favour of buildUrduProductReply below.
+//
+// Industry/technical vocabulary that has no natural Urdu equivalent and reads better left
+// in English -- forcing these through a phonetic Urdu spelling is exactly the "translate
+// everything" behaviour that made replies unreadable. Keeping them in English is correct,
+// so they must not count as a language leak when the gate below looks for stray Latin.
+const TECHNICAL_ENGLISH_TERMS = new RegExp(
+  '\\b(' + [
+    'SKU', 'MOQ', 'PKR', 'B2B', 'B2C', 'ID', 'NTN', 'GST', 'PO', 'INV', 'ORD', 'QT',
+    'console', 'gaming', 'wireless', 'keyboard', 'mouse', 'headset', 'headphone', 'chair',
+    'monitor', 'laptop', 'desktop', 'controller', 'edition', 'series', 'pro', 'slim',
+    'disc', 'bluetooth', 'USB', 'HDMI', 'RGB', 'TB', 'GB', 'MB', 'Hz', 'inch',
+    'stock', 'order', 'orders', 'invoice', 'invoices', 'quotation', 'quotations',
+    'status', 'pending', 'shipped', 'delivered', 'cancelled', 'rejected', 'approved',
+    'paid', 'unpaid', 'overdue', 'discount', 'warranty', 'brand', 'model', 'category',
+    'wholesale', 'retail', 'delivery', 'shipping', 'payment', 'credit', 'ledger',
+  ].join('|') + ')\\b',
+  'gi'
+);
+
+// Accepts only replies that are (a) genuinely Urdu-script dominant, (b) free of other
+// scripts, and (c) free of stray Latin words beyond the product/brand names we handed in
+// and the technical vocabulary above.
+function isCleanUrduReply(text, allowedNames = []) {
+  if (!text || text.trim().length < 3) return false;
+
+  // Any CJK / Devanagari / Cyrillic / Thai / Hangul at all means the model wandered off.
+  if (hasForeignScriptLeak(text)) return false;
+
+  // Latin glued directly onto an Urdu letter ("ہoon", "مicrosoft") = corrupted word.
+  if (/[؀-ۿ][A-Za-z]|[A-Za-z][؀-ۿ]/.test(text)) return false;
+
+  let stripped = text;
+  allowedNames.filter(Boolean).forEach(n => {
+    stripped = stripped.split(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')).join(' ');
+  });
+  stripped = stripped
+    .replace(/Rs\.?\s*[\d,]+/gi, ' ')
+    .replace(TECHNICAL_ENGLISH_TERMS, ' ')
+    .replace(/[\d,.\-_/()%]+/g, ' ');
+
+  // Any leftover Latin run of 2+ letters is prose the model wrote in the wrong language.
+  if ((stripped.match(/[A-Za-z]{2,}/g) || []).length > 0) return false;
+
+  // Must actually contain Urdu -- guards against a reply that is only a product name.
+  const urduChars = (text.match(/[؀-ۿ]/g) || []).length;
+  return urduChars >= 8;
+}
+
+// Small talk / clearly non-commerce input (often a mistranscription -- "May God bless you
+// all", "I have lost my voice") used to fall through to product search, which always returns
+// *something*, so the model was handed unrelated products and asked to be helpful about
+// them. It responded with religious/philosophical rambling and a random product carousel.
+// Detecting this up front and answering with a fixed, polite Urdu redirect is both correct
+// and instant.
+const OFF_TOPIC_PATTERNS = [
+  /\b(god|allah|bless|pray|dua|ameen|amen)\b/i,
+  /\b(how are you|kaise ho|kya haal|what'?s up)\b/i,
+  /\b(thank you|thanks|shukriya|jazak)\b/i,
+  /\b(joke|weather|news|song|movie|poem|story)\b/i,
+  /\b(lost my voice|test testing|hello world)\b/i,
+  /\b(who are you|what can you do|your name)\b/i,
+];
+
+function isOffTopicSmallTalk(message) {
+  const msg = message || '';
+  // Only treat it as off-topic when nothing commerce-related is present, so "thanks, now
+  // show my orders" still routes to orders.
+  const commerceHint = /\b(order|invoice|quot|negotiat|product|price|stock|rate|catalog|buy|purchase|payment|credit|ledger|moq|discount|deliver|ship)/i;
+  if (commerceHint.test(msg)) return false;
+  return OFF_TOPIC_PATTERNS.some(re => re.test(msg));
+}
+
+function offTopicReply(role) {
+  return role === 'DISTRIBUTOR'
+    ? 'میں آپ کا B2B ڈسٹری بیوٹر اسسٹنٹ ہوں۔ میں تھوک قیمتیں، اسٹاک، کوٹیشنز، آرڈرز اور انوائسز کے بارے میں مدد کر سکتا ہوں۔ آپ کیا جاننا چاہیں گے؟'
+    : 'میں آپ کا شاپنگ اسسٹنٹ ہوں۔ میں مصنوعات تلاش کرنے، قیمتیں بتانے اور آپ کے آرڈرز دیکھنے میں مدد کر سکتا ہوں۔ آپ کیا جاننا چاہیں گے؟';
+}
+
+// Vector search is intentionally loose so related items aren't missed, which means a query
+// for "a gaming console" legitimately also returns a gaming keyboard/mouse. When the buyer
+// named a specific kind of product, narrow to matching categories so the reply (and the
+// cards built from it) answer what was actually asked instead of the whole gaming aisle.
+// Falls back to the unfiltered ranking whenever the query doesn't clearly name a type.
+const PRODUCT_TYPE_HINTS = [
+  { re: /\bconsole|playstation|ps5|xbox\b/i,             matches: /console/i },
+  { re: /\bheadset|headphone|earphone|headset\b/i,       matches: /headset|headphone|audio/i },
+  { re: /\bkeyboard\b/i,                                 matches: /keyboard/i },
+  { re: /\bmouse|mice\b/i,                               matches: /mouse|mice/i },
+  { re: /\bchair|furniture\b/i,                          matches: /chair|furniture/i },
+  { re: /\bmonitor|display|screen\b/i,                   matches: /monitor|display/i },
+  { re: /\blaptop|notebook\b/i,                          matches: /laptop|notebook/i },
+];
+
+function narrowProductsToQueryType(products, message) {
+  if (!products || products.length === 0) return products || [];
+  const hint = PRODUCT_TYPE_HINTS.find(h => h.re.test(message || ''));
+  if (!hint) return products;
+  const narrowed = products.filter(p =>
+    hint.matches.test(p.category || '') || hint.matches.test(p.product_name || '')
+  );
+  return narrowed.length > 0 ? narrowed : products;
+}
+
+// Deterministic, always-correct Urdu reply for product results -- the same approach the
+// orders/invoices/quotations paths already use, which is why those never garble. Product
+// names stay in English exactly as stored, so card matching downstream is exact by
+// construction rather than dependent on model behaviour.
+function buildUrduProductReply(products, { wholesale = false } = {}) {
+  const list = (products || []).slice(0, 3);
+  if (list.length === 0) {
+    return 'معذرت، آپ کی بات واضح نہیں ہوئی۔ براہ کرم بتائیں آپ کون سی مصنوع تلاش کر رہے ہیں؟';
+  }
+
+  const priceOf = (p) => Number(wholesale ? (p.wholesale_price ?? p.retail_price) : p.retail_price) || 0;
+  const money = (p) => `Rs ${priceOf(p).toLocaleString()}`;
+
+  if (list.length === 1) {
+    const p = list[0];
+    return `آپ کے لیے ${p.product_name} دستیاب ہے، قیمت ${money(p)}۔`;
+  }
+
+  const named = list.map(p => `${p.product_name} (${money(p)})`);
+  const lead = named.slice(0, -1).join('، ');
+  const last = named[named.length - 1];
+  return `آپ کے لیے ${lead} اور ${last} دستیاب ہیں۔ کسی ایک کے بارے میں مزید تفصیل چاہیے تو بتائیں۔`;
 }
 
 function getRelevantCards(ragProducts, llmText, maxCards = 6, userMessage = '') {
@@ -1420,6 +1704,11 @@ function registerCopilotRoutes(app, pool) {
         const userEmail = req.body.user_email || null;
         const lowerMsg = message.toLowerCase();
 
+        if (!attached_image && isOffTopicSmallTalk(message)) {
+          const reply = offTopicReply('DISTRIBUTOR');
+          return res.json({ success: true, ai_message: reply, speech_text: reply });
+        }
+
         // ── Fast, deterministic intent routing ──────────────────────────────────────
         // Mirrors the buyer copilot's approach: each category below is answered directly
         // from the DB, scoped to this distributor's own email everywhere the underlying
@@ -1432,7 +1721,7 @@ function registerCopilotRoutes(app, pool) {
         const orderNumMatch = !attached_image && message.match(/\bORD[-_][\w-]+/i);
         if (orderNumMatch) {
           const trackResult = await trackBuyerOrder(pool, { order_id_query: orderNumMatch[0], customer_email: userEmail });
-          return res.json({ success: true, action_executed: 'trackBuyerOrder', ai_message: trackResult.ai_message, orders: trackResult.orders });
+          return res.json({ success: true, action_executed: 'trackBuyerOrder', ai_message: trackResult.ai_message, speech_text: trackResult.speech_text, orders: trackResult.orders });
         }
 
         const ORDER_STATUS_PATTERNS = {
@@ -1459,49 +1748,86 @@ function registerCopilotRoutes(app, pool) {
           else if (/\boverdue|late\b/i.test(lowerMsg)) statusFilter = 'overdue';
           else if (/\bpaid\b/i.test(lowerMsg)) statusFilter = 'paid';
 
-          const rows = await getDistributorInvoicesFromDb(pool, userEmail, statusFilter);
-          const title = statusFilter === 'unpaid' ? '💳 غیر ادا شدہ انوائسز'
+          let rows = await getDistributorInvoicesFromDb(pool, userEmail, statusFilter);
+          const dateRange = getUrduDateRange(lowerMsg);
+          if (dateRange) rows = filterRowsByDateRange(rows, dateRange, ['due_date', 'created_at', 'invoice_date']);
+          let title = statusFilter === 'unpaid' ? '💳 غیر ادا شدہ انوائسز'
             : statusFilter === 'overdue' ? '⚠️ زائد المیعاد انوائسز'
             : statusFilter === 'paid' ? '✅ ادا شدہ انوائسز'
             : '📄 آپ کی تمام انوائسز';
-          return res.json({ success: true, action_executed: 'getDistributorInvoices', ai_message: formatInvoicesTable(rows, title) });
+          if (dateRange) title += ` — ${dateRange.label}`;
+          return res.json({ success: true, action_executed: 'getDistributorInvoices', ai_message: formatInvoicesTable(rows, title), speech_text: speechForInvoices(rows, title) });
         }
 
-        // 3) Quotations / negotiations -- active / rejected / accepted / expiring / all
+        // 3) Quotations / negotiations -- active / negotiating / confirmed / rejected /
+        //    expiring / all. Each branch queries a lifecycle GROUP of statuses rather than
+        //    one literal value (see QUOTATION_STATUS_GROUPS) -- matching a single status
+        //    silently missed equivalents written by other code paths.
         if (!attached_image && /\b(quotation|quote|negotiat|bid|counter[- ]?offer)/i.test(lowerMsg)) {
-          let rows, title;
+          let rows, title, appliedFilter = null;
           if (/\bexpir/i.test(lowerMsg)) {
             rows = await getExpiringDistributorQuotationsFromDb(pool, 7, userEmail);
             title = '⏳ جلد ختم ہونے والی کوٹیشنز';
-          } else if (/\breject|declin/i.test(lowerMsg)) {
+            appliedFilter = 'expiring';
+          } else if (/\breject|declin|lost\b/i.test(lowerMsg)) {
             rows = await getDistributorQuotationsByStatusFromDb(pool, 'REJECTED', userEmail);
             title = '❌ مسترد شدہ کوٹیشنز';
+            appliedFilter = 'rejected';
           } else if (/\baccept|approv|won|confirm/i.test(lowerMsg)) {
-            rows = await getDistributorQuotationsByStatusFromDb(pool, 'APPROVED', userEmail);
+            rows = await getDistributorQuotationsByStatusFromDb(pool, 'CONFIRMED', userEmail);
             title = '✅ منظور شدہ کوٹیشنز';
-          } else if (/\bactive|pending|negotiat|open|awaiting/i.test(lowerMsg)) {
-            rows = await getDistributorQuotationsByStatusFromDb(pool, 'PENDING', userEmail);
-            title = '📋 فعال کوٹیشنز (زیر گفتگو)';
+            appliedFilter = 'confirmed';
+          } else if (/\bnegotiat|counter[- ]?offer|bid\b/i.test(lowerMsg)) {
+            // Checked before "active" so "negotiations" is its own view rather than being
+            // swallowed by the broader active set.
+            rows = await getDistributorQuotationsByStatusFromDb(pool, 'NEGOTIATING', userEmail);
+            title = '🤝 زیر گفتگو کوٹیشنز (نیگوشی ایشنز)';
+            appliedFilter = 'negotiating';
+          } else if (/\bactive|pending|open|awaiting|live\b/i.test(lowerMsg)) {
+            rows = await getDistributorQuotationsByStatusFromDb(pool, 'ACTIVE', userEmail);
+            title = '📋 فعال کوٹیشنز';
+            appliedFilter = 'active';
           } else {
             rows = await getDistributorQuotationsFromDb(pool, userEmail);
             title = '📋 آپ کی تمام کوٹیشنز';
           }
-          return res.json({ success: true, action_executed: 'manageDistributorQuotations', ai_message: formatQuotationsTable(rows, title) });
+          const quoteDateRange = getUrduDateRange(lowerMsg);
+          if (quoteDateRange) {
+            rows = filterRowsByDateRange(rows, quoteDateRange, ['created_at', 'valid_until']);
+            title += ` — ${quoteDateRange.label}`;
+          }
+
+          // An empty filtered result is ambiguous on its own -- "no quotations found" reads
+          // the same whether the filter excluded everything or the account has none at all.
+          // Report which is the case, and what statuses do exist, so the answer is actionable.
+          if (rows.length === 0 && appliedFilter) {
+            const counts = await getDistributorQuotationStatusCounts(pool, userEmail);
+            const totalAll = counts.reduce((s, c) => s + c.count, 0);
+            const msg = totalAll === 0
+              ? 'آپ کے اکاؤنٹ میں ابھی کوئی کوٹیشن موجود نہیں ہے۔ نئی کوٹیشن بنانے کے لیے کیٹلاگ سے مصنوعات منتخب کریں۔'
+              : `اس فلٹر میں کوئی کوٹیشن نہیں ملی۔ آپ کی کل ${totalAll} کوٹیشنز ہیں: ${counts.map(c => `${c.count} ${c.status}`).join('، ')}۔`;
+            return res.json({ success: true, action_executed: 'manageDistributorQuotations', ai_message: msg, speech_text: msg });
+          }
+
+          return res.json({ success: true, action_executed: 'manageDistributorQuotations', ai_message: formatQuotationsTable(rows, title), speech_text: speechForQuotations(rows, title) });
         }
 
         // 4) Credit / ledger status
         if (!attached_image && /\bcredit|ledger|financial account\b/i.test(lowerMsg)) {
           const ledger = await getDistributorLedgerStatusFromDb(pool, userEmail);
-          return res.json({ success: true, action_executed: 'getDistributorLedgerStatus', ai_message: formatLedgerMd(ledger) });
+          return res.json({ success: true, action_executed: 'getDistributorLedgerStatus', ai_message: formatLedgerMd(ledger), speech_text: speechForLedger(ledger) });
         }
 
-        // 5) Generic order listing (no specific order number) -- all / by status
+        // 5) Generic order listing (no specific order number) -- all / by status / by date
         if (!attached_image && /\border(s)?\b/i.test(lowerMsg)) {
           const statusFilter = extractOrderStatus(lowerMsg);
+          const dateRange = getUrduDateRange(lowerMsg);
           let rows = await getDistributorOrdersFromDb(pool, userEmail);
           if (statusFilter) rows = rows.filter(r => (r.status || '').toUpperCase() === statusFilter);
-          const title = statusFilter ? `📦 ${statusFilter} آرڈرز` : '📦 آپ کے تمام آرڈرز';
-          return res.json({ success: true, action_executed: 'getDistributorOrders', ai_message: formatOrdersTable(rows, title), orders: rows });
+          if (dateRange) rows = filterRowsByDateRange(rows, dateRange, ['order_date', 'created_at']);
+          let title = statusFilter ? `📦 ${statusFilter} آرڈرز` : '📦 آپ کے تمام آرڈرز';
+          if (dateRange) title += ` — ${dateRange.label}`;
+          return res.json({ success: true, action_executed: 'getDistributorOrders', ai_message: formatOrdersTable(rows, title), speech_text: speechForOrders(rows, title), orders: rows });
         }
 
         // 6) Otherwise: open-ended wholesale product / catalog question -- RAG over real
@@ -1522,8 +1848,16 @@ function registerCopilotRoutes(app, pool) {
           '1. صرف نیچے دی گئی WHOLESALE DATA میں سے مصنوعات تجویز کریں — اپنے پاس سے قیمت یا اسٹاک نہ بنائیں۔',
           '2. اگر مصنوع ڈیٹا میں نہیں ہے تو کہیں: "یہ مصنوع ابھی ھول سیل کیٹلاگ میں دستیاب نہیں ہے۔"',
           '3. اگر خریدار کا سوال شاپنگ/ھول سیل کاروبار سے غیر متعلق ہو، تو شائستگی سے وضاحت کریں کہ آپ صرف B2B ڈسٹری بیوٹر اسسٹنٹ ہیں۔',
-          '4. جواب مختصر، درست اور کاروباری ہو۔',
-          '5. صرف انہی مصنوعات کا ذکر کریں جو صارف کے سوال سے براہ راست متعلقہ ہوں — WHOLESALE DATA میں موجود ہر چیز کی فہرست نہ بنائیں۔ جن مصنوعات کا ذکر کریں ان کا پورا انگریزی نام بالکل ویسا ہی لکھیں جیسا WHOLESALE DATA میں دیا گیا ہے۔',
+          '4. جواب زیادہ سے زیادہ 2 مختصر جملوں میں دیں — کوئی طویل پیراگراف، فہرست یا وضاحت نہ لکھیں۔ ایک انسان کی طرح سیدھا اور واضح جواب دیں۔',
+          '5. صرف انہی مصنوعات کا ذکر کریں جو صارف کے سوال سے براہ راست متعلقہ ہوں — WHOLESALE DATA میں موجود ہر چیز کی فہرست نہ بنائیں۔',
+          // Without this the model phonetically transliterates names into nonsense Urdu
+          // ("Microsoft Xbox" -> "میکسوس کسین"), which reads as gibberish and breaks the
+          // name-based product card matching. Verified to fix it against the live model.
+          '5b. مصنوعات کے نام انگریزی حروف میں، بالکل ویسے ہی کاپی کریں جیسے WHOLESALE DATA میں لکھے ہیں۔ ناموں کا اردو ترجمہ یا اردو میں آوازی نقل (transliteration) ہرگز نہ کریں۔',
+          '   مثال — درست: "Sony PlayStation 5 Slim Disc Edition دستیاب ہے۔"',
+          '   مثال — غلط: "سونی پلے اسٹیشن دستیاب ہے۔"',
+          '5c. اسی طرح وہ تکنیکی اصطلاحات جن کا کوئی مناسب اردو لفظ نہیں (مثلاً console، wireless، keyboard، headset، SKU، MOQ، warranty، stock) انہیں انگریزی میں ہی رہنے دیں — زبردستی اردو میں تبدیل نہ کریں۔',
+          '6. اگر صارف کا سوال غیر واضح یا نامکمل ہو (جیسے کہ آواز صحیح طور پر سمجھ نہ آئی ہو)، تو مصنوعات کی فہرست دکھانے کے بجائے صرف ایک مختصر وضاحتی سوال پوچھیں، مثلاً: "معذرت، مجھے صاف سمجھ نہیں آیا — آپ کس پروڈکٹ یا موضوع کے بارے میں پوچھ رہے ہیں؟"',
           '',
           '## WHOLESALE DATA:',
           productContext || 'کوئی مناسب مصنوع نہیں ملی۔',
@@ -1537,31 +1871,50 @@ function registerCopilotRoutes(app, pool) {
           const resOllama = await fetchOllamaChat(endpoint, {
             model: endpoint.modelName,
             messages: [{ role: 'system', content: distributorRagPrompt }, { role: 'user', content: message }],
-            options: { temperature: 0.15, top_p: 0.9, num_predict: 280 }
+            options: { temperature: 0.15, top_p: 0.9, num_predict: 130 }
           });
           if (resOllama.ok) {
             const data = await resOllama.json();
             const rawContent = data.choices?.[0]?.message?.content?.trim().replace(/[\t\r]+/g, ' ').replace(/ {2,}/g, ' ');
-            if (rawContent && !hasForeignScriptLeak(rawContent)) {
-              const cleanText = stripRecommendationTag(rawContent);
+            const allowedNames = wholesaleProducts.map(p => p.product_name).concat(wholesaleProducts.map(p => p.brand));
+            const cleanText = stripRecommendationTag(rawContent);
+            // Use the model's phrasing only when it's genuinely clean Urdu; otherwise fall
+            // back to the deterministic template. See isCleanUrduReply for what this model
+            // actually does when left ungated.
+            if (isCleanUrduReply(cleanText, allowedNames)) {
               const mentioned = filterProductsByNameMention(wholesaleProducts, cleanText);
-              // Nothing matched by name (model paraphrased heavily) -- fall back to the
-              // top couple of search results rather than showing nothing at all.
               const cardProducts = mentioned.length > 0 ? mentioned : wholesaleProducts.slice(0, 2);
-              return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: cleanText, products: cardProducts });
+              // cleanText is already a short 1-2 sentence reply per the prompt rules above,
+              // so it doubles as the spoken text directly -- no table/list to strip.
+              return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: cleanText, speech_text: cleanText, products: cardProducts });
             }
+            if (rawContent) console.warn('[Distributor RAG] Model output rejected by Urdu quality gate; using deterministic reply.');
+            const narrowed = narrowProductsToQueryType(wholesaleProducts, message).slice(0, 3);
+            const fallbackText = buildUrduProductReply(narrowed, { wholesale: true });
+            return res.json({
+              success: true,
+              action_executed: 'getDistributorWholesaleRecommendations',
+              ai_message: fallbackText,
+              speech_text: fallbackText,
+              products: narrowed,
+            });
           } else {
             console.error('[Distributor RAG] Ollama HTTP error:', resOllama.status, await resOllama.text());
           }
         }
 
-        // Deterministic fallback (model unreachable or output was garbled)
+        // Deterministic fallback (model unreachable or output was garbled). Kept short --
+        // dumping the whole catalog here is what used to happen on every unrecognized/
+        // mistranscribed query, which read out as an overwhelming wall of products.
         const wsMd = wholesaleProducts.length === 0
-          ? 'معذرت، اس وقت کوئی مناسب ھول سیل مصنوع نہیں ملی۔'
-          : `### 📦 ھول سیل مصنوعات\n\n` + wholesaleProducts.slice(0, 8).map((p, i) =>
-              `**${i + 1}. ${p.product_name}** (SKU: ${p.sku}) — Rs ${Number(p.wholesale_price).toLocaleString()} | MOQ: ${p.min_wholesale_qty}`
+          ? 'معذرت، مجھے آپ کی بات سمجھ نہیں آئی۔ براہ کرم پروڈکٹ یا موضوع واضح طور پر بتائیں۔'
+          : `معذرت، مجھے آپ کا سوال واضح طور پر سمجھ نہیں آیا۔ کیا آپ ان میں سے کسی مصنوع کے بارے میں پوچھ رہے ہیں؟\n\n` + wholesaleProducts.slice(0, 3).map((p, i) =>
+              `**${i + 1}. ${p.product_name}** — Rs ${Number(p.wholesale_price).toLocaleString()}`
             ).join('\n');
-        return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: wsMd, products: wholesaleProducts.slice(0, 6) });
+        const wsSpeech = wholesaleProducts.length === 0
+          ? 'معذرت، مجھے آپ کی بات سمجھ نہیں آئی۔ براہ کرم دوبارہ واضح طور پر بتائیں۔'
+          : 'معذرت، مجھے سوال واضح طور پر سمجھ نہیں آیا۔ براہ کرم دوبارہ بتائیں۔';
+        return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: wsMd, speech_text: wsSpeech, products: wholesaleProducts.slice(0, 3) });
       } catch (err) {
         return res.json({ success: true, ai_message: `❌ غلطی: ${err.message}` });
       }
@@ -1572,6 +1925,11 @@ function registerCopilotRoutes(app, pool) {
         const userEmail = req.body.user_email || 'guest@commerceiq.com';
         const emailForOrders = userEmail !== 'guest@commerceiq.com' ? userEmail : null;
 
+        if (!attached_image && isOffTopicSmallTalk(message)) {
+          const reply = offTopicReply('BUYER');
+          return res.json({ success: true, ai_message: reply, speech_text: reply });
+        }
+
         // Fast deterministic routing for order tracking/listing — skips the LLM entirely so
         // these are instant, always correct (real DB data), and never derailed into product search.
         const orderNumMatch = !attached_image && message.match(/\bORD[-_][\w-]+/i);
@@ -1579,7 +1937,7 @@ function registerCopilotRoutes(app, pool) {
         if (!attached_image && (orderNumMatch || mentionsOrder)) {
           if (orderNumMatch) {
             const trackResult = await trackBuyerOrder(pool, { order_id_query: orderNumMatch[0], customer_email: emailForOrders });
-            return res.json({ success: true, action_executed: 'trackBuyerOrder', ai_message: trackResult.ai_message, orders: trackResult.orders });
+            return res.json({ success: true, action_executed: 'trackBuyerOrder', ai_message: trackResult.ai_message, speech_text: trackResult.speech_text, orders: trackResult.orders });
           }
 
           const lowerMsg = message.toLowerCase();
@@ -1596,10 +1954,16 @@ function registerCopilotRoutes(app, pool) {
           for (const [status, re] of Object.entries(STATUS_PATTERNS)) {
             if (re.test(lowerMsg)) { statusFilter = status; break; }
           }
-          const dateFilter = /\b(today|aaj|aj)\b/i.test(lowerMsg) ? 'today' : (/\b(week|hafte|hafta)\b/i.test(lowerMsg) ? 'week' : null);
+          const dateRange = getUrduDateRange(lowerMsg);
 
-          const listResult = await listBuyerOrdersByStatus(pool, { status_filter: statusFilter, customer_email: emailForOrders, date_filter: dateFilter });
-          return res.json({ success: true, action_executed: 'listBuyerOrders', ai_message: listResult.ai_message, orders: listResult.orders });
+          const listResult = await listBuyerOrdersByStatus(pool, {
+            status_filter: statusFilter,
+            customer_email: emailForOrders,
+            date_start: dateRange?.start || null,
+            date_end: dateRange?.end || null,
+            date_label: dateRange?.label || null,
+          });
+          return res.json({ success: true, action_executed: 'listBuyerOrders', ai_message: listResult.ai_message, speech_text: listResult.speech_text, orders: listResult.orders });
         }
 
         // Fast deterministic routing for side-by-side product comparisons.
@@ -1665,7 +2029,15 @@ function registerCopilotRoutes(app, pool) {
           '2. اگر مصنوع ڈیٹا میں نہیں ہے تو کہیں: "یہ مصنوع ابھی ہمارے اسٹور میں دستیاب نہیں ہے۔"',
           '3. صرف ڈیٹا میں دی گئی قیمتیں بتائیں۔ اپنے پاس سے قیمت نہ بنائیں۔',
           '4. اگر خریدار کا پیغام شاپنگ، مصنوعات، یا آرڈرز سے غیر متعلق ہو (مثلاً کھیل، گپ شپ، یا کوئی اور موضوع)، تو شائستگی سے وضاحت کریں کہ آپ صرف شاپنگ اسسٹنٹ ہیں اور صرف مصنوعات تلاش کرنے یا آرڈرز دیکھنے میں مدد کر سکتے ہیں۔ جھوٹا یا من گھڑت جواب ہرگز نہ دیں۔',
-          '5. صرف انہی مصنوعات کا ذکر کریں جو خریدار کے سوال سے براہ راست متعلقہ ہوں — PRODUCT DATA میں موجود ہر چیز کی فہرست نہ بنائیں۔ جن مصنوعات کا ذکر کریں ان کا پورا انگریزی نام بالکل ویسا ہی لکھیں جیسا PRODUCT DATA میں دیا گیا ہے۔',
+          '5. صرف انہی مصنوعات کا ذکر کریں جو خریدار کے سوال سے براہ راست متعلقہ ہوں — PRODUCT DATA میں موجود ہر چیز کی فہرست نہ بنائیں۔',
+          // See the matching rule in the distributor prompt: without this the model turns
+          // "Microsoft Xbox" into "میکسوس کسین" and card matching stops working.
+          '5b. مصنوعات کے نام انگریزی حروف میں، بالکل ویسے ہی کاپی کریں جیسے PRODUCT DATA میں لکھے ہیں۔ ناموں کا اردو ترجمہ یا اردو میں آوازی نقل (transliteration) ہرگز نہ کریں۔',
+          '   مثال — درست: "Sony PlayStation 5 Slim Disc Edition دستیاب ہے۔"',
+          '   مثال — غلط: "سونی پلے اسٹیشن دستیاب ہے۔"',
+          '5c. اسی طرح وہ تکنیکی اصطلاحات جن کا کوئی مناسب اردو لفظ نہیں (مثلاً console، wireless، keyboard، headset، SKU، MOQ، warranty، stock) انہیں انگریزی میں ہی رہنے دیں — زبردستی اردو میں تبدیل نہ کریں۔',
+          '6. جواب زیادہ سے زیادہ 2 مختصر جملوں میں دیں — طویل پیراگراف یا فہرست نہ لکھیں، ایک انسان کی طرح سیدھا جواب دیں۔',
+          '7. اگر خریدار کا پیغام غیر واضح یا نامکمل لگے (جیسے آواز صحیح طور پر سمجھ نہ آئی ہو)، تو مصنوعات کی فہرست دکھانے کے بجائے صرف مختصر وضاحتی سوال پوچھیں۔',
           '',
           '## PRODUCT DATA (اسٹور کی تمام دستیاب مصنوعات):',
           productContext || 'کوئی مناسب مصنوع نہیں ملی۔',
@@ -1678,7 +2050,7 @@ function registerCopilotRoutes(app, pool) {
           '## خریدار کا پیغام:',
           message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500),
           '',
-          'صرف اور صرف سلیس اردو رسم الخط میں جواب دیں۔ جواب مختصر، واضح اور دوستانہ ہو۔',
+          'صرف اور صرف سلیس اردو رسم الخط میں جواب دیں۔ جواب مختصر (زیادہ سے زیادہ 2 جملے)، واضح اور دوستانہ ہو۔',
         ].join('\n');
 
         // 5. Call local Ollama model with the RAG prompt (Remote PC -> Local Mac fallback)
@@ -1691,7 +2063,7 @@ function registerCopilotRoutes(app, pool) {
                 { role: 'system', content: ragSystemPrompt },
                 { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
               ],
-              options: { temperature: 0.15, top_p: 0.9, num_predict: 280 }
+              options: { temperature: 0.15, top_p: 0.9, num_predict: 130 }
             });
               if (ollamaRagRes.ok) {
                 const ollamaData = await ollamaRagRes.json();
@@ -1705,30 +2077,36 @@ function registerCopilotRoutes(app, pool) {
                       success: true,
                       action_executed: 'getBuyerProductRecommendations',
                       ai_message: 'معذرت، میں ابھی آپ کی درخواست پر عمل نہیں کر سکا۔ براہ کرم دوبارہ کوشش کریں۔',
+                      speech_text: 'معذرت، میں ابھی آپ کی درخواست پر عمل نہیں کر سکا۔ براہ کرم دوبارہ کوشش کریں۔',
                       products: ragProducts.slice(0, 6)
                     });
                   }
-                  if (hasForeignScriptLeak(ragText)) {
-                    console.warn('[Buyer RAG] Foreign-script leak detected in model output, using deterministic fallback.');
-                    return res.json({
-                      success: true,
-                      action_executed: 'getBuyerProductRecommendations',
-                      ai_message: buildProductRecommendationMd(ragProducts.slice(0, 6)),
-                      products: ragProducts.slice(0, 6)
-                    });
-                  }
+                  const buyerAllowedNames = ragProducts.map(p => p.product_name).concat(ragProducts.map(p => p.brand));
                   // Cards must reflect exactly what the model recommended, not just the top
                   // of the search results -- otherwise a query about one product type (e.g.
                   // "suggest a console") can show unrelated cards (a chair, a headset, ...)
                   // that were in the search results but never mentioned in the reply.
                   const cleanText = stripRecommendationTag(ragText);
-                  const mentioned = filterProductsByNameMention(ragProducts, cleanText);
-                  const cardProducts = mentioned.length > 0 ? mentioned : ragProducts.slice(0, 2);
+                  if (isCleanUrduReply(cleanText, buyerAllowedNames)) {
+                    const mentioned = filterProductsByNameMention(ragProducts, cleanText);
+                    const cardProducts = mentioned.length > 0 ? mentioned : ragProducts.slice(0, 2);
+                    return res.json({
+                      success: true,
+                      action_executed: 'getBuyerProductRecommendations',
+                      ai_message: cleanText,
+                      speech_text: cleanText,
+                      products: cardProducts
+                    });
+                  }
+                  console.warn('[Buyer RAG] Model output rejected by Urdu quality gate; using deterministic reply.');
+                  const buyerNarrowed = narrowProductsToQueryType(ragProducts, message).slice(0, 3);
+                  const buyerFallback = buildUrduProductReply(buyerNarrowed);
                   return res.json({
                     success: true,
                     action_executed: 'getBuyerProductRecommendations',
-                    ai_message: cleanText,
-                    products: cardProducts
+                    ai_message: buyerFallback,
+                    speech_text: buyerFallback,
+                    products: buyerNarrowed
                   });
                 }
               } else {
@@ -1748,6 +2126,7 @@ function registerCopilotRoutes(app, pool) {
           success: true,
           action_executed: 'getBuyerProductRecommendations',
           ai_message: buildProductRecommendationMd(fallbackCards),
+          speech_text: buildProductRecommendationSpeech(fallbackCards),
           products: fallbackCards
         });
       } catch (err) {
@@ -2122,7 +2501,14 @@ function registerCopilotRoutes(app, pool) {
           speed: 1.05,
           stream: !!stream
         }),
-        signal: AbortSignal.timeout(60000)
+        // Only guards connection setup / time-to-first-byte. A fixed timeout must not keep
+        // ticking through the whole body stream -- for longer replies that legitimately take
+        // >60s to fully synthesize/stream, AbortSignal.timeout used to fire mid-pipe, erroring
+        // gpuResp.body with no listener attached, which crashed the entire Node process
+        // ("Unhandled 'error' event") and took every other route down with it. 120s here is
+        // still a safety net, not a normal-path limit -- the error handling below is what
+        // actually prevents a crash if it (or anything else) fires.
+        signal: AbortSignal.timeout(120000)
       });
 
       if (gpuResp.ok) {
@@ -2140,7 +2526,23 @@ function registerCopilotRoutes(app, pool) {
           res.setHeader('Cache-Control', 'public, max-age=3600');
         }
         const { Readable } = require('stream');
-        return Readable.fromWeb(gpuResp.body).pipe(res);
+        const audioStream = Readable.fromWeb(gpuResp.body);
+        // CRITICAL: a stream error (e.g. the upstream connection dropping or aborting
+        // mid-transfer) emits an 'error' event. With no listener, Node treats it as
+        // unhandled and crashes the whole process. This listener is what makes that
+        // failure mode a normal, contained request error instead.
+        audioStream.on('error', (streamErr) => {
+          console.error(`[TTS] ⚠️ Stream error while piping XTTS audio: ${streamErr.message}`);
+          if (!res.headersSent) {
+            res.status(502).json({ success: false, error: `TTS stream interrupted: ${streamErr.message}` });
+          } else {
+            res.destroy();
+          }
+        });
+        res.on('close', () => {
+          if (!res.writableEnded) audioStream.destroy();
+        });
+        return audioStream.pipe(res);
       }
 
       const errText = await gpuResp.text();
@@ -2183,10 +2585,26 @@ function registerCopilotRoutes(app, pool) {
       form.append('audio', new Blob([audioBuffer], { type: mimeType }), `voice.${ext}`);
       if (language) form.append('language', language);
 
-      const sttResp = await fetch(STT_SERVICE_URL, {
+      // Supports pointing STT_SERVICE_URL at a remote GPU box (e.g. the Office PC, the way
+      // XTTS and Ollama already are). Those are fronted by an ngrok tunnel that enforces an
+      // API key on every route, so send it when one is configured; harmless for localhost.
+      const sttApiKey = process.env.STT_API_KEY || process.env.TTS_API_KEY || '';
+      let sttUrl = STT_SERVICE_URL;
+      const isRemoteStt = !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(sttUrl);
+      if (isRemoteStt && sttApiKey && !sttUrl.includes('key=')) {
+        sttUrl += (sttUrl.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(sttApiKey.trim());
+      }
+
+      const sttResp = await fetch(sttUrl, {
         method: 'POST',
         body: form,
-        signal: AbortSignal.timeout(30000)
+        headers: isRemoteStt
+          ? { 'ngrok-skip-browser-warning': 'true', ...(sttApiKey ? { 'X-API-Key': sttApiKey } : {}) }
+          : undefined,
+        // CPU transcription of a ~15s clip can legitimately take well over 30s on a
+        // laptop-class machine; a short timeout here surfaced as "speech service
+        // unavailable" on perfectly good audio.
+        signal: AbortSignal.timeout(90000)
       });
 
       if (!sttResp.ok) {

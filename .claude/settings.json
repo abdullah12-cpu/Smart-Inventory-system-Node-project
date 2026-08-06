@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast;ast.parse\\(open\\('stt_service.py',encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python stt_bench.py small medium)",
+      "Bash(grep -vE \"^\\\\s*$\")",
+      "Bash(wmic process *)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId=2696\")",
+      "Bash(node -e ' *)",
+      "Bash(node --check distributorOperations.js)",
+      "Bash(PORT=5057 node index.js)"
+    ]
+  }
+}

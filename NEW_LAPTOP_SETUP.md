@@ -114,6 +114,35 @@ to import it (`ImportError` / DLL load failure, not a normal Python error). If a
 machine blocks 13.1.0 too, try an older `1x.x` release rather than jumping to a newer
 major version.
 
+### Speech recognition speed vs accuracy
+
+`stt_service.py` picks its model automatically based on the hardware it finds:
+
+| Hardware | Model | Compute | Speed per clip |
+|---|---|---|---|
+| CUDA GPU | `large-v3` | float16 | well under a second |
+| CPU only | `medium` | int8 | ~10-12s |
+
+Those CPU figures were measured on the original 8-core dev laptop against ~3s clips.
+Raising thread count or lowering beam size did **not** meaningfully improve them — it is
+raw CPU throughput, so `large-v3` on CPU (~25-40s per clip) is not usable for a voice
+interface regardless of how much more accurate it is.
+
+Override the choice at any time — e.g. if `medium` feels too slow, `small` runs in ~3.3s
+with very little accuracy loss on clear audio:
+```powershell
+$env:WHISPER_MODEL_SIZE = "small"    # or: medium / large-v3
+python stt_service.py
+```
+
+**For production-grade voice recognition**, run this service on a CUDA GPU machine (the
+same Office PC that already hosts XTTS and Ollama) and point the backend at it — the proxy
+already supports a remote, API-key-protected STT service:
+```env
+STT_SERVICE_URL=https://<tunnel-host>/api/stt
+STT_API_KEY=<key>          # falls back to TTS_API_KEY when omitted
+```
+
 ---
 
 ## 7. pgvector — enables semantic ("meaning-based") product search
@@ -197,6 +226,7 @@ python stt_service.py
 PostgreSQL runs as a Windows service and starts automatically on boot — nothing to launch
 manually there.
 
+
 **Voice output (TTS) requires the Office PC's XTTS v2 service to be reachable** through
 the tunnel configured in `.env`. There is currently no local TTS fallback wired into the
 app — if that service is down, voice responses fail with a clear error rather than
@@ -213,6 +243,39 @@ silently switching to a different voice.
 
 ---
 
+## 10. Mobile chatbot (phone access)
+
+A phone-sized version of the AI assistant lives at **`?page=mobile`**. It signs in with the
+same buyer/distributor accounts as the web portal and answers from that account's own data
+(orders, quotations, invoices, wholesale rates), with Urdu voice in and out.
+
+To open it on a phone, the phone and laptop must be on the **same Wi-Fi**, and the dev
+server has to be started in mobile mode:
+
+```powershell
+npm run dev:mobile        # from the repo root -- API + web, web served over HTTPS
+```
+
+The terminal prints a `Network:` URL (e.g. `https://192.168.1.32:5173/`). On the phone,
+open that address with `?page=mobile` appended:
+
+```
+https://192.168.1.32:5173/?page=mobile
+```
+
+The phone will show a certificate warning the first time — the cert is self-signed and
+generated locally, so tap **Advanced → Proceed** to continue.
+
+**Why `dev:mobile` instead of plain `dev`:** browsers only expose the microphone in a
+*secure context*, and plain `http://` on a LAN IP does not qualify — voice input is blocked
+outright there no matter what permissions are granted. `dev:mobile` serves the site over
+HTTPS (via `@vitejs/plugin-basic-ssl`) purely so the mic works from the phone. Regular
+`npm run dev` is unchanged and still uses plain HTTP with no certificate warnings — use it
+for normal desktop work. If the mobile page is opened over plain HTTP anyway, it detects
+this and shows a banner explaining that typing still works.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -223,3 +286,5 @@ silently switching to a different voice.
 | AI chat responses fail or time out | Office PC's Ollama tunnel unreachable — check `OLLAMA_URL` in `.env` is still the current tunnel address, or pull local models (step 8) as a fallback |
 | Voice responses fail | Office PC's XTTS service is down or the tunnel URL in `.env` (`TTS_SERVICE_URL`) is stale |
 | "Port already in use" starting any service | Something's already bound to that port — `netstat -ano \| findstr :<port>` to find the PID, then `taskkill /PID <pid> /F` if it's safe to stop |
+| Mic button does nothing on the phone | Page was opened over `http://` — voice needs a secure context. Start with `npm run dev:mobile` and open the `https://` URL (step 10) |
+| Phone can't load the URL at all | Phone is on a different network than the laptop, or Windows Firewall is blocking the port — confirm both are on the same Wi-Fi and allow Node through the firewall when prompted |
