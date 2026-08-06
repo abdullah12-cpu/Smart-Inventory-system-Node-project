@@ -1340,6 +1340,36 @@ function hasForeignScriptLeak(text) {
   return /[Ѐ-ӿऀ-෿฀-๿一-鿿぀-ヿ가-힯]/.test(text || '');
 }
 
+// Product cards must reflect exactly what the model actually recommended in its reply --
+// not just "whatever the search happened to return." Search similarity is intentionally
+// loose (so related items aren't missed), which means a query like "suggest a console"
+// can legitimately match a gaming chair or headset too; showing all of them as cards next
+// to a reply that only discusses two consoles is the bug.
+//
+// A machine-readable "[SKUS: ...]" tag the model appends to its reply was tried first, but
+// proved unreliable with this model: it's frequently omitted, and when the model gets the
+// format wrong (wrong brackets, invented SKUs) the malformed tag leaks straight into the
+// visible reply instead of being stripped. stripRecommendationTag below stays as a
+// defensive cleanup for either bracket style, but is no longer trusted as the filtering
+// signal.
+//
+// What the model *does* reliably do is reproduce real English product names verbatim in
+// its prose (names are explicitly kept in English per the prompt's language rule, even
+// when the rest of the sentence is Urdu and occasionally garbled). So cards are filtered
+// by checking which candidate products are actually named in the reply text.
+function stripRecommendationTag(rawResponse) {
+  return (rawResponse || '').replace(/\s*[\[(]SKUS?:\s*[^\])]*[\])]\s*$/i, '').trim();
+}
+
+function filterProductsByNameMention(products, text) {
+  const lowerText = (text || '').toLowerCase();
+  if (!lowerText) return [];
+  return (products || []).filter(p => {
+    const name = (p.product_name || '').toLowerCase().trim();
+    return name && lowerText.includes(name);
+  });
+}
+
 function getRelevantCards(ragProducts, llmText, maxCards = 6, userMessage = '') {
   if (!ragProducts || ragProducts.length === 0) return [];
   const lower = (llmText || '').toLowerCase();
@@ -1493,6 +1523,7 @@ function registerCopilotRoutes(app, pool) {
           '2. اگر مصنوع ڈیٹا میں نہیں ہے تو کہیں: "یہ مصنوع ابھی ھول سیل کیٹلاگ میں دستیاب نہیں ہے۔"',
           '3. اگر خریدار کا سوال شاپنگ/ھول سیل کاروبار سے غیر متعلق ہو، تو شائستگی سے وضاحت کریں کہ آپ صرف B2B ڈسٹری بیوٹر اسسٹنٹ ہیں۔',
           '4. جواب مختصر، درست اور کاروباری ہو۔',
+          '5. صرف انہی مصنوعات کا ذکر کریں جو صارف کے سوال سے براہ راست متعلقہ ہوں — WHOLESALE DATA میں موجود ہر چیز کی فہرست نہ بنائیں۔ جن مصنوعات کا ذکر کریں ان کا پورا انگریزی نام بالکل ویسا ہی لکھیں جیسا WHOLESALE DATA میں دیا گیا ہے۔',
           '',
           '## WHOLESALE DATA:',
           productContext || 'کوئی مناسب مصنوع نہیں ملی۔',
@@ -1506,13 +1537,18 @@ function registerCopilotRoutes(app, pool) {
           const resOllama = await fetchOllamaChat(endpoint, {
             model: endpoint.modelName,
             messages: [{ role: 'system', content: distributorRagPrompt }, { role: 'user', content: message }],
-            options: { temperature: 0.15, top_p: 0.9, num_predict: 220 }
+            options: { temperature: 0.15, top_p: 0.9, num_predict: 280 }
           });
           if (resOllama.ok) {
             const data = await resOllama.json();
-            const content = data.choices?.[0]?.message?.content?.trim().replace(/[\t\r]+/g, ' ').replace(/ {2,}/g, ' ');
-            if (content && !hasForeignScriptLeak(content)) {
-              return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: content, products: wholesaleProducts.slice(0, 6) });
+            const rawContent = data.choices?.[0]?.message?.content?.trim().replace(/[\t\r]+/g, ' ').replace(/ {2,}/g, ' ');
+            if (rawContent && !hasForeignScriptLeak(rawContent)) {
+              const cleanText = stripRecommendationTag(rawContent);
+              const mentioned = filterProductsByNameMention(wholesaleProducts, cleanText);
+              // Nothing matched by name (model paraphrased heavily) -- fall back to the
+              // top couple of search results rather than showing nothing at all.
+              const cardProducts = mentioned.length > 0 ? mentioned : wholesaleProducts.slice(0, 2);
+              return res.json({ success: true, action_executed: 'getDistributorWholesaleRecommendations', ai_message: cleanText, products: cardProducts });
             }
           } else {
             console.error('[Distributor RAG] Ollama HTTP error:', resOllama.status, await resOllama.text());
@@ -1589,7 +1625,7 @@ function registerCopilotRoutes(app, pool) {
         // 4. Build RAG prompt — inject ONLY real DB products, no hallucination possible
         const productContext = ragProducts.slice(0, 15).map((p, i) => {
           const simNote = p.similarity ? ` [موازنہ: ${p.similarity}]` : '';
-          return `${i + 1}. "${p.product_name}" | برانڈ: ${p.brand || 'N/A'} | کیٹیگری: ${p.category || 'عام'} | قیمت: Rs ${p.retail_price.toLocaleString()} | اسٹاک: ${p.available_stock > 0 ? `دستیاب (${p.available_stock})` : 'اسٹاک ختم'} | ${p.short_description || ''}${simNote}`;
+          return `${i + 1}. "${p.product_name}" | SKU: ${p.sku || 'N/A'} | برانڈ: ${p.brand || 'N/A'} | کیٹیگری: ${p.category || 'عام'} | قیمت: Rs ${p.retail_price.toLocaleString()} | اسٹاک: ${p.available_stock > 0 ? `دستیاب (${p.available_stock})` : 'اسٹاک ختم'} | ${p.short_description || ''}${simNote}`;
         }).join('\n');
 
         const conversationHistory = (history || [])
@@ -1629,6 +1665,7 @@ function registerCopilotRoutes(app, pool) {
           '2. اگر مصنوع ڈیٹا میں نہیں ہے تو کہیں: "یہ مصنوع ابھی ہمارے اسٹور میں دستیاب نہیں ہے۔"',
           '3. صرف ڈیٹا میں دی گئی قیمتیں بتائیں۔ اپنے پاس سے قیمت نہ بنائیں۔',
           '4. اگر خریدار کا پیغام شاپنگ، مصنوعات، یا آرڈرز سے غیر متعلق ہو (مثلاً کھیل، گپ شپ، یا کوئی اور موضوع)، تو شائستگی سے وضاحت کریں کہ آپ صرف شاپنگ اسسٹنٹ ہیں اور صرف مصنوعات تلاش کرنے یا آرڈرز دیکھنے میں مدد کر سکتے ہیں۔ جھوٹا یا من گھڑت جواب ہرگز نہ دیں۔',
+          '5. صرف انہی مصنوعات کا ذکر کریں جو خریدار کے سوال سے براہ راست متعلقہ ہوں — PRODUCT DATA میں موجود ہر چیز کی فہرست نہ بنائیں۔ جن مصنوعات کا ذکر کریں ان کا پورا انگریزی نام بالکل ویسا ہی لکھیں جیسا PRODUCT DATA میں دیا گیا ہے۔',
           '',
           '## PRODUCT DATA (اسٹور کی تمام دستیاب مصنوعات):',
           productContext || 'کوئی مناسب مصنوع نہیں ملی۔',
@@ -1654,7 +1691,7 @@ function registerCopilotRoutes(app, pool) {
                 { role: 'system', content: ragSystemPrompt },
                 { role: 'user',   content: message.replace(/\b(system|assistant|ignore\s+instructions?|forget\s+your|you\s+are\s+now)\b/gi, '[filtered]').slice(0, 500) }
               ],
-              options: { temperature: 0.15, top_p: 0.9, num_predict: 220 }
+              options: { temperature: 0.15, top_p: 0.9, num_predict: 280 }
             });
               if (ollamaRagRes.ok) {
                 const ollamaData = await ollamaRagRes.json();
@@ -1680,15 +1717,18 @@ function registerCopilotRoutes(app, pool) {
                       products: ragProducts.slice(0, 6)
                     });
                   }
-                  // ragProducts is already scored/filtered for relevance to this query (see
-                  // getBuyerProductRecommendationsFromDb), so use it directly for cards instead
-                  // of requiring the model to reproduce exact English product names in its reply
-                  // (it often paraphrases/transliterates them, which silently dropped all cards).
+                  // Cards must reflect exactly what the model recommended, not just the top
+                  // of the search results -- otherwise a query about one product type (e.g.
+                  // "suggest a console") can show unrelated cards (a chair, a headset, ...)
+                  // that were in the search results but never mentioned in the reply.
+                  const cleanText = stripRecommendationTag(ragText);
+                  const mentioned = filterProductsByNameMention(ragProducts, cleanText);
+                  const cardProducts = mentioned.length > 0 ? mentioned : ragProducts.slice(0, 2);
                   return res.json({
                     success: true,
                     action_executed: 'getBuyerProductRecommendations',
-                    ai_message: ragText,
-                    products: ragProducts.slice(0, 6)
+                    ai_message: cleanText,
+                    products: cardProducts
                   });
                 }
               } else {
