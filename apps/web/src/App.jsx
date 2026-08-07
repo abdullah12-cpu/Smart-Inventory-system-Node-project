@@ -7,37 +7,17 @@ import AdminPortal from "./components/AdminPortal";
 import DistributorPortal from "./components/DistributorPortal";
 import BuyerPortal from "./components/BuyerPortal";
 import LandingPage from "./components/landing/LandingPage";
-import MobileChatApp from "./components/mobile/MobileChatApp";
-import { isNativeApp } from "./lib/apiBase";
-/**
- * True for phone/tablet-class devices: a coarse pointer (touch) on a narrow viewport.
- * Both conditions are required so a narrowed desktop browser window -- which has a fine
- * pointer -- still gets the full site rather than being pushed into the phone chat.
- */
-function isPhoneDevice() {
-  if (typeof window === "undefined") return false;
-  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
-  return coarsePointer && window.innerWidth <= 820;
-}
-
+import { clearAuthToken } from "./lib/apiBase";
 export default function App() {
-  // The phone-sized AI assistant. Handled before anything else and outside StoreProvider:
-  // it signs in and talks to the copilot endpoints on its own, so it avoids the store's
-  // eager fetch of products/orders/quotations/invoices/suppliers/payments/stock-movements/
-  // audit-logs, none of which that screen renders.
-  //
-  // Reached three ways:
-  //   1. ?page=mobile          -- explicit, works on any device
-  //   2. the native Capacitor shell -- it launches at the bundle root with no query string
-  //   3. any phone opening the site with no ?page at all -- phones get the assistant by
-  //      default, since the desktop portals are unusable at that size and expecting people
-  //      to remember a query string is a poor way to hand out a link.
-  //
-  // An explicit ?page=... always wins, so ?page=landing / ?page=portal still opens the full
-  // site on a phone when that is genuinely wanted.
-  const pageParam = new URLSearchParams(window.location.search).get("page");
-  const isMobileChat =
-    pageParam === "mobile" || isNativeApp() || (!pageParam && isPhoneDevice());
+  // The mobile assistant is a separate build with its own entry point (mobile.html), not a
+  // route inside this app -- see src/mobile.jsx for why. Only thing left to handle here is
+  // old links: ?page=mobile used to select it from this bundle, so redirect those rather
+  // than 404-ing people who bookmarked or shared one.
+  const legacyMobileLink =
+    new URLSearchParams(window.location.search).get("page") === "mobile";
+  if (legacyMobileLink && typeof window !== "undefined") {
+    window.location.replace("/mobile");
+  }
 
   const [appState, setAppState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -96,6 +76,9 @@ export default function App() {
   }, [appState, portal]);
 
   useEffect(() => {
+    // Never rewrite the URL while the mobile assistant is showing. These effects still run
+    // (hooks cannot be skipped), and letting them stamp ?page=<state> onto a phone's URL is
+    // exactly what used to strand phones on the desktop site after one refresh.
     if (appState !== "loading") {
       localStorage.setItem("ciq_appState", appState);
       const params = new URLSearchParams(window.location.search);
@@ -130,15 +113,13 @@ export default function App() {
     localStorage.removeItem("ciq_appState");
     localStorage.removeItem("ciq_portal");
     localStorage.removeItem("ciq_currentUser");
+    clearAuthToken();
     localStorage.removeItem("ciq_admin_activeTab");
     localStorage.removeItem("ciq_distributor_activeTab");
     localStorage.removeItem("ciq_buyer_activeTab");
     setAppState("landing");
     window.location.href = "/";
   };
-
-  // Returned after the hooks above so hook order stays stable across renders.
-  if (isMobileChat) return /* @__PURE__ */ jsx(MobileChatApp, {});
 
   return /* @__PURE__ */ jsxs(StoreProvider, { children: [
     appState === "landing" && /* @__PURE__ */ jsx(

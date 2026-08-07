@@ -19,6 +19,7 @@ import {
   Clock, CheckCircle2, XCircle, ShieldCheck, Store, AlertTriangle,
 } from "lucide-react";
 import { renderMessageText, useSpeech, useVoiceRecorder } from "@/lib/voiceChat";
+import { setAuthToken, clearAuthToken } from "@/lib/apiBase";
 
 const SESSION_KEY = "ciq_mobile_session";
 
@@ -256,6 +257,9 @@ function MobileLogin({ onSignedIn }) {
       });
       const data = await resp.json();
       if (data.success && data.user) {
+        // Privileged calls (admin actions) authenticate with this token, not with anything
+        // the client asserts about itself.
+        setAuthToken(data.token);
         const portal = String(data.user.role || "buyer").toLowerCase();
         if (!PORTALS[portal]) {
           setError(`This account type ("${data.user.role}") has no mobile assistant.`);
@@ -405,7 +409,7 @@ function MobileChat({ session, onSignOut }) {
       const resp = await fetch("/api/copilot/admin/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, target_id: id, portal_role: "ADMIN" }),
+        body: JSON.stringify({ action, target_id: id }),
       });
       const data = await resp.json();
       setMessages(prev => [...prev, {
@@ -596,6 +600,7 @@ export default function MobileChatApp() {
 
   const signOut = () => {
     setSession(null);
+    clearAuthToken();
     try { localStorage.removeItem(SESSION_KEY); } catch {}
   };
 

@@ -1,0 +1,113 @@
+name: Build Android APK
+
+# Builds the CommerceIQ Assistant into an installable .apk on GitHub's runners, which come
+# with the JDK and Android SDK preinstalled -- so no Android Studio or SDK is needed locally.
+# The finished APK is attached to the run as a downloadable artifact.
+#
+# Run it from the repo's Actions tab -> "Build Android APK" -> "Run workflow".
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'Public HTTPS URL of the API (e.g. https://xxx.trycloudflare.com). Must be reachable from a phone on mobile data -- localhost and 192.168.x.x will not work.'
+        required: true
+        type: string
+      build_type:
+        description: 'debug installs directly on a phone with no signing setup. release is smaller/faster but must be signed before Android will install it.'
+        required: false
+        default: 'debug'
+        type: choice
+        options: [debug, release]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          # Lockfile lives at the monorepo root, not in apps/web.
+          cache-dependency-path: package-lock.json
+
+      # Android Gradle Plugin 8.x requires JDK 17+.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # npm workspaces: install from the root so apps/web's dependencies resolve.
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci
+
+      # The packaged app has no dev proxy in front of it, so relative /api paths would
+      # resolve against the WebView itself. src/lib/apiBase.js reads this at build time and
+      # rewrites every /api call to the absolute URL supplied above.
+      - name: Write build configuration
+        run: |
+          echo "VITE_API_BASE_URL=${{ inputs.api_base_url }}" > .env.capacitor
+          echo "Building against API: ${{ inputs.api_base_url }}"
+
+      # Builds the mobile entry point (mobile.html -- the assistant-only bundle, not the
+      # website) and copies it into the native project.
+      - name: Build web assets and sync to Android
+        run: npm run build:mobile
+
+      - name: Build APK
+        working-directory: apps/web/android
+        run: |
+          chmod +x ./gradlew
+          if [ "${{ inputs.build_type }}" = "release" ]; then
+            ./gradlew assembleRelease --no-daemon
+          else
+            ./gradlew assembleDebug --no-daemon
+          fi
+
+      - name: Locate APK
+        id: apk
+        working-directory: apps/web/android
+        run: |
+          FOUND=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$FOUND" ]; then echo "No APK produced"; exit 1; fi
+          echo "path=apps/web/android/$FOUND" >> "$GITHUB_OUTPUT"
+          echo "Built: $FOUND ($(du -h "$FOUND" | cut -f1))"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: commerceiq-assistant-${{ inputs.build_type }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          {
+            echo "### APK ready"
+            echo ""
+            echo "Download it from the **Artifacts** section at the bottom of this run's summary page."
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Build type | \`${{ inputs.build_type }}\` |"
+            echo "| API URL | \`${{ inputs.api_base_url }}\` |"
+            echo ""
+            echo "On the phone: enable **Install unknown apps** for your browser or file manager, then open the .apk."
+            if [ "${{ inputs.build_type }}" = "release" ]; then
+              echo ""
+              echo "> **Note:** a \`release\` build is unsigned and Android will refuse to install it until you sign it. Use \`debug\` unless you have signing configured."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

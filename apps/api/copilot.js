@@ -31,6 +31,7 @@ const {
   buildQuotationDescription
 } = require('./distributorOperations');
 const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb, trackBuyerOrder, listBuyerOrdersByStatus } = require('./buyerOperations');
+const { requireAuth, optionalAuth, requireRole } = require('./auth');
 const { vectorSearchProducts, vectorSearchDistributorProducts, isEmbedModelAvailable } = require('./embeddings');
 
 // â”€â”€â”€ Ollama config & dynamic resolution (Remote PC -> Local Mac fallback) â”€â”€â”€â”€â”€â”€
@@ -1934,6 +1935,29 @@ function registerCopilotRoutes(app, pool) {
     const role = (portal_role || defaultRole).toUpperCase();
     const displayName = user_name || 'صارف';
 
+    // ── Access control for the assistants that expose account or company-wide data ──
+    // `portal_role` is client-supplied, so it selects which assistant to talk to but grants
+    // nothing. Entitlement is checked against the verified session token here.
+    //
+    // Without this, two anonymous requests were enough to dump the business: asking the
+    // ADMIN assistant returned every order and invoice on the platform, and asking the
+    // DISTRIBUTOR assistant with no session left the account filter empty -- which the
+    // queries read as "no filter", returning every distributor's invoices at once.
+    if (role === 'ADMIN' && String(req.auth?.role || '').toLowerCase() !== 'admin') {
+      return res.status(403).json({
+        success: true,
+        ai_message: '⛔ یہ معلومات صرف ایڈمن کے لیے ہیں۔ براہ کرم ایڈمن اکاؤنٹ سے سائن اِن کریں۔',
+        speech_text: 'یہ معلومات صرف ایڈمن کے لیے ہیں۔',
+      });
+    }
+    if (role === 'DISTRIBUTOR' && !req.auth?.email) {
+      return res.status(401).json({
+        success: true,
+        ai_message: 'براہ کرم اپنے ڈسٹری بیوٹر اکاؤنٹ سے سائن اِن کریں تاکہ میں آپ کے آرڈرز، کوٹیشنز اور انوائسز دکھا سکوں۔',
+        speech_text: 'براہ کرم پہلے سائن اِن کریں۔',
+      });
+    }
+
     const SENSITIVE_KEYWORDS = ['password', 'env', 'secret', 'token', 'key'];
     const isSensitive = SENSITIVE_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(message));
     if (isSensitive) {
@@ -1954,7 +1978,10 @@ function registerCopilotRoutes(app, pool) {
 
     if (role === 'DISTRIBUTOR') {
       try {
-        const userEmail = req.body.user_email || null;
+        // Identity comes from the verified session token, never from the request body.
+        // Trusting body.user_email let an anonymous caller read any distributor's orders,
+        // quotations and invoices simply by naming their email address.
+        const userEmail = req.auth?.email || null;
         const lowerMsg = message.toLowerCase();
 
         if (!attached_image && isOffTopicSmallTalk(message)) {
@@ -2175,7 +2202,9 @@ function registerCopilotRoutes(app, pool) {
 
     if (role === 'BUYER') {
       try {
-        const userEmail = req.body.user_email || 'guest@commerceiq.com';
+        // Token identity only -- see the distributor branch. Without a session this stays
+        // a guest conversation: product discovery works, personal order data does not.
+        const userEmail = req.auth?.email || 'guest@commerceiq.com';
         const emailForOrders = userEmail !== 'guest@commerceiq.com' ? userEmail : null;
 
         if (!attached_image && isOffTopicSmallTalk(message)) {
@@ -2188,6 +2217,14 @@ function registerCopilotRoutes(app, pool) {
         const orderNumMatch = !attached_image && message.match(/\bORD[-_][\w-]+/i);
         const mentionsOrder = /\border(s)?\b/i.test(message);
         if (!attached_image && (orderNumMatch || mentionsOrder)) {
+          // A guest has no orders to show. This must return nothing rather than falling
+          // through with a null customer filter -- the order queries read a null email as
+          // "no filter", so an anonymous visitor asking for "my orders" was served every
+          // order on the platform.
+          if (!emailForOrders) {
+            const msg = 'اپنے آرڈرز دیکھنے کے لیے براہ کرم سائن اِن کریں۔';
+            return res.json({ success: true, ai_message: msg, speech_text: msg, orders: [] });
+          }
           if (orderNumMatch) {
             const trackResult = await trackBuyerOrder(pool, { order_id_query: orderNumMatch[0], customer_email: emailForOrders });
             return res.json({ success: true, action_executed: 'trackBuyerOrder', ai_message: trackResult.ai_message, speech_text: trackResult.speech_text, orders: trackResult.orders });
@@ -2253,7 +2290,7 @@ function registerCopilotRoutes(app, pool) {
         // Fetch this buyer's own orders for RAG context (so LLM can answer order questions)
         let buyerOrderContext = '';
         try {
-          const buyerEmailRag = req.body.user_email || null;
+          const buyerEmailRag = req.auth?.email || null;
           if (buyerEmailRag) {
             const buyerOrdersRes = await listBuyerOrdersByStatus(pool, { customer_email: buyerEmailRag });
             if (buyerOrdersRes.orders && buyerOrdersRes.orders.length > 0) {
@@ -2716,8 +2753,8 @@ function registerCopilotRoutes(app, pool) {
     });
   };
 
-  app.post('/api/copilot/chat', safeHandleChat('ADMIN'));
-  app.post('/api/copilot/distributor/chat', safeHandleChat('DISTRIBUTOR'));
+  app.post('/api/copilot/chat', optionalAuth, safeHandleChat('ADMIN'));
+  app.post('/api/copilot/distributor/chat', optionalAuth, safeHandleChat('DISTRIBUTOR'));
   // Urdu & Multilingual TTS — ElevenLabs (when ELEVENLABS_API_KEY is present) or Edge Neural TTS
   app.post('/api/copilot/tts', async (req, res) => {
     const { text, voice = 'ur-PK-UzmaNeural', stream = false } = req.body || {};
@@ -2830,12 +2867,12 @@ function registerCopilotRoutes(app, pool) {
   // chat to find it. Deliberately a separate endpoint from /chat: these mutate data, so
   // they take an explicit action + id rather than being inferred from free text -- a
   // mistranscribed voice command must never be able to approve an order by accident.
-  app.post('/api/copilot/admin/action', async (req, res) => {
-    const { action, target_id, value, reason, portal_role } = req.body || {};
+  app.post('/api/copilot/admin/action', requireAuth, requireRole('admin'), async (req, res) => {
+    const { action, target_id, value, reason } = req.body || {};
 
-    if ((portal_role || '').toUpperCase() !== 'ADMIN') {
-      return res.status(403).json({ success: false, error: 'Admin role required for this action.' });
-    }
+    // Role is taken from the verified token by requireRole above. It used to be read from a
+    // `portal_role` field in this body -- which the client supplies, so sending
+    // {"portal_role":"ADMIN"} approved/rejected/shipped any order with no credentials at all.
     if (!action || !target_id) {
       return res.status(400).json({ success: false, error: 'action and target_id are required.' });
     }
@@ -2946,7 +2983,7 @@ function registerCopilotRoutes(app, pool) {
     }
   });
 
-  app.post('/api/copilot/buyer/chat', safeHandleChat('BUYER'));
+  app.post('/api/copilot/buyer/chat', optionalAuth, safeHandleChat('BUYER'));
 }
 
 module.exports = { registerCopilotRoutes };

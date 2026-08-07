@@ -29,7 +29,7 @@ This is the step people miss. In the browser, Vite proxies `/api` to `localhost:
 packaged app has **no proxy** — it is served from `https://localhost` inside the WebView, so
 relative `/api` paths resolve against the WebView itself and every request fails.
 
-Create `apps/web/.env.production`:
+Create `apps/web/.env.capacitor` (already present with a placeholder):
 
 ```env
 VITE_API_BASE_URL=https://api.yourdomain.com

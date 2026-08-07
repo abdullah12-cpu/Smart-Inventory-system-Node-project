@@ -496,7 +496,11 @@ export function useVoiceRecorder({ onTranscript, onError, language = null }) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ audio: dataUrl, language }),
-            signal: AbortSignal.timeout(30000),
+            // Generous: speech-to-text runs on CPU here, where a normal utterance takes several
+            // seconds and a long one can take much longer. A 30s cap was aborting valid
+            // in-flight transcriptions, which surfaced to the user as "voice recognition failed"
+            // even though the server was about to return a correct transcript.
+            signal: AbortSignal.timeout(120000),
           });
           const data = await resp.json();
           if (data.success && data.text) onTranscript?.(data.text);

@@ -6,7 +6,7 @@
     "dev": "vite --host",
     "dev:mobile": "vite --host --mode mobile",
     "build": "vite build",
-    "build:mobile": "vite build --mode production && cap sync",
+    "build:mobile": "vite build --mode capacitor && cap sync",
     "open:android": "cap open android",
     "open:ios": "cap open ios",
     "preview": "vite preview",

@@ -42,7 +42,20 @@ except Exception:
 if _HAS_CUDA:
     DEFAULT_MODEL, DEFAULT_DEVICE, DEFAULT_COMPUTE = "large-v3", "cuda", "float16"
 else:
-    DEFAULT_MODEL, DEFAULT_DEVICE, DEFAULT_COMPUTE = "medium", "cpu", "int8"
+    # `base` on CPU. Measured on this project's dev laptop (4-core i5-1145G7) across four
+    # real spoken phrases, with the decode settings used below:
+    #
+    #     tiny 1.5s/clip      base 2.6s/clip      small 8.7s/clip      medium ~22s/clip
+    #
+    # All four sizes transcribed every clip correctly, so the larger models bought no
+    # accuracy on this workload while costing 3-8x the latency. Latency is what decides
+    # whether voice input feels usable: at `small` a normal utterance took long enough that
+    # the browser gave up and reported "voice recognition failed".
+    #
+    # The trade-off worth knowing: these clips are clean. On noisy or heavily accented audio
+    # the larger models genuinely do better, so if accuracy matters more than speed, raise it:
+    #     set WHISPER_MODEL_SIZE=small      (or medium)
+    DEFAULT_MODEL, DEFAULT_DEVICE, DEFAULT_COMPUTE = "base", "cpu", "int8"
 
 MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", DEFAULT_MODEL)
 DEVICE = os.getenv("WHISPER_DEVICE", DEFAULT_DEVICE)

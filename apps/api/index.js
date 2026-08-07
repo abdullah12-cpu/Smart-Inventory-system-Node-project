@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const pool = require('./db');
 const { createProductInDb } = require('./adminOperations');
 const { counterOfferQuotationInDb, buildQuotationDescription } = require('./distributorOperations');
+const { verifyPassword, hashPassword, signToken, requireAuth, requireRole } = require('./auth');
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -569,9 +570,21 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Simple plain-text password comparison
-    if (user.password !== password) {
+    // bcrypt comparison, with in-place upgrade of any remaining plain-text password the
+    // first time its owner signs in (see auth.js). Passwords were previously compared as
+    // plain text and stored the same way.
+    const { ok: passwordOk, upgradedHash } = await verifyPassword(password, user.password);
+    if (!passwordOk) {
       return res.status(401).json({ success: false, message: 'Incorrect password.' });
+    }
+    if (upgradedHash) {
+      try {
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [upgradedHash, user.id]);
+        console.log(`[auth] Upgraded stored password to bcrypt for ${user.email}`);
+      } catch (e) {
+        // A failed upgrade must not block a valid login -- it just retries next time.
+        console.error('[auth] Password upgrade failed:', e.message);
+      }
     }
 
     // Status validation
@@ -630,9 +643,12 @@ app.post('/api/auth/login', async (req, res) => {
       sessionUser.last_name = names.slice(1).join(' ') || '';
     }
 
+    // The token is the client's proof of identity for privileged calls. Roles are read from
+    // it server-side, so a client can no longer assert its own role in a request body.
     return res.json({
       success: true,
       message: 'Logged in successfully.',
+      token: signToken({ ...sessionUser, role: user.role }),
       user: sessionUser
     });
   } catch (err) {
@@ -659,7 +675,7 @@ app.post('/api/auth/register-distributor', async (req, res) => {
     await pool.query(
       `INSERT INTO users (email, password, role, contact_name, business_name, warehouse_region, status, country, city) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [regEmail, password, 'distributor', contactName, businessName, 'wh-1', 'PENDING_APPROVAL', country, city]
+      [regEmail, await hashPassword(password), 'distributor', contactName, businessName, 'wh-1', 'PENDING_APPROVAL', country, city]
     );
 
     return res.status(201).json({ success: true, message: 'Distributor application registered successfully.' });
@@ -687,7 +703,7 @@ app.post('/api/auth/register-buyer', async (req, res) => {
     await pool.query(
       `INSERT INTO users (email, password, role, buyer_contact_name, buyer_store_name, buyer_region, buyer_address, buyer_phone, status) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [buyerEmail, password, 'buyer', buyerContactName, buyerStoreName, 'wh-1', '', '', 'ACTIVE']
+      [buyerEmail, await hashPassword(password), 'buyer', buyerContactName, buyerStoreName, 'wh-1', '', '', 'ACTIVE']
     );
 
     return res.status(201).json({ success: true, message: 'Buyer registered successfully.' });
@@ -1752,7 +1768,10 @@ app.get('/api/admin/distributors', async (req, res) => {
 });
 
 // POST approve distributor
-app.post('/api/admin/distributors/approve', async (req, res) => {
+// Approving or removing a partner account changes who can trade on the platform, so these
+// require a valid admin token. Role comes from the signed token via requireAuth -- it can no
+// longer be asserted by the caller.
+app.post('/api/admin/distributors/approve', requireAuth, requireRole('admin'), async (req, res) => {
   const { id } = req.body;
   if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
 
@@ -1766,7 +1785,7 @@ app.post('/api/admin/distributors/approve', async (req, res) => {
 });
 
 // POST remove distributor (reject application)
-app.post('/api/admin/distributors/remove', async (req, res) => {
+app.post('/api/admin/distributors/remove', requireAuth, requireRole('admin'), async (req, res) => {
   const { id } = req.body;
   if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
 

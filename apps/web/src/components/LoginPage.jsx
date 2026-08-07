@@ -24,6 +24,7 @@ import {
   MapPin
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { setAuthToken } from "@/lib/apiBase";
 
 export default function LoginPage({
   onLogin,
@@ -112,6 +113,9 @@ export default function LoginPage({
       });
       const data = await response.json();
       if (response.ok && data.success) {
+        // Persist the session token before the user object: the store starts firing
+        // API calls as soon as currentUser is set, and those need to be authenticated.
+        setAuthToken(data.token);
         setCurrentUser(data.user);
         const userRole = data.user.role || "buyer";
 
@@ -169,6 +173,9 @@ export default function LoginPage({
       });
       const data = await response.json();
       if (response.ok && data.success) {
+        // Persist the session token before the user object: the store starts firing
+        // API calls as soon as currentUser is set, and those need to be authenticated.
+        setAuthToken(data.token);
         setCurrentUser(data.user);
         const userRole = data.user.role || targetPortal;
         

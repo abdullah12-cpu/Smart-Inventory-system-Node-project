@@ -28,5 +28,7 @@ apps/web/ios/App/App/public/
 apps/web/ios/App/Pods/
 apps/web/ios/App/build/
 
-# Build-time env holding the real backend URL
+# Build-time env holding the real backend URL (native builds only -- the plain web
+# build must NOT set a base URL, since server.js serves app and API on one origin)
 .env.production
+.env.capacitor

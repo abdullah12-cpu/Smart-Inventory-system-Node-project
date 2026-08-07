@@ -58,20 +58,30 @@ app.use('/api', (req, res) => {
   req.pipe(proxyReq);
 });
 
-// ── Static app ──────────────────────────────────────────────────────────────
+// ── Static assets ───────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// SPA fallback: serve index.html for any route the static handler didn't resolve.
+// ── Two apps, two entry points ──────────────────────────────────────────────
+// /mobile serves the assistant-only bundle; everything else serves the website. They are
+// separate builds (see vite.config.js), so this is a genuine fork, not a route inside one
+// app -- a request under /mobile can never resolve to the website's HTML and vice versa.
+//
 // Written as middleware rather than app.get('*') because Express 5 removed the bare '*'
-// path pattern -- it throws "Missing parameter name" at startup, which meant this server
-// could not boot at all. Limited to GET so a mis-pathed POST still surfaces as a 404.
+// path pattern -- it throws "Missing parameter name" at startup, which stopped this server
+// from booting at all. Limited to GET so a mis-pathed POST still surfaces as a 404.
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+
+  const entry = req.path === '/mobile' || req.path.startsWith('/mobile/')
+    ? 'mobile.html'
+    : 'index.html';
+
+  res.sendFile(path.join(__dirname, 'dist', entry));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`CommerceIQ server running on http://localhost:${PORT}`);
   console.log(`  /api  ->  ${API_TARGET}`);
-  console.log(`  mobile chat:  http://localhost:${PORT}/?page=mobile`);
+  console.log(`  website:      http://localhost:${PORT}/`);
+  console.log(`  mobile app:   http://localhost:${PORT}/mobile`);
 });

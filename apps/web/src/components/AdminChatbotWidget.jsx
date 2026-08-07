@@ -194,7 +194,8 @@ export default function AdminChatbotWidget({ currentUser, onProductCreated, onDa
       const resp = await fetch("/api/copilot/admin/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, target_id: id, value, portal_role: "ADMIN" }),
+        // No self-asserted role: the server reads it from the signed session token.
+        body: JSON.stringify({ action, target_id: id, value }),
       });
       const data = await resp.json();
       setMessages(prev => [...prev, {
