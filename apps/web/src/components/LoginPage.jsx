@@ -282,7 +282,7 @@ export default function LoginPage({
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex font-sans overflow-hidden text-xs">
         {/* LEFT PANEL */}
-        <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1E293B] via-[#0F172A] to-[#020617] text-white p-16 flex-col justify-between relative">
+        <div className="hidden lg:flex lg:w-1/2 surface-deep text-white p-16 flex-col justify-between relative overflow-hidden">
           <motion.div 
             animate={{ 
               scale: [1, 1.25, 1],
@@ -319,7 +319,7 @@ export default function LoginPage({
                   transition={{ delay: 0.15 + idx * 0.1, duration: 0.4 }}
                   whileHover={{ scale: 1.025, x: 8, backgroundColor: "rgba(255, 255, 255, 0.08)", borderColor: "rgba(79, 70, 229, 0.3)" }}
                   whileTap={{ scale: 0.98 }}
-                  className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer transition-all duration-200"
+                  className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:bg-white/10 hover:border-white/20 hover-lift-sm"
                 >
                   <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">{benefit.icon}</div>
                   <div>
@@ -346,7 +346,7 @@ export default function LoginPage({
                 <p className="text-slate-400 mt-0.5">Please sign in with administrator credentials.</p>
               </div>
 
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col gap-3 shadow-xs">
+              <div className="surface-premium p-4 flex flex-col gap-3">
                 <span className="text-[10px] text-[#4F46E5] font-extrabold uppercase tracking-wider flex items-center gap-1"><Sparkles size={11} /> 1-Click Secure Admin Auth</span>
                 <motion.button
                   type="button"
@@ -405,7 +405,7 @@ export default function LoginPage({
                   </div>
                 </div>
 
-                <motion.button type="submit" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-extrabold text-[11px] uppercase rounded-lg border-0 shadow-sm cursor-pointer transition-all mt-2">
+                <motion.button type="submit" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full py-3.5 gradient-brand text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl border-0 shadow-lg ring-glow cursor-pointer transition-all mt-2">
                   Sign In to Admin Console
                 </motion.button>
               </form>
@@ -423,7 +423,7 @@ export default function LoginPage({
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex font-sans overflow-hidden text-xs">
         {/* LEFT PANEL */}
-        <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1E293B] via-[#0F172A] to-[#020617] text-white p-16 flex-col justify-between relative">
+        <div className="hidden lg:flex lg:w-1/2 surface-deep text-white p-16 flex-col justify-between relative overflow-hidden">
           <motion.div 
             animate={{ 
               scale: [1, 1.25, 1],
@@ -460,7 +460,7 @@ export default function LoginPage({
                   transition={{ delay: 0.15 + idx * 0.1, duration: 0.4 }}
                   whileHover={{ scale: 1.025, x: 8, backgroundColor: "rgba(255, 255, 255, 0.08)", borderColor: "rgba(79, 70, 229, 0.3)" }}
                   whileTap={{ scale: 0.98 }}
-                  className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer transition-all duration-200"
+                  className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:bg-white/10 hover:border-white/20 hover-lift-sm"
                 >
                   <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">{benefit.icon}</div>
                   <div>
@@ -521,7 +521,7 @@ export default function LoginPage({
                   <p className="text-slate-400 mt-0.5">Please sign in to access B2B inventory pipelines.</p>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col gap-3 shadow-xs">
+                <div className="surface-premium p-4 flex flex-col gap-3">
                   <span className="text-[10px] text-[#4F46E5] font-extrabold uppercase tracking-wider flex items-center gap-1"><Sparkles size={11} /> 1-Click Wholesale Auth</span>
                   <motion.button
                     type="button"
@@ -580,7 +580,7 @@ export default function LoginPage({
                     </div>
                   </div>
 
-                  <motion.button type="submit" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-extrabold text-[11px] uppercase rounded-lg border-0 shadow-sm cursor-pointer transition-all mt-2">
+                  <motion.button type="submit" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full py-3.5 gradient-brand text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl border-0 shadow-lg ring-glow cursor-pointer transition-all mt-2">
                     Sign In to B2B Console
                   </motion.button>
                 </form>
@@ -608,7 +608,7 @@ export default function LoginPage({
                     </div>
                   </div>
 
-                  <button type="submit" disabled={statusLoading} className="w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-extrabold text-[11px] uppercase rounded-lg border-0 shadow-sm cursor-pointer transition-colors flex items-center justify-center gap-1.5">
+                  <button type="submit" disabled={statusLoading} className="w-full py-3.5 gradient-brand text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl border-0 shadow-lg ring-glow cursor-pointer transition-all flex items-center justify-center gap-1.5 press-scale">
                     {statusLoading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
                     <span>Search Queue Status</span>
                   </button>
@@ -754,7 +754,7 @@ export default function LoginPage({
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex font-sans overflow-hidden text-xs">
       {/* LEFT PANEL */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1E293B] via-[#0F172A] to-[#020617] text-white p-16 flex-col justify-between relative">
+      <div className="hidden lg:flex lg:w-1/2 surface-deep text-white p-16 flex-col justify-between relative overflow-hidden">
         <motion.div 
           animate={{ 
             scale: [1, 1.25, 1],
@@ -820,7 +820,7 @@ export default function LoginPage({
                 transition={{ delay: 0.15 + idx * 0.1, duration: 0.4 }}
                 whileHover={{ scale: 1.025, x: 8, backgroundColor: "rgba(255, 255, 255, 0.08)", borderColor: "rgba(79, 70, 229, 0.3)" }}
                 whileTap={{ scale: 0.98 }}
-                className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer transition-all duration-200"
+                className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:bg-white/10 hover:border-white/20 hover-lift-sm"
               >
                 <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
                   {benefit.icon}
@@ -896,7 +896,7 @@ export default function LoginPage({
               </div>
 
               {/* Prefill Demonstration Panel */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col gap-3 shadow-xs">
+              <div className="surface-premium p-4 flex flex-col gap-3">
                 <span className="text-[10px] text-[#4F46E5] font-extrabold uppercase tracking-wider flex items-center gap-1"><Sparkles size={11} /> 1-Click Fast Buyer Auth</span>
                 <motion.button
                   type="button"
@@ -1050,7 +1050,7 @@ export default function LoginPage({
                   type="submit"
                   whileHover={{ scale: 1.02, backgroundColor: "#4338CA" }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full py-3 bg-[#4F46E5] hover:bg-[#4338CA] text-white font-extrabold text-[11px] uppercase rounded-lg border-0 shadow-sm cursor-pointer transition-all mt-2"
+                  className="w-full py-3.5 gradient-brand text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl border-0 shadow-lg ring-glow cursor-pointer transition-all mt-2"
                 >
                   Create Retail Profile
                 </motion.button>

@@ -277,10 +277,10 @@ function MobileLogin({ onSignedIn }) {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-gradient-to-b from-indigo-950 via-indigo-900 to-slate-900 flex flex-col justify-center px-6 py-10">
+    <div className="min-h-[100dvh] surface-deep flex flex-col justify-center px-6 py-10 relative overflow-hidden">
       <div className="w-full max-w-sm mx-auto">
         <div className="flex items-center gap-2.5 mb-8">
-          <div className="w-11 h-11 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shrink-0">
+          <div className="w-11 h-11 rounded-xl gradient-brand flex items-center justify-center shadow-xl ring-glow shrink-0 animate-[scaleIn_0.5s_var(--ease-spring)_both]">
             <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
@@ -319,7 +319,7 @@ function MobileLogin({ onSignedIn }) {
           <button
             type="submit"
             disabled={busy}
-            className="w-full py-3.5 rounded-xl bg-indigo-500 active:bg-indigo-600 disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-xl gradient-brand disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg press-scale"
           >
             {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : "Sign in"}
           </button>
@@ -434,7 +434,7 @@ function MobileChat({ session, onSignOut }) {
   return (
     <div className="h-[100dvh] flex flex-col bg-slate-50">
       {/* Header */}
-      <header className="bg-indigo-950 text-white px-4 py-3 flex items-center gap-3 shrink-0 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <header className="surface-deep text-white px-4 py-3 flex items-center gap-3 shrink-0 pt-[max(0.75rem,env(safe-area-inset-top))] relative shadow-lg z-10">
         <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center shrink-0">
           <Sparkles className="w-5 h-5" />
         </div>
@@ -551,7 +551,7 @@ function MobileChat({ session, onSignOut }) {
           disabled={loading}
           title={isRecording ? "Stop recording" : "Speak your question"}
           className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-colors disabled:opacity-50 ${
-            isRecording ? "bg-red-500 text-white animate-pulse" : "bg-indigo-50 text-indigo-600 active:bg-indigo-100"
+            isRecording ? "bg-red-500 text-white pulse-ring" : "bg-indigo-50 text-indigo-600 active:bg-indigo-100 press-scale"
           }`}
         >
           {isTranscribing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mic className="w-5 h-5" />}
@@ -571,7 +571,7 @@ function MobileChat({ session, onSignOut }) {
           onClick={() => sendMessage()}
           disabled={loading || !inputMsg.trim()}
           title="Send"
-          className="w-11 h-11 rounded-full bg-indigo-600 active:bg-indigo-700 disabled:opacity-40 text-white flex items-center justify-center shrink-0"
+          className="w-11 h-11 rounded-full gradient-brand disabled:opacity-40 text-white flex items-center justify-center shrink-0 shadow-lg press-scale"
         >
           <Send className="w-5 h-5" />
         </button>

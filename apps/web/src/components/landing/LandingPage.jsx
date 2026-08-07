@@ -344,7 +344,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
       <main className="max-w-[1400px] mx-auto px-6 py-6 flex-1 grid grid-cols-1 md:grid-cols-4 gap-6 w-full">
         
         {/* Left Filter Sidebar */}
-        <aside className="md:col-span-1 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-6">
+        <aside className="md:col-span-1 surface-premium p-5 flex flex-col gap-6 self-start sticky top-4 animate-[fadeInUp_0.5s_var(--ease-premium)_both]">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <span className="font-bold text-sm tracking-tight flex items-center gap-1.5"><SlidersHorizontal size={14} /> Filters & Specs</span>
             <button 
@@ -458,15 +458,17 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
         {/* Right Catalog Feed */}
         <section className="md:col-span-3 flex flex-col gap-6">
           {/* Banner Hero */}
-          <div className="relative bg-gradient-to-r from-[#1E293B] to-[#0F172A] rounded-2xl overflow-hidden p-8 text-white min-h-[160px] flex flex-col justify-center gap-2 shadow-sm">
-            <div className="absolute top-0 right-0 w-1/3 h-full bg-[#4F46E5]/20 rounded-l-full blur-[60px]" />
-            <span className="bg-[#4F46E5] text-[9px] font-extrabold uppercase px-2.5 py-1 rounded-full tracking-widest self-start">
+          <div className="surface-deep relative rounded-2xl overflow-hidden p-8 text-white min-h-[180px] flex flex-col justify-center gap-2 shadow-xl animate-[fadeInUp_0.6s_var(--ease-premium)_both]">
+            {/* Two drifting light sources give the panel dimension instead of a flat wash. */}
+            <div className="absolute -top-1/2 right-0 w-2/3 h-[200%] bg-[#4F46E5]/25 rounded-full blur-[80px] animate-[floatSoft_8s_ease-in-out_infinite] pointer-events-none" />
+            <div className="absolute -bottom-1/2 -left-1/4 w-1/2 h-[200%] bg-[#0D9488]/20 rounded-full blur-[90px] animate-[floatSoft_11s_ease-in-out_infinite] pointer-events-none" />
+            <span className="gradient-brand text-[9px] font-extrabold uppercase px-3 py-1.5 rounded-full tracking-widest self-start shadow-lg relative">
               {marketMode === "b2c" ? "B2C Retail Super Deals" : "B2B Wholesale Hub"}
             </span>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight mt-1" style={{ fontFamily: "Outfit, sans-serif" }}>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mt-1 relative" style={{ fontFamily: "Outfit, sans-serif" }}>
               {marketMode === "b2c" ? "Premium Electronics at Retail Rates" : "Direct Factory Distributor Ledgers"}
             </h2>
-            <p className="text-slate-400 max-w-xl text-[10px] leading-relaxed">
+            <p className="text-slate-300/90 max-w-xl text-[11px] leading-relaxed relative">
               {marketMode === "b2c" 
                 ? "Get single unit items delivered immediately to your doorstep with certified secure checkouts." 
                 : "Unlock special commercial rates, customized bulk payment terms, and direct inventory warehousing options."}
@@ -475,13 +477,13 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
 
           {/* Product Cards Grid */}
           {filteredProducts.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center flex flex-col items-center justify-center gap-3">
+            <div className="surface-premium p-16 text-center flex flex-col items-center justify-center gap-3 animate-[scaleIn_0.4s_var(--ease-spring)_both]">
               <ShoppingBag size={48} className="text-slate-300" />
               <h3 className="font-bold text-slate-800 text-sm">No Products Found</h3>
               <p className="text-slate-500 text-[11px]">We couldn't find any products matching your search filters.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="stagger grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredProducts.map(p => {
                 const totalStock = Array.isArray(p.inventory) ? p.inventory.reduce((sum, inv) => sum + inv.quantity, 0) : 0;
                 const isOutOfStock = totalStock === 0;
@@ -494,8 +496,9 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
                   <motion.div
                     key={p.product_id}
                     layout
-                    whileHover={{ y: -4, shadow: "md" }}
-                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col shadow-xs group"
+                    whileHover={{ y: -6 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 26 }}
+                    className="surface-premium hover-lift overflow-hidden flex flex-col group cursor-default"
                   >
                     {/* Image Box */}
                     <div className="h-44 bg-slate-100 relative flex items-center justify-center p-4 border-b border-slate-100 overflow-hidden">
@@ -880,7 +883,7 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
                 desc: "Certified B2B ledger balances with secure payment Allocations."
               }
             ].map((card, idx) => (
-              <div key={idx} className="bg-[#F8F9FC] border border-slate-200 rounded-2xl p-6 flex flex-col items-center gap-3">
+              <div key={idx} className="surface-premium hover-lift-sm p-6 flex flex-col items-center gap-3 text-center">
                 <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
                   {card.icon}
                 </div>

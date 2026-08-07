@@ -229,7 +229,7 @@ export default function BuyerPortal({ onLogout }) {
               ]
             }
           ),
-          notifOpen && /* @__PURE__ */ jsxs("div", { className: "absolute right-0 top-[calc(100%+8px)] w-[320px] bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden text-[#0F172A] animate-dropdown", children: [
+          notifOpen && /* @__PURE__ */ jsxs("div", { className: "absolute right-0 top-[calc(100%+8px)] w-[320px] surface-premium shadow-xl z-50 overflow-hidden text-[#0F172A] animate-dropdown", children: [
             /* @__PURE__ */ jsxs("div", { className: "p-3 border-b border-[#E2E8F0] flex items-center justify-between", children: [
               /* @__PURE__ */ jsx("span", { className: "text-xs font-bold", children: "Notifications" }),
               /* @__PURE__ */ jsx(
@@ -342,9 +342,9 @@ export default function BuyerPortal({ onLogout }) {
           );
         }) })
       ] }),
-      activeTab === "orders" && /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl overflow-hidden shadow-sm", children: [
+      activeTab === "orders" && /* @__PURE__ */ jsxs("div", { className: "surface-premium overflow-hidden shadow-sm", children: [
         /* @__PURE__ */ jsx("div", { className: "p-5 border-b border-[#E2E8F0]", children: /* @__PURE__ */ jsx("h3", { className: "font-bold text-sm text-[#0F172A]", children: "My Purchase History" }) }),
-        /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse", children: [
+        /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "table-premium w-full text-left border-collapse", children: [
           /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-slate-50 border-b border-[#E2E8F0] text-[#64748B] font-semibold", children: [
             /* @__PURE__ */ jsx("th", { className: "p-4", children: "Order Number" }),
             /* @__PURE__ */ jsx("th", { className: "p-4", children: "Items Purchase Summary" }),

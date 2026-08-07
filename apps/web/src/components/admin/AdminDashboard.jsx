@@ -195,7 +195,7 @@ export default function AdminDashboard({ search, mode }) {
         }
       )
     ] }),
-    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
+    /* @__PURE__ */ jsxs("div", { className: "surface-premium overflow-hidden flex flex-col", children: [
       /* @__PURE__ */ jsxs("div", { className: "px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between gap-4 flex-wrap", children: [
         /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-4", children: [
           /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A] tracking-tight", children: "Products" }),

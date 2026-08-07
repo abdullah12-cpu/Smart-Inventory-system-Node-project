@@ -629,7 +629,7 @@ export default function DistributorChatbotWidget({ currentUser, products = [], o
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="fixed bottom-24 right-6 w-[92vw] sm:w-[420px] h-[580px] bg-white rounded-2xl shadow-2xl border border-slate-200 z-[9999] flex flex-col overflow-hidden"
+            className="fixed bottom-24 right-6 w-[92vw] sm:w-[420px] h-[580px] bg-white rounded-2xl shadow-2xl animate-[scaleIn_0.35s_var(--ease-spring)_both] origin-bottom-right border border-slate-200 z-[9999] flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 flex items-center justify-between border-b border-indigo-900/50">

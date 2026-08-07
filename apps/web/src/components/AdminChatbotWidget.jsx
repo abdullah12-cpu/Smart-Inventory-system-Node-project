@@ -224,7 +224,7 @@ export default function AdminChatbotWidget({ currentUser, onProductCreated, onDa
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg cursor-pointer"
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3.5 rounded-full gradient-brand text-white font-bold text-sm shadow-xl ring-glow hover-lift press-scale cursor-pointer animate-[scaleIn_0.4s_var(--ease-spring)_both]"
       >
         <Sparkles className="w-5 h-5" />
         Admin Copilot
@@ -233,9 +233,9 @@ export default function AdminChatbotWidget({ currentUser, onProductCreated, onDa
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-[420px] max-w-[calc(100vw-2rem)] h-[640px] max-h-[calc(100vh-3rem)] flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+    <div className="fixed bottom-6 right-6 z-50 w-[420px] max-w-[calc(100vw-2rem)] h-[640px] max-h-[calc(100vh-3rem)] flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200/70 overflow-hidden animate-[scaleIn_0.35s_var(--ease-spring)_both] origin-bottom-right">
       {/* Header */}
-      <header className="bg-indigo-950 text-white px-4 py-3 flex items-center gap-3 shrink-0">
+      <header className="surface-deep text-white px-4 py-3 flex items-center gap-3 shrink-0 relative">
         <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center shrink-0">
           <Sparkles className="w-5 h-5" />
         </div>
@@ -348,7 +348,7 @@ export default function AdminChatbotWidget({ currentUser, onProductCreated, onDa
           disabled={loading}
           title={isRecording ? "Stop recording" : "Speak your question"}
           className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 cursor-pointer ${
-            isRecording ? "bg-red-500 text-white animate-pulse" : "bg-indigo-50 hover:bg-indigo-100 text-indigo-600"
+            isRecording ? "bg-red-500 text-white pulse-ring" : "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 press-scale"
           }`}
         >
           {isTranscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}

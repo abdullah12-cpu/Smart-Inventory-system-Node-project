@@ -560,7 +560,7 @@ export default function DistributorPortal({ onLogout }) {
     );
   }, [products, catalogSearch]);
   return /* @__PURE__ */ jsxs("div", { className: "flex h-screen bg-[#F8FAFC] overflow-hidden text-xs", children: [
-    /* @__PURE__ */ jsxs("aside", { className: "w-[260px] bg-white border-r border-[#E2E8F0] flex flex-col flex-shrink-0 z-10 shadow-sm", children: [
+    /* @__PURE__ */ jsxs("aside", { className: "w-[260px] bg-white border-r border-slate-200/70 flex flex-col flex-shrink-0 z-10 shadow-lg", children: [
       /* @__PURE__ */ jsxs("div", { className: "h-[70px] flex items-center gap-3 px-6 border-b border-[#E2E8F0]", children: [
         /* @__PURE__ */ jsx(
           "div",
@@ -789,7 +789,7 @@ export default function DistributorPortal({ onLogout }) {
             return /* @__PURE__ */ jsxs(
               "div",
               {
-                className: "bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3",
+                className: "surface-premium p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3",
                 children: [
                   /* @__PURE__ */ jsx("div", { className: "w-full h-44 rounded-xl overflow-hidden mb-1 bg-white border border-[#E2E8F0] flex items-center justify-center p-2", children: /* @__PURE__ */ jsx(
                     "img",
@@ -925,7 +925,7 @@ export default function DistributorPortal({ onLogout }) {
               }
             )
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between", children: [
+          /* @__PURE__ */ jsxs("div", { className: "surface-premium p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between", children: [
             /* @__PURE__ */ jsxs("div", { className: "relative flex-1 max-w-sm", children: [
               /* @__PURE__ */ jsx(
                 Search,
@@ -963,7 +963,7 @@ export default function DistributorPortal({ onLogout }) {
               )
             ] })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
+          /* @__PURE__ */ jsx("div", { className: "surface-premium overflow-hidden flex flex-col", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "table-premium w-full text-left border-collapse text-xs", children: [
             /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Quote No" }),
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Date" }),
@@ -1011,7 +1011,7 @@ export default function DistributorPortal({ onLogout }) {
           ] }) }) })
         ] }),
         activeTab === "orders" && /* @__PURE__ */ jsxs("div", { className: "animate-fade-up flex flex-col gap-6", children: [
-          /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between", children: [
+          /* @__PURE__ */ jsxs("div", { className: "surface-premium p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between", children: [
             /* @__PURE__ */ jsxs("div", { className: "relative flex-1 max-w-sm", children: [
               /* @__PURE__ */ jsx(
                 Search,
@@ -1048,7 +1048,7 @@ export default function DistributorPortal({ onLogout }) {
               )
             ] })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
+          /* @__PURE__ */ jsx("div", { className: "surface-premium overflow-hidden flex flex-col", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "table-premium w-full text-left border-collapse text-xs", children: [
             /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Order Ref" }),
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Date" }),
@@ -1119,7 +1119,7 @@ export default function DistributorPortal({ onLogout }) {
               )
             ] })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col mt-2", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
+          /* @__PURE__ */ jsx("div", { className: "surface-premium overflow-hidden flex flex-col mt-2", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "table-premium w-full text-left border-collapse text-xs", children: [
             /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Invoice Number" }),
               /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Product / Items Summary" }),
@@ -1550,7 +1550,7 @@ export default function DistributorPortal({ onLogout }) {
         title: "Quote Request Draft",
         children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-6", children: [
           /* @__PURE__ */ jsx("p", { className: "text-xs text-[#64748B]", children: "Review your items before officially sending this quotation request to the vendor for negotiation." }),
-          /* @__PURE__ */ jsx("div", { className: "bg-slate-50 border border-[#E2E8F0] rounded-lg overflow-hidden", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left text-xs", children: [
+          /* @__PURE__ */ jsx("div", { className: "bg-slate-50 border border-[#E2E8F0] rounded-lg overflow-hidden", children: /* @__PURE__ */ jsxs("table", { className: "table-premium w-full text-left text-xs", children: [
             /* @__PURE__ */ jsx("thead", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: /* @__PURE__ */ jsxs("tr", { children: [
               /* @__PURE__ */ jsx("th", { className: "px-4 py-2 text-[10px] font-bold text-[#64748B] uppercase", children: "Product" }),
               /* @__PURE__ */ jsx("th", { className: "px-4 py-2 text-[10px] font-bold text-[#64748B] uppercase text-center", children: "Qty" }),

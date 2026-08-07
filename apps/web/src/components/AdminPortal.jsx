@@ -148,7 +148,7 @@ function renderMessageText(text) {
         /* @__PURE__ */ jsx("div", {
             className: "overflow-x-auto my-2 border border-slate-200 rounded-lg shadow-sm bg-white", children:
           /* @__PURE__ */ jsxs("table", {
-              className: "min-w-full divide-y divide-slate-200 text-[10px] text-left", children: [
+              className: "table-premium min-w-full divide-y divide-slate-200 text-[10px] text-left", children: [
             /* @__PURE__ */ jsx("thead", {
                 className: "bg-slate-50", children:
               /* @__PURE__ */ jsx("tr", { children: headers.map((h, idx) => /* @__PURE__ */ jsx("th", { className: "px-2 py-1.5 font-bold text-slate-500 uppercase tracking-wider", children: h }, idx)) })
@@ -511,7 +511,7 @@ export default function AdminPortal({ onLogout }) {
     }),
 
     /* @__PURE__ */ jsxs("aside", {
-      className: "w-[260px] bg-[#0F172A] flex flex-col border-r border-[#1E293B] flex-shrink-0 relative z-20 sidebar-texture", children: [
+      className: "w-[260px] surface-deep flex flex-col border-r border-white/5 flex-shrink-0 relative z-20 shadow-2xl", children: [
       /* @__PURE__ */ jsxs("div", {
         className: "p-6 flex items-center gap-3 border-b border-[#1E293B]", children: [
         /* @__PURE__ */ jsx(
@@ -734,7 +734,7 @@ export default function AdminPortal({ onLogout }) {
               }
             ),
               notifOpen && /* @__PURE__ */ jsxs("div", {
-                className: "absolute right-0 top-[calc(100%+6px)] w-[360px] bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden animate-dropdown", children: [
+                className: "absolute right-0 top-[calc(100%+6px)] w-[360px] surface-premium shadow-xl z-50 overflow-hidden animate-dropdown", children: [
               /* @__PURE__ */ jsxs("div", {
                   className: "p-4 border-b border-[#E2E8F0] flex items-center justify-between", children: [
                 /* @__PURE__ */ jsx("span", { className: "text-xs font-bold text-[#0F172A]", children: "Notifications Center" }),
@@ -941,7 +941,7 @@ export default function AdminPortal({ onLogout }) {
                     return /* @__PURE__ */ jsxs(Fragment, {
                       children: [
               /* @__PURE__ */ jsxs("div", {
-                        className: "flex flex-col gap-4 bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm", children: [
+                        className: "flex flex-col gap-4 surface-premium p-4 shadow-sm", children: [
                 /* @__PURE__ */ jsxs("div", {
                           className: "flex items-center justify-between gap-4 flex-wrap animate-fade-up", children: [
                   /* @__PURE__ */ jsxs("div", {
@@ -1020,9 +1020,9 @@ export default function AdminPortal({ onLogout }) {
                         ]
                       }),
               /* @__PURE__ */ jsx("div", {
-                        className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden", children: /* @__PURE__ */ jsx("div", {
+                        className: "surface-premium overflow-hidden", children: /* @__PURE__ */ jsx("div", {
                           className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", {
-                            className: "w-full text-left border-collapse text-xs", children: [
+                            className: "table-premium w-full text-left border-collapse text-xs", children: [
                 /* @__PURE__ */ jsx("thead", {
                               children: /* @__PURE__ */ jsxs("tr", {
                                 className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
@@ -1444,7 +1444,7 @@ export default function AdminPortal({ onLogout }) {
                     return /* @__PURE__ */ jsxs(Fragment, {
                       children: [
               /* @__PURE__ */ jsxs("div", {
-                        className: "flex flex-col gap-4 bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm", children: [
+                        className: "flex flex-col gap-4 surface-premium p-4 shadow-sm", children: [
                 /* @__PURE__ */ jsxs("div", {
                           className: "flex items-center justify-between gap-4 flex-wrap", children: [
                   /* @__PURE__ */ jsxs("div", {
@@ -1555,7 +1555,7 @@ export default function AdminPortal({ onLogout }) {
                       }),
               // Buyer Orders
               /* @__PURE__ */ jsxs("div", {
-                        className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
+                        className: "surface-premium overflow-hidden flex flex-col", children: [
                 /* @__PURE__ */ jsxs("div", {
                           className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
                   /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Buyer Orders" }),
@@ -1575,7 +1575,7 @@ export default function AdminPortal({ onLogout }) {
                         }),
                 /* @__PURE__ */ jsx("div", {
                           className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", {
-                            className: "w-full text-left border-collapse text-xs", children: [
+                            className: "table-premium w-full text-left border-collapse text-xs", children: [
                   /* @__PURE__ */ jsx("thead", {
                               children: /* @__PURE__ */ jsxs("tr", {
                                 className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
@@ -1663,7 +1663,7 @@ export default function AdminPortal({ onLogout }) {
                       }),
               // Distributor Orders
               /* @__PURE__ */ jsxs("div", {
-                        className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
+                        className: "surface-premium overflow-hidden flex flex-col", children: [
                 /* @__PURE__ */ jsxs("div", {
                           className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
                   /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Distributor Orders" }),
@@ -1683,7 +1683,7 @@ export default function AdminPortal({ onLogout }) {
                         }),
                 /* @__PURE__ */ jsx("div", {
                           className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", {
-                            className: "w-full text-left border-collapse text-xs", children: [
+                            className: "table-premium w-full text-left border-collapse text-xs", children: [
                   /* @__PURE__ */ jsx("thead", {
                               children: /* @__PURE__ */ jsxs("tr", {
                                 className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
@@ -1840,14 +1840,14 @@ export default function AdminPortal({ onLogout }) {
                   }),
 
                   /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4", children: [
-                    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex items-center justify-between", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "surface-premium p-4 shadow-sm flex items-center justify-between", children: [
                       /* @__PURE__ */ jsxs("div", { children: [
                         /* @__PURE__ */ jsx("p", { className: "text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Total Invoiced" }),
                         /* @__PURE__ */ jsx("h3", { className: "text-xl font-bold text-[#0F172A] mt-1", children: formatCurrency(invoices.reduce((acc, i) => acc + Number(i.total_amount || 0), 0)) })
                       ] }),
                       /* @__PURE__ */ jsx("div", { className: "p-3 bg-blue-50 text-blue-600 rounded-xl", children: /* @__PURE__ */ jsx(Receipt, { size: 22 }) })
                     ] }),
-                    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex items-center justify-between", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "surface-premium p-4 shadow-sm flex items-center justify-between", children: [
                       /* @__PURE__ */ jsxs("div", { children: [
                         /* @__PURE__ */ jsx("p", { className: "text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Unpaid Outstanding" }),
                         /* @__PURE__ */ jsx("h3", { className: "text-xl font-bold text-amber-600 mt-1", children: formatCurrency(invoices.filter(i => i.status !== "PAID").reduce((acc, i) => acc + Number(i.total_amount || 0), 0)) }),
@@ -1855,7 +1855,7 @@ export default function AdminPortal({ onLogout }) {
                       ] }),
                       /* @__PURE__ */ jsx("div", { className: "p-3 bg-amber-50 text-amber-600 rounded-xl", children: /* @__PURE__ */ jsx(Clock, { size: 22 }) })
                     ] }),
-                    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex items-center justify-between", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "surface-premium p-4 shadow-sm flex items-center justify-between", children: [
                       /* @__PURE__ */ jsxs("div", { children: [
                         /* @__PURE__ */ jsx("p", { className: "text-[11px] font-bold text-[#64748B] uppercase tracking-wider", children: "Paid / Settled" }),
                         /* @__PURE__ */ jsxs("h3", { className: "text-xl font-bold text-emerald-600 mt-1", children: [`${invoices.filter(i => i.status === "PAID").length} Invoices`] }),
@@ -1865,7 +1865,7 @@ export default function AdminPortal({ onLogout }) {
                     ] })
                   ] }),
 
-                  /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between", children: [
+                  /* @__PURE__ */ jsxs("div", { className: "surface-premium p-4 shadow-sm flex flex-wrap gap-4 items-center justify-between", children: [
                     /* @__PURE__ */ jsxs("div", { className: "relative flex-1 max-w-sm", children: [
                       /* @__PURE__ */ jsx(Search, { size: 14, className: "absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" }),
                       /* @__PURE__ */ jsx("input", {
@@ -1891,7 +1891,7 @@ export default function AdminPortal({ onLogout }) {
                     ] })
                   ] }),
 
-                  /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse text-xs", children: [
+                  /* @__PURE__ */ jsx("div", { className: "surface-premium overflow-hidden flex flex-col", children: /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "table-premium w-full text-left border-collapse text-xs", children: [
                     /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
                       /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Invoice No" }),
                       /* @__PURE__ */ jsx("th", { className: "px-6 py-3.5 text-[11px] font-bold text-[#64748B] uppercase", children: "Product / Items Summary" }),
@@ -1986,7 +1986,7 @@ export default function AdminPortal({ onLogout }) {
                   ]
                 }),
           /* @__PURE__ */ jsxs("div", {
-                  className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden flex flex-col", children: [
+                  className: "surface-premium overflow-hidden flex flex-col", children: [
             /* @__PURE__ */ jsxs("div", {
                     className: "px-6 py-4 border-b border-[#E2E8F0] flex justify-between items-center bg-slate-50/50", children: [
               /* @__PURE__ */ jsx("h3", { className: "text-xs font-bold text-[#0F172A] uppercase tracking-wider", children: "Quotations Registry" }),
@@ -2006,7 +2006,7 @@ export default function AdminPortal({ onLogout }) {
                   }),
             /* @__PURE__ */ jsx("div", {
                     className: "overflow-x-auto flex-1", children: /* @__PURE__ */ jsxs("table", {
-                      className: "w-full text-left border-collapse text-xs", children: [
+                      className: "table-premium w-full text-left border-collapse text-xs", children: [
               /* @__PURE__ */ jsx("thead", {
                         children: /* @__PURE__ */ jsxs("tr", {
                           className: "bg-[#F8FAFC] border-b border-[#E2E8F0]", children: [
@@ -2163,7 +2163,7 @@ export default function AdminPortal({ onLogout }) {
           /* @__PURE__ */ jsxs("div", {
                   className: "grid grid-cols-1 lg:grid-cols-3 gap-6", children: [
             /* @__PURE__ */ jsxs("div", {
-                    className: "bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-sm flex flex-col gap-5 text-xs lg:col-span-1", children: [
+                    className: "surface-premium p-6 shadow-sm flex flex-col gap-5 text-xs lg:col-span-1", children: [
               /* @__PURE__ */ jsxs("div", {
                       children: [
                 /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0F172A] mb-3", children: "Database Connection Status" }),
@@ -2228,7 +2228,7 @@ export default function AdminPortal({ onLogout }) {
                     initial: shouldReduceMotion ? {} : { x: 20, opacity: 0 },
                     animate: { x: 0, opacity: 1 },
                     transition: { duration: 0.35, ease: "easeOut" },
-                    className: "bg-white border border-[#E2E8F0] rounded-xl shadow-sm overflow-hidden lg:col-span-2 flex flex-col", children: [
+                    className: "surface-premium overflow-hidden lg:col-span-2 flex flex-col", children: [
               /* @__PURE__ */ jsxs("div", {
                       className: "px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between", children: [
                 /* @__PURE__ */ jsxs("div", {
