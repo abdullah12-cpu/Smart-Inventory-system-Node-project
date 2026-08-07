@@ -12,3 +12,21 @@ build/
 .env.local
 __pycache__/
 *.pyc
+
+# ── Capacitor native builds ──────────────────────────────────────────────────
+# The native projects themselves ARE committed (they hold app id, permissions, icons and
+# signing config). Only generated output is ignored.
+apps/web/android/.gradle/
+apps/web/android/build/
+apps/web/android/app/build/
+apps/web/android/local.properties
+apps/web/android/.idea/
+apps/web/android/app/release/
+# Web bundle copied in by `cap sync` -- regenerated from apps/web/dist every build.
+apps/web/android/app/src/main/assets/public/
+apps/web/ios/App/App/public/
+apps/web/ios/App/Pods/
+apps/web/ios/App/build/
+
+# Build-time env holding the real backend URL
+.env.production

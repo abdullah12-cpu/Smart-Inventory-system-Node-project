@@ -6,11 +6,16 @@
     "dev": "vite --host",
     "dev:mobile": "vite --host --mode mobile",
     "build": "vite build",
+    "build:mobile": "vite build --mode production && cap sync",
+    "open:android": "cap open android",
+    "open:ios": "cap open ios",
     "preview": "vite preview",
     "start": "node server.js",
     "lint": "eslint"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "express": "^5.1.0",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.22.0",
@@ -19,6 +24,7 @@
     "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@tailwindcss/postcss": "^4",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^4",

@@ -37,6 +37,15 @@ fields the Node proxy (apps/api/copilot.js) already sends, so it's a drop-in rep
 regardless of which of those the currently deployed script actually reads.
 """
 
+# pyright: reportMissingImports=false
+#
+# torch / soundfile / TTS are intentionally NOT in this repo's requirements.txt: this file
+# does not run on a developer laptop. It is deployed to the Office PC's GPU box, which has
+# its own `tts_env` virtualenv holding PyTorch (CUDA build), Coqui TTS and their multi-GB
+# dependency tree. Editors analysing the repo locally cannot resolve those imports and will
+# flag every one of them, so the check is disabled for this file only -- installing that
+# stack locally would achieve nothing, since there is no GPU here to run it on.
+
 import os
 import re
 import io

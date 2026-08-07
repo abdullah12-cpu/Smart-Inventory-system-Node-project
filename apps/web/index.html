@@ -2,10 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CommerceIQ — Secure Enterprise Portal</title>
     <meta name="description" content="Multi-portal B2B inventory management platform for Admins, Distributors, and Buyers." />
     <link rel="icon" href="/favicon.ico" />
+
+    <!-- Installable web app. Android/Chrome reads the manifest; iOS/Safari ignores it and
+         needs its own apple-* meta tags, so both sets are present. This is what lets a
+         single URL be added to the home screen and run full-screen, with no browser chrome,
+         on both platforms. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#312e81" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CommerceIQ" />
+    <!-- viewport-fit=cover so the chat composer can sit against the iPhone home indicator
+         using the safe-area insets the mobile UI already applies. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />

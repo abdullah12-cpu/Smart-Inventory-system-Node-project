@@ -1,0 +1,16 @@
+{
+  "appId": "com.commerceiq.assistant",
+  "appName": "CommerceIQ Assistant",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "cleartext": false,
+    "_comment_url": "Uncomment 'url' to make BOTH native shells load the live hosted app instead of the bundle baked into the binary. Because server.js serves the app and proxies /api on one origin, that single URL then drives the website, iOS and Android alike -- and web changes ship without rebuilding either app. Leave it commented to ship a self-contained offline-capable bundle instead (which then needs VITE_API_BASE_URL set at build time).",
+    "_url": "https://your-public-host"
+  },
+  "plugins": {}
+}

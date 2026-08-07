@@ -8,12 +8,36 @@ import DistributorPortal from "./components/DistributorPortal";
 import BuyerPortal from "./components/BuyerPortal";
 import LandingPage from "./components/landing/LandingPage";
 import MobileChatApp from "./components/mobile/MobileChatApp";
+import { isNativeApp } from "./lib/apiBase";
+/**
+ * True for phone/tablet-class devices: a coarse pointer (touch) on a narrow viewport.
+ * Both conditions are required so a narrowed desktop browser window -- which has a fine
+ * pointer -- still gets the full site rather than being pushed into the phone chat.
+ */
+function isPhoneDevice() {
+  if (typeof window === "undefined") return false;
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  return coarsePointer && window.innerWidth <= 820;
+}
+
 export default function App() {
-  // ?page=mobile -- the phone-sized AI assistant. Handled before anything else and
-  // outside StoreProvider: it signs in and talks to the copilot endpoints on its own, so it
-  // avoids the store's eager fetch of products/orders/quotations/invoices/suppliers/
-  // payments/stock-movements/audit-logs, none of which that screen renders.
-  const isMobileChat = new URLSearchParams(window.location.search).get("page") === "mobile";
+  // The phone-sized AI assistant. Handled before anything else and outside StoreProvider:
+  // it signs in and talks to the copilot endpoints on its own, so it avoids the store's
+  // eager fetch of products/orders/quotations/invoices/suppliers/payments/stock-movements/
+  // audit-logs, none of which that screen renders.
+  //
+  // Reached three ways:
+  //   1. ?page=mobile          -- explicit, works on any device
+  //   2. the native Capacitor shell -- it launches at the bundle root with no query string
+  //   3. any phone opening the site with no ?page at all -- phones get the assistant by
+  //      default, since the desktop portals are unusable at that size and expecting people
+  //      to remember a query string is a poor way to hand out a link.
+  //
+  // An explicit ?page=... always wins, so ?page=landing / ?page=portal still opens the full
+  // site on a phone when that is genuinely wanted.
+  const pageParam = new URLSearchParams(window.location.search).get("page");
+  const isMobileChat =
+    pageParam === "mobile" || isNativeApp() || (!pageParam && isPhoneDevice());
 
   const [appState, setAppState] = useState(() => {
     const params = new URLSearchParams(window.location.search);

@@ -59,6 +59,35 @@ const PORTALS = {
     priceOf: (p) => p.wholesale_price ?? p.retail_price,
     metaOf: (p) => (p.min_wholesale_qty ? `MOQ: ${p.min_wholesale_qty}` : null),
   },
+  // Never offered as a choice on the sign-in screen -- it is selected automatically from the
+  // signed-in account's own role, so buyers and distributors are never shown that an admin
+  // login exists at all.
+  admin: {
+    label: "Admin",
+    icon: ShieldCheck,
+    endpoint: "/api/copilot/chat",
+    role: "ADMIN",
+    title: "Admin Copilot",
+    subtitle: "Stock, orders, invoices & quotes",
+    greeting:
+      "👋 السلام علیکم! میں آپ کا ایڈمن کوپائلٹ ہوں۔ کم اسٹاک، آرڈرز، انوائسز، کوٹیشنز اور ڈسٹری بیوٹرز کے بارے میں پوچھیں — بول کر یا لکھ کر۔ آرڈرز اور کوٹیشنز یہیں سے منظور یا مسترد بھی کر سکتے ہیں۔",
+    prompts: [
+      "Which products are low stock?",
+      "Show unpaid invoices",
+      "Show today's shipped orders",
+      "Show pending quotations",
+      "Show rejected orders",
+    ],
+    // Admin product rows come straight from the products table, where prices live in a
+    // `prices` JSON column rather than flat retail_price/wholesale_price fields.
+    priceOf: (p) => {
+      let prices = p.prices;
+      if (typeof prices === "string") { try { prices = JSON.parse(prices); } catch { prices = null; } }
+      return prices?.RETAIL ?? prices?.DISTRIBUTOR ?? p.retail_price ?? 0;
+    },
+    metaOf: (p) => (p.total_stock != null ? `Stock: ${p.total_stock}` : null),
+    canAct: true,
+  },
 };
 
 const money = (v) => `Rs ${Number(v || 0).toLocaleString()}`;
@@ -132,6 +161,58 @@ function ProductCard({ product, cfg }) {
   );
 }
 
+/**
+ * Approve / reject / ship an order, or approve / reject a quotation, from the message that
+ * listed it. Admin only.
+ *
+ * Actions post an explicit action + record id to a dedicated endpoint rather than being
+ * inferred from chat text: speech recognition mishears, and a mistranscribed sentence must
+ * never be able to approve an order by itself. Destructive actions confirm first.
+ */
+function MobileActionRow({ kind, record, onAction, busyId }) {
+  const id = kind === "order"
+    ? (record.order_number || record.order_id)
+    : (record.quotation_number || record.quotation_id);
+  const status = String(record.status || "").toUpperCase();
+  const busy = busyId === id;
+
+  // Only offer transitions valid for the record's current state.
+  const actions = [];
+  if (kind === "order") {
+    if (!["APPROVED", "SHIPPED", "DELIVERED", "REJECTED", "CANCELLED"].includes(status)) {
+      actions.push({ key: "approve_order", label: "Approve", Icon: CheckCircle2, cls: "bg-emerald-600" });
+    }
+    if (!["SHIPPED", "DELIVERED", "REJECTED", "CANCELLED"].includes(status)) {
+      actions.push({ key: "reject_order", label: "Reject", Icon: XCircle, cls: "bg-red-600", confirm: true });
+    }
+    if (["APPROVED", "CONFIRMED", "PROCESSING", "PENDING"].includes(status)) {
+      actions.push({ key: "ship_order", label: "Ship", Icon: Truck, cls: "bg-indigo-600" });
+    }
+  } else if (!["APPROVED", "ACCEPTED", "REJECTED"].includes(status)) {
+    actions.push({ key: "approve_quotation", label: "Approve", Icon: CheckCircle2, cls: "bg-emerald-600" });
+    actions.push({ key: "reject_quotation", label: "Reject", Icon: XCircle, cls: "bg-red-600", confirm: true });
+  }
+  if (actions.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap py-1.5 border-t border-slate-100 first:border-t-0">
+      <span className="text-[10px] font-bold text-slate-600">{id}</span>
+      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">{status}</span>
+      {actions.map(({ key, label, Icon, cls, confirm }) => (
+        <button
+          key={key}
+          disabled={busy}
+          onClick={() => onAction({ action: key, id, confirm })}
+          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-white text-[11px] font-bold disabled:opacity-50 ${cls}`}
+        >
+          {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Icon className="w-3 h-3" />}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SpeakButton({ text, speechText, autoPlay }) {
   const { isPlaying, toggle } = useSpeech({ text, speechText, autoPlay });
   return (
@@ -152,7 +233,6 @@ function SpeakButton({ text, speechText, autoPlay }) {
 // ─── Login ───────────────────────────────────────────────────────────────────
 
 function MobileLogin({ onSignedIn }) {
-  const [portal, setPortal] = useState("buyer");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -164,14 +244,27 @@ function MobileLogin({ onSignedIn }) {
     setBusy(true);
     setError("");
     try {
+      // `portal` is deliberately NOT sent. The server falls back to the account's own role
+      // (`portal || user.role`), so the assistant a person gets is decided by who they are
+      // rather than by a control on the sign-in screen. That removes the whole "wrong portal"
+      // failure mode, and -- the reason it matters here -- means an admin login exists
+      // without ever being advertised: buyers and distributors see no admin option at all.
       const resp = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password, portal }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await resp.json();
-      if (data.success && data.user) onSignedIn({ user: data.user, portal });
-      else setError(data.message || "Sign in failed.");
+      if (data.success && data.user) {
+        const portal = String(data.user.role || "buyer").toLowerCase();
+        if (!PORTALS[portal]) {
+          setError(`This account type ("${data.user.role}") has no mobile assistant.`);
+          return;
+        }
+        onSignedIn({ user: data.user, portal });
+      } else {
+        setError(data.message || "Sign in failed.");
+      }
     } catch {
       setError("Could not reach the server. Check your connection.");
     } finally {
@@ -192,28 +285,8 @@ function MobileLogin({ onSignedIn }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-5">
-          {Object.entries(PORTALS).map(([key, cfg]) => {
-            const Icon = cfg.icon;
-            const active = portal === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setPortal(key)}
-                className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold border transition-colors ${
-                  active
-                    ? "bg-white text-indigo-900 border-white"
-                    : "bg-white/5 text-indigo-200 border-white/15"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {cfg.label}
-              </button>
-            );
-          })}
-        </div>
-
+        {/* No portal picker: the assistant is chosen from the account's role after sign-in.
+            See the comment in submit() -- this is what keeps the admin assistant unadvertised. */}
         <form onSubmit={submit} className="space-y-3">
           <input
             type="email"
@@ -244,7 +317,7 @@ function MobileLogin({ onSignedIn }) {
             disabled={busy}
             className="w-full py-3.5 rounded-xl bg-indigo-500 active:bg-indigo-600 disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2"
           >
-            {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : `Sign in as ${PORTALS[portal].label}`}
+            {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : "Sign in"}
           </button>
         </form>
 
@@ -263,11 +336,12 @@ function MobileChat({ session, onSignOut }) {
   const displayName =
     session.user?.first_name?.trim() ||
     session.user?.business_name?.trim() ||
-    (session.portal === "distributor" ? "Partner" : "Buyer");
+    (session.portal === "distributor" ? "Partner" : session.portal === "admin" ? "Admin" : "Buyer");
 
   const [messages, setMessages] = useState([{ sender: "ai", text: cfg.greeting }]);
   const [inputMsg, setInputMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState(null);
   const [micNotice, setMicNotice] = useState("");
 
   const chatEndRef = useRef(null);
@@ -312,6 +386,7 @@ function MobileChat({ session, onSignOut }) {
           speechText: data.speech_text || null,
           products: data.products || [],
           orders: data.orders || [],
+          quotations: data.quotations || [],
         }]);
       } else {
         setMessages(prev => [...prev, { sender: "ai", text: data.message || "معذرت، جواب حاصل نہیں ہو سکا۔" }]);
@@ -322,6 +397,28 @@ function MobileChat({ session, onSignOut }) {
       setLoading(false);
     }
   }, [inputMsg, loading, cfg, session, displayName]);
+
+  const handleAction = useCallback(async ({ action, id, confirm }) => {
+    if (confirm && !window.confirm(`${action.replace(/_/g, " ")} ${id}?`)) return;
+    setBusyId(id);
+    try {
+      const resp = await fetch("/api/copilot/admin/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, target_id: id, portal_role: "ADMIN" }),
+      });
+      const data = await resp.json();
+      setMessages(prev => [...prev, {
+        sender: "ai",
+        text: data.success ? data.message : `❌ ${data.error || "Action failed."}`,
+        speechText: data.success ? data.message : null,
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { sender: "ai", text: `❌ Action failed: ${err.message}` }]);
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
 
   const { isRecording, isTranscribing, toggle: toggleMic, unavailableReason } = useVoiceRecorder({
     onTranscript: (text) => sendMessage(text),
@@ -407,6 +504,19 @@ function MobileChat({ session, onSignOut }) {
             {msg.products?.length > 0 && (
               <div className="mt-2 grid grid-cols-1 gap-2 w-full">
                 {msg.products.map((p, i) => <ProductCard key={p.product_id || i} product={p} cfg={cfg} />)}
+              </div>
+            )}
+
+            {/* Admin only: act on the records this answer just listed. */}
+            {cfg.canAct && (msg.orders?.length > 0 || msg.quotations?.length > 0) && (
+              <div className="mt-2 w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider py-1">Quick actions</p>
+                {msg.orders?.slice(0, 8).map((o, i) => (
+                  <MobileActionRow key={`o${i}`} kind="order" record={o} onAction={handleAction} busyId={busyId} />
+                ))}
+                {msg.quotations?.slice(0, 8).map((q, i) => (
+                  <MobileActionRow key={`q${i}`} kind="quotation" record={q} onAction={handleAction} busyId={busyId} />
+                ))}
               </div>
             )}
           </div>
