@@ -34,7 +34,7 @@ const { getBuyerProductRecommendationsFromDb, compareBuyerProductsInDb, trackBuy
 const { requireAuth, optionalAuth, requireRole } = require('./auth');
 const { vectorSearchProducts, vectorSearchDistributorProducts, isEmbedModelAvailable } = require('./embeddings');
 
-// â”€â”€â”€ Ollama config & dynamic resolution (Remote PC -> Local Mac fallback) â”€â”€â”€â”€â”€â”€
+// ─── Ollama config & dynamic resolution (Remote PC -> Local Mac fallback) ──────
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_CHAT_MODEL = process.env.OLLAMA_CHAT_MODEL || 'qwen2.5:14b';
 const OLLAMA_LOCAL_MODEL = process.env.OLLAMA_LOCAL_MODEL || 'qwen2.5:3b';
@@ -64,12 +64,12 @@ async function getOllamaChatEndpoint() {
         const match = models.find(m => m.name.includes(OLLAMA_CHAT_MODEL)) ||
                       models.find(m => /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision|embed/i.test(m.name));
         if (match) {
-          console.log(`[Ollama RAG] ðŸŒ Connected to Remote PC (${remoteUrl}) â†’ Using model: ${match.name}`);
+          console.log(`[Ollama RAG] 🌐 Connected to Remote PC (${remoteUrl}) → Using model: ${match.name}`);
           return { baseUrl: remoteUrl, modelName: match.name, isRemote: true };
         }
       }
     } catch (err) {
-      console.warn(`[Ollama RAG] âš ï¸ Remote PC (${remoteUrl}) unreachable: ${err.message}. Falling back to Mac local...`);
+      console.warn(`[Ollama RAG] ⚠️ Remote PC (${remoteUrl}) unreachable: ${err.message}. Falling back to Mac local...`);
     }
   }
 
@@ -87,12 +87,12 @@ async function getOllamaChatEndpoint() {
                     models.find(m => m.name.includes('qwen2.5:3b')) ||
                     models.find(m => /qwen|mistral|llama|phi|gemma/i.test(m.name) && !/llava|vision|embed/i.test(m.name));
       if (match) {
-        console.log(`[Ollama RAG] ðŸ’» Running on Local Mac â†’ Using model: ${match.name}`);
+        console.log(`[Ollama RAG] 💻 Running on Local Mac → Using model: ${match.name}`);
         return { baseUrl: 'http://localhost:11434', modelName: match.name, isRemote: false };
       }
     }
   } catch (_) {
-    console.warn('[Ollama RAG] âŒ Local Mac Ollama is not running.');
+    console.warn('[Ollama RAG] ❌ Local Mac Ollama is not running.');
   }
 
   return null;
@@ -123,7 +123,7 @@ async function fetchOllamaChat(endpoint, body, timeoutMs = 25000) {
   }
 }
 
-// â”€â”€â”€ Buyer session memory (in-process, per user email) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Buyer session memory (in-process, per user email) ───────────────────────
 // Stores: { lastProducts, lastCategory, lastMinPrice, lastMaxPrice, lastSortBy, lastQuery }
 // TTL: sessions expire after 30 minutes of inactivity
 const buyerSessions = new Map();
@@ -145,7 +145,7 @@ function saveBuyerSession(email, data) {
   buyerSessions.set(key, { ...data, updatedAt: Date.now() });
 }
 
-// â”€â”€â”€ Distributor session memory for interactive quote flows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Distributor session memory for interactive quote flows ───────────────
 const distributorSessions = new Map();
 
 function getDistributorSession(email) {
@@ -299,9 +299,9 @@ async function handleReadProductData(pool, args, message) {
     const getRes = await pool.query('SELECT * FROM products');
     const filteredRows = filterProductsByMessage(getRes.rows, filterText);
     if (filteredRows.length === 0) {
-      return 'âŒ No products match your filter criteria.';
+      return '❌ No products match your filter criteria.';
     }
-    return '### ðŸ” Filter Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n' +
+    return '### 🔍 Filter Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n' +
       filteredRows.map(r => {
         const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
         const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
@@ -312,8 +312,8 @@ async function handleReadProductData(pool, args, message) {
 
   if (args.action_type === 'low_stock') {
     const rows = await getLowStockProductsFromDb(pool);
-    if (rows.length === 0) return 'âœ… All products have sufficient stock.';
-    return '### ðŸ“‰ Low Stock Products\n\n| Product | SKU | Stock | Threshold |\n|---|---|---|---|\n' +
+    if (rows.length === 0) return '✅ All products have sufficient stock.';
+    return '### 📉 Low Stock Products\n\n| Product | SKU | Stock | Threshold |\n|---|---|---|---|\n' +
       rows.map(r => {
         const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
         const stock = inv && inv.length > 0 ? inv.reduce((sum, item) => sum + (item.available_quantity || 0), 0) : 0;
@@ -323,8 +323,8 @@ async function handleReadProductData(pool, args, message) {
 
   if (args.action_type === 'browse_category' && args.category) {
     const rows = await getCategoryProductsFromDb(pool, args.category);
-    if (rows.length === 0) return `âŒ No products found in category: "${args.category}"`;
-    return `### ðŸ“‚ Category: ${args.category}\n\n| Product | Price | Stock |\n|---|---|---|\n` +
+    if (rows.length === 0) return `❌ No products found in category: "${args.category}"`;
+    return `### 📂 Category: ${args.category}\n\n| Product | Price | Stock |\n|---|---|---|\n` +
       rows.map(r => {
         const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
         const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
@@ -334,8 +334,8 @@ async function handleReadProductData(pool, args, message) {
   }
 
   const rows = await searchProductsInDb(pool, args.identifier || '');
-  if (rows.length === 0) return `âŒ Could not find product matching: "${args.identifier}"`;
-  return `### ðŸ” Search Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n` +
+  if (rows.length === 0) return `❌ Could not find product matching: "${args.identifier}"`;
+  return `### 🔍 Search Results\n\n| Product | SKU | Price | Stock |\n|---|---|---|---|\n` +
     rows.map(r => {
       const prices = typeof r.prices === 'string' ? JSON.parse(r.prices) : r.prices;
       const inv = typeof r.inventory === 'string' ? JSON.parse(r.inventory) : r.inventory;
@@ -704,7 +704,7 @@ function getAdminTools(isGemini = false) {
   return list.map(fn => ({ type: 'function', function: fn }));
 }
 
-// â”€â”€â”€ Buyer-only tool definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Buyer-only tool definitions ─────────────────────────────────────────────
 function getBuyerTools(isGemini = false) {
   const T = (t) => isGemini ? t.toUpperCase() : t;
 
@@ -766,8 +766,8 @@ function getBuyerTools(isGemini = false) {
 async function handleReadSupplierData(pool, args, message) {
   if (args.action_type === 'list_all') {
     const res = await pool.query('SELECT * FROM suppliers LIMIT 20');
-    if (res.rows.length === 0) return 'â„¹ï¸ No suppliers found in the vendor directory.';
-    return '### ðŸ¢ Suppliers & Vendors Directory\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n' +
+    if (res.rows.length === 0) return 'ℹ️ No suppliers found in the vendor directory.';
+    return '### 🏢 Suppliers & Vendors Directory\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n' +
       res.rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.phone || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
   }
 
@@ -776,15 +776,15 @@ async function handleReadSupplierData(pool, args, message) {
     const country = args.country || '';
     const rows = await filterSuppliersByLocationInDb(pool, city, country);
     const locationLabel = [city, country].filter(Boolean).join(', ');
-    if (rows.length === 0) return `âŒ No suppliers found in location: "${locationLabel}"`;
-    return `### ðŸ“ Suppliers in ${locationLabel}\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n` +
+    if (rows.length === 0) return `❌ No suppliers found in location: "${locationLabel}"`;
+    return `### 📍 Suppliers in ${locationLabel}\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n` +
       rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.phone || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
   }
 
   const searchVal = args.identifier || '';
   const rows = await searchSuppliersInDb(pool, searchVal);
-  if (rows.length === 0) return `âŒ Could not find supplier matching search key: "${searchVal}"`;
-  return '### ðŸ” Searched Suppliers\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n' +
+  if (rows.length === 0) return `❌ Could not find supplier matching search key: "${searchVal}"`;
+  return '### 🔍 Searched Suppliers\n\n| Company Name | Contact Person | Email | Phone | Location |\n|---|---|---|---|---|\n' +
     rows.map(r => `| ${r.company_name} | ${r.contact_person || 'N/A'} | ${r.email || 'N/A'} | ${r.phone || 'N/A'} | ${r.city || 'N/A'}, ${r.country || 'N/A'} |`).join('\n');
 }
 
@@ -821,26 +821,26 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
     const newProduct = await createProductInDb(pool, args);
     return {
       action_executed: 'createProduct',
-      ai_message: `âœ… Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
+      ai_message: `✅ Created: **${args.name}** (${args.category || 'N/A'}). Price: ${args.price !== undefined && args.price !== null ? 'Rs ' + args.price.toLocaleString() : 'N/A'}, Stock: ${args.stock !== undefined && args.stock !== null ? args.stock : 'N/A'}. SKU: ${newProduct.sku}.`,
       product: newProduct
     };
   } else if (name === 'deleteProduct') {
     const deleted = await deleteProductFromDb(pool, args.identifier);
     return {
       action_executed: 'deleteProduct',
-      ai_message: `âœ… Deleted product: **${deleted.product_name}** (SKU: ${deleted.sku}).`
+      ai_message: `✅ Deleted product: **${deleted.product_name}** (SKU: ${deleted.sku}).`
     };
   } else if (name === 'updateProduct') {
     const updated = await updateProductInDb(pool, args.identifier, args);
     return {
       action_executed: 'updateProduct',
-      ai_message: `âœ… Updated product: **${updated.product_name}**. (Edits applied successfully)`
+      ai_message: `✅ Updated product: **${updated.product_name}**. (Edits applied successfully)`
     };
   } else if (name === 'bulkUpdateProducts') {
     const count = await bulkUpdateProductsInDb(pool, args.category_filter, args.brand_filter, args);
     return {
       action_executed: 'bulkUpdateProducts',
-      ai_message: `âœ… Bulk operation completed: Successfully modified **${count}** products matching your criteria.`
+      ai_message: `✅ Bulk operation completed: Successfully modified **${count}** products matching your criteria.`
     };
   } else if (name === 'readProductData') {
     const markdownMsg = await handleReadProductData(pool, args, message);
@@ -863,7 +863,7 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
     const newSup = await createSupplierInDb(pool, merged);
     return {
       action_executed: 'createSupplier',
-      ai_message: `âœ… Onboarded Supplier: **${newSup.company_name}** (${newSup.city || 'N/A'}, ${newSup.country || 'N/A'}). Contact Person: ${newSup.contact_person || 'N/A'}. Email: ${newSup.email || 'N/A'}. Phone: ${newSup.phone || 'N/A'}.`,
+      ai_message: `✅ Onboarded Supplier: **${newSup.company_name}** (${newSup.city || 'N/A'}, ${newSup.country || 'N/A'}). Contact Person: ${newSup.contact_person || 'N/A'}. Email: ${newSup.email || 'N/A'}. Phone: ${newSup.phone || 'N/A'}.`,
       supplier: newSup
     };
   } else if (name === 'updateSupplier') {
@@ -880,13 +880,13 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
     const updatedSup = await updateSupplierInDb(pool, args.identifier, merged);
     return {
       action_executed: 'updateSupplier',
-      ai_message: `âœ… Updated Supplier profile: **${updatedSup.company_name}**. (Edits applied successfully)`
+      ai_message: `✅ Updated Supplier profile: **${updatedSup.company_name}**. (Edits applied successfully)`
     };
   } else if (name === 'deleteSupplier') {
     const deletedSup = await deleteSupplierFromDb(pool, args.identifier);
     return {
       action_executed: 'deleteSupplier',
-      ai_message: `âœ… Deleted Supplier: **${deletedSup.company_name}** (ID: ${deletedSup.supplier_id}).`
+      ai_message: `✅ Deleted Supplier: **${deletedSup.company_name}** (ID: ${deletedSup.supplier_id}).`
     };
   } else if (name === 'readSupplierData') {
     const markdownMsg = await handleReadSupplierData(pool, args, message);
@@ -904,13 +904,13 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
     const quote = await createDistributorQuotationInDb(pool, args.customer_email, args.customer_name, args.product_name, args.quantity, args.target_price);
     return {
       action_executed: 'createDistributorQuotation',
-      ai_message: `âœ… **Quotation Request Submitted Successfully!**\n\n- **Quotation ID**: \`${quote.quotation_id}\`\n- **Quotation Number**: **${quote.quotation_number}**\n- **Product**: **${quote.product_name}** (${quote.sku})\n- **Quantity**: ${quote.quantity} units\n- **Target Unit Price**: Rs ${Number(quote.unit_price).toLocaleString()}\n- **Total Estimated Value**: Rs ${Number(quote.total_amount).toLocaleString()}\n- **Status**: \`${quote.status}\` (Under Review by Sales Team)`
+      ai_message: `✅ **Quotation Request Submitted Successfully!**\n\n- **Quotation ID**: \`${quote.quotation_id}\`\n- **Quotation Number**: **${quote.quotation_number}**\n- **Product**: **${quote.product_name}** (${quote.sku})\n- **Quantity**: ${quote.quantity} units\n- **Target Unit Price**: Rs ${Number(quote.unit_price).toLocaleString()}\n- **Total Estimated Value**: Rs ${Number(quote.total_amount).toLocaleString()}\n- **Status**: \`${quote.status}\` (Under Review by Sales Team)`
     };
   } else if (name === 'createDistributorDirectOrder') {
     const order = await createDistributorDirectOrderInDb(pool, args.customer_email, args.customer_name, args.product_name, args.quantity, args.warehouse_depot);
     return {
       action_executed: 'createDistributorDirectOrder',
-      ai_message: `âœ… **Direct B2B Wholesale Order Placed Successfully!**\n\n- **Order Number**: **${order.order_number}**\n- **Product**: **${order.product_name}** (${order.sku})\n- **Order Quantity**: ${order.quantity} units\n- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n- **Warehouse Depot**: ${order.warehouse_depot}\n- **Order Status**: \`${order.status}\` (Processing)`
+      ai_message: `✅ **Direct B2B Wholesale Order Placed Successfully!**\n\n- **Order Number**: **${order.order_number}**\n- **Product**: **${order.product_name}** (${order.sku})\n- **Order Quantity**: ${order.quantity} units\n- **Total Amount**: Rs ${Number(order.total_amount).toLocaleString()}\n- **Warehouse Depot**: ${order.warehouse_depot}\n- **Order Status**: \`${order.status}\` (Processing)`
     };
   } else if (name === 'manageDistributorQuotations') {
     const action = args.action_type;
@@ -920,14 +920,14 @@ async function executeCopilotTool(pool, name, args, message, attached_image) {
       const rows = await getDistributorQuotationsByStatusFromDb(pool, args.status || 'PENDING');
       return {
         action_executed: 'manageDistributorQuotations',
-        ai_message: formatQuotationsTable(rows, `ðŸ“‹ ${(args.status || 'PENDING').toUpperCase().replace('_',' ')} Quotations`)
+        ai_message: formatQuotationsTable(rows, `📋 ${(args.status || 'PENDING').toUpperCase().replace('_',' ')} Quotations`)
       };
     }
     if (action === 'find') {
       const rows = await getDistributorQuotationByIdFromDb(pool, identifier);
       return {
         action_executed: 'manageDistributorQuotations',
-        ai_message: formatQuotationsTable(rows, `ðŸ” Quotation Search: "${identifier}"`)
+        ai_message: formatQuotationsTable(rows, `🔍 Quotation Search: "${identifier}"`)
       };
     }
     if (action === 'by_amount') {
@@ -1382,6 +1382,16 @@ function buildProductRecommendationSpeech(products) {
   return `آپ کے لیے ${products.length} مصنوعات ملیں، جن میں ${names} شامل ہیں۔`;
 }
 
+// Latin characters fused directly against an Urdu LETTER -- "مicrosoft", "ہoon" -- are a
+// reliable sign the model corrupted a word mid-token.
+//
+// The letter ranges deliberately EXCLUDE Arabic punctuation (U+060C comma, U+061B semicolon,
+// U+061F question mark, U+06D4 full stop). Those legitimately sit right after a Latin word:
+// "کوٹیشن کی حیثیت APPROVED۔" is correct Urdu, and an earlier version of this check rejected
+// it -- silently replacing good admin replies with the generic fallback.
+const URDU_LETTER = '\u0620-\u064A\u0660-\u066F\u0671-\u06D3\u06FA-\u06FF';
+const FUSED_SCRIPT_RE = new RegExp(`[${URDU_LETTER}][A-Za-z]|[A-Za-z][${URDU_LETTER}]`);
+
 // Guards against LLM output that leaks stray non-Urdu scripts into the reply -- a known
 // failure mode of the local qwen model on this prompt. Urdu uses the Arabic script block
 // (U+0600-U+06FF) plus Arabic Presentation Forms; anything from Cyrillic, the Indic scripts
@@ -1560,7 +1570,7 @@ function isCleanUrduReply(text, allowedNames = []) {
   if (hasForeignScriptLeak(text)) return false;
 
   // Latin glued directly onto an Urdu letter ("ہoon", "مicrosoft") = corrupted word.
-  if (/[؀-ۿ][A-Za-z]|[A-Za-z][؀-ۿ]/.test(text)) return false;
+  if (FUSED_SCRIPT_RE.test(text)) return false;
 
   let stripped = text;
   allowedNames.filter(Boolean).forEach(n => {
@@ -1644,7 +1654,7 @@ function narrowProductsToQueryType(products, message) {
 function isGarbledReply(text) {
   if (!text || !text.trim()) return true;
   if (hasForeignScriptLeak(text)) return true;              // CJK / Devanagari / Cyrillic / ...
-  if (/[؀-ۿ][A-Za-z]|[A-Za-z][؀-ۿ]/.test(text)) return true; // "مicrosoft", "ہoon"
+  if (FUSED_SCRIPT_RE.test(text)) return true;  // "مicrosoft", "ہoon"
   return false;
 }
 
@@ -2359,7 +2369,7 @@ function registerCopilotRoutes(app, pool) {
                 const ollamaData = await ollamaRagRes.json();
                 const ragText = ollamaData.choices?.[0]?.message?.content?.trim().replace(/[\t\r]+/g, ' ').replace(/ {2,}/g, ' ');
                 if (ragText) {
-                  // Output validation â€” same injection guard
+                  // Output validation — same injection guard
                   const looksInjected = /ignore|system prompt|instructions|i am now|you are now/i.test(ragText);
                   if (looksInjected) {
                     console.warn('[Buyer RAG] Possible injection response detected, returning safe fallback.');
@@ -2517,7 +2527,7 @@ function registerCopilotRoutes(app, pool) {
             try {
               args = JSON.parse(toolCall.function.arguments);
             } catch (e) {
-              return res.json({ success: true, ai_message: `âŒ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
+              return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
             }
             try {
               const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
@@ -2529,7 +2539,7 @@ function registerCopilotRoutes(app, pool) {
                 ai_message: executionResult.ai_message
               });
             } catch (err) {
-              return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+              return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
             }
           }
 
@@ -2544,7 +2554,7 @@ function registerCopilotRoutes(app, pool) {
         // Local Ollama is not active, fallback to cloud APIs
       } else {
         console.error('Ollama Execution Error:', ollamaErr);
-        return res.json({ success: true, ai_message: `âŒ Ollama Agent Error: ${ollamaErr.message}` });
+        return res.json({ success: true, ai_message: `❌ Ollama Agent Error: ${ollamaErr.message}` });
       }
     }
 
@@ -2606,7 +2616,7 @@ function registerCopilotRoutes(app, pool) {
               ...executionResult
             });
           } catch (err) {
-            return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+            return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
           }
         }
 
@@ -2676,7 +2686,7 @@ function registerCopilotRoutes(app, pool) {
               ...executionResult
             });
           } catch (err) {
-            return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+            return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
           }
         }
 
@@ -2724,7 +2734,7 @@ function registerCopilotRoutes(app, pool) {
               ...executionResult
             });
           } catch (err) {
-            return res.json({ success: true, ai_message: `âŒ Tool execution error: ${err.message}` });
+            return res.json({ success: true, ai_message: `❌ Tool execution error: ${err.message}` });
           }
         }
 
