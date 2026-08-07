@@ -9,9 +9,9 @@
     "androidScheme": "https",
     "iosScheme": "https",
     "cleartext": false,
-    "_comment_url": "Uncomment 'url' to make BOTH native shells load the live hosted app instead of the bundle baked into the binary. Because server.js serves the app and proxies /api on one origin, that single URL then drives the website, iOS and Android alike -- and web changes ship without rebuilding either app. Leave it commented to ship a self-contained offline-capable bundle instead (which then needs VITE_API_BASE_URL set at build time).",
-    "_url": "https://your-public-host"
+    "url": "https://undivided-manhood-humble.ngrok-free.dev/mobile"
   },
   "plugins": {},
-  "_comment_entry": "The native shell loads mobile.html (the assistant-only bundle), not index.html (the website). Keeping these as separate entry points is what guarantees the app cannot render the desktop site."
+  "_comment": "Live mode (server.url): the app loads the hosted build, so web changes need no rebuild. overrideUserAgent exists solely to bypass ngrok's free-tier browser interstitial -- drop it if the app is ever served from a host without one. To go back to an offline-capable bundle, remove server.url and set VITE_API_BASE_URL in .env.capacitor instead.",
+  "overrideUserAgent": "CommerceIQAssistant/1.0"
 }

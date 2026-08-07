@@ -277,15 +277,15 @@ function MobileLogin({ onSignedIn }) {
   };
 
   return (
-    <div className="min-h-[100dvh] surface-deep flex flex-col justify-center px-6 py-10 relative overflow-hidden">
+    <div className="min-h-[100dvh] bg-gradient-to-b from-indigo-50 via-white to-slate-50 flex flex-col justify-center px-6 py-10 relative overflow-hidden">
       <div className="w-full max-w-sm mx-auto">
         <div className="flex items-center gap-2.5 mb-8">
           <div className="w-11 h-11 rounded-xl gradient-brand flex items-center justify-center shadow-xl ring-glow shrink-0 animate-[scaleIn_0.5s_var(--ease-spring)_both]">
             <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-white text-lg font-extrabold leading-tight">CommerceIQ</h1>
-            <p className="text-indigo-300 text-xs font-medium">Mobile AI Assistant</p>
+            <h1 className="text-slate-900 text-lg font-extrabold leading-tight">CommerceIQ</h1>
+            <p className="text-indigo-600 text-xs font-medium">Mobile AI Assistant</p>
           </div>
         </div>
 
@@ -299,7 +299,7 @@ function MobileLogin({ onSignedIn }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email address"
-            className="w-full px-4 py-3.5 rounded-xl bg-white/10 border border-white/15 text-white placeholder:text-indigo-300/70 text-base outline-none focus:border-indigo-400"
+            className="w-full px-4 py-3.5 rounded-xl bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400 text-base outline-none shadow-sm transition-all focus:border-indigo-400 focus:shadow-md"
           />
           <input
             type="password"
@@ -311,7 +311,7 @@ function MobileLogin({ onSignedIn }) {
           />
 
           {error && (
-            <p className="text-red-300 text-xs font-medium bg-red-500/10 border border-red-400/25 rounded-lg px-3 py-2">
+            <p className="text-red-600 text-xs font-medium bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               {error}
             </p>
           )}
@@ -325,7 +325,7 @@ function MobileLogin({ onSignedIn }) {
           </button>
         </form>
 
-        <p className="text-indigo-300/70 text-[11px] text-center mt-6 leading-relaxed">
+        <p className="text-slate-500 text-[11px] text-center mt-6 leading-relaxed">
           Use the same account you use on the web portal.
         </p>
       </div>

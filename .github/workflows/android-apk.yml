@@ -10,8 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: 'Public HTTPS URL of the API (e.g. https://xxx.trycloudflare.com). Must be reachable from a phone on mobile data -- localhost and 192.168.x.x will not work.'
-        required: true
+        description: 'Only needed for a BUNDLED build. The app is currently in live mode (server.url), so leave this blank.'
+        required: false
+        default: ''
         type: string
       build_type:
         description: 'debug installs directly on a phone with no signing setup. release is smaller/faster but must be signed before Android will install it.'
@@ -113,8 +114,16 @@ jobs:
       # rewrites every /api call to the absolute URL supplied above.
       - name: Write build configuration
         run: |
-          echo "VITE_API_BASE_URL=${{ inputs.api_base_url }}" > .env.capacitor
-          echo "Building against API: ${{ inputs.api_base_url }}"
+          # In live mode (server.url set in capacitor.config.json) the app is served from the
+          # host and calls /api on that same origin, so no base URL is compiled in. Writing an
+          # empty value keeps a stale URL from a previous run out of the bundle.
+          if [ -n "${{ inputs.api_base_url }}" ]; then
+            echo "VITE_API_BASE_URL=${{ inputs.api_base_url }}" > .env.capacitor
+            echo "Bundled build against API: ${{ inputs.api_base_url }}"
+          else
+            echo "VITE_API_BASE_URL=" > .env.capacitor
+            echo "Live mode: app loads $(node -p "require('./capacitor.config.json').server.url" 2>/dev/null || echo 'server.url from capacitor.config.json')"
+          fi
 
       # Builds the mobile entry point (mobile.html -- the assistant-only bundle, not the
       # website) and copies it into the native project.
