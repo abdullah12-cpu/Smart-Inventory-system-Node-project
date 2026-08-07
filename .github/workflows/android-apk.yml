@@ -38,12 +38,14 @@ jobs:
           # Lockfile lives at the monorepo root, not in apps/web.
           cache-dependency-path: package-lock.json
 
-      # Android Gradle Plugin 8.x requires JDK 17+.
-      - name: Set up JDK 17
+      # JDK 21, not 17: Capacitor 8 generates android/app/capacitor.build.gradle with
+      # sourceCompatibility/targetCompatibility set to VERSION_21, so an older toolchain
+      # fails the Gradle build with "invalid source release: 21".
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -77,7 +79,30 @@ jobs:
       # The lockfile is not committed back; this only affects the runner's node_modules.
       - name: Install dependencies
         working-directory: .
-        run: npm install --no-audit --no-fund
+        run: |
+          # Delete the lockfile before installing. This is npm's own documented workaround
+          # for npm/cli#4828, which the failing build reported verbatim:
+          #
+          #   "Cannot find module @rollup/rollup-linux-x64-gnu. npm has a bug related to
+          #    optional dependencies. Please try `npm i` again after removing both
+          #    package-lock.json and node_modules directory."
+          #
+          # Rollup and lightningcss ship their compiled core as per-platform optional
+          # packages. This lockfile was generated on Windows, so it pins only the win32
+          # builds -- and while a lockfile is present npm will not resolve the Linux ones,
+          # with or without --no-save. Removing it forces a clean, platform-correct resolve.
+          #
+          # Only the runner's checkout is affected; the committed lockfile is untouched.
+          rm -f package-lock.json
+          npm install --no-audit --no-fund
+
+      # Fail here with a clear message rather than 40 lines into a Rollup stack trace.
+      - name: Verify Linux native binaries
+        working-directory: .
+        run: |
+          node -e "require('@rollup/rollup-linux-x64-gnu')" \
+            && echo "rollup linux binary OK" \
+            || { echo "::error::@rollup/rollup-linux-x64-gnu still missing after install"; exit 1; }
 
       # The packaged app has no dev proxy in front of it, so relative /api paths would
       # resolve against the WebView itself. src/lib/apiBase.js reads this at build time and
@@ -90,7 +115,20 @@ jobs:
       # Builds the mobile entry point (mobile.html -- the assistant-only bundle, not the
       # website) and copies it into the native project.
       - name: Build web assets and sync to Android
-        run: npm run build:mobile
+        run: |
+          set -o pipefail
+          npm run build:mobile 2>&1 | tee /tmp/build.log || {
+            echo "::error::Web build failed — last 40 lines below"
+            tail -40 /tmp/build.log
+            {
+              echo "### Web build failed"
+              echo ''
+              echo '```'
+              tail -40 /tmp/build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
 
       - name: Build APK
         working-directory: apps/web/android
