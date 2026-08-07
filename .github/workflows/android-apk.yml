@@ -48,10 +48,36 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # The project targets compileSdk 36 (see android/variables.gradle). Runner images do
+      # not always carry the newest platform, and Gradle will not silently download it
+      # without accepted licences -- it fails with "Failed to install the following SDK
+      # components". Installing it explicitly makes the build independent of whatever the
+      # runner image happens to ship this month.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK platform
+        run: |
+          SDK=$(grep -oE 'compileSdkVersion *= *[0-9]+' apps/web/android/variables.gradle | grep -oE '[0-9]+')
+          echo "Project compileSdk: $SDK"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-$SDK" "platform-tools"
+        working-directory: .
+
       # npm workspaces: install from the root so apps/web's dependencies resolve.
+      #
+      # `npm install`, not `npm ci`, and deliberately so. Rollup and lightningcss ship their
+      # compiled core as per-platform optional packages, and this lockfile was generated on
+      # Windows -- it contains @rollup/rollup-win32-* and lightningcss-win32-* but no Linux
+      # equivalents. `npm ci` installs strictly what the lockfile lists, so on this Ubuntu
+      # runner it would omit the Linux binaries entirely and the Vite build would then fail
+      # with "Cannot find module @rollup/rollup-linux-x64-gnu". `npm install` re-resolves
+      # optional dependencies against the current platform and fetches the right ones.
+      #
+      # The lockfile is not committed back; this only affects the runner's node_modules.
       - name: Install dependencies
         working-directory: .
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       # The packaged app has no dev proxy in front of it, so relative /api paths would
       # resolve against the WebView itself. src/lib/apiBase.js reads this at build time and
