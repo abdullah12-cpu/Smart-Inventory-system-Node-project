@@ -51,6 +51,15 @@ export function StoreProvider({ children }) {
   // data (e.g. the admin copilot approving or rejecting an order from chat) can refresh the
   // whole portal afterwards, instead of the UI silently showing stale rows until reload.
   const fetchAllData = useCallback(async () => {
+      // Buyer and distributor data MUST be scoped to the signed-in account. Until the
+      // account is known there is nothing safe to request, so bail out rather than fall
+      // back to an unscoped URL -- that fallback is what briefly showed one distributor
+      // every other distributor's orders immediately after login (it corrected itself on
+      // refresh only because localStorage repopulated currentUser before the first fetch).
+      const isTenantPortal = portal === "buyer" || portal === "distributor";
+      const scopedEmail = currentUser?.email || null;
+      if (isTenantPortal && !scopedEmail) return;
+
       try {
         // Fetch all products regardless of warehouse — distributor sees full catalog
         let prodUrl = "/api/products";
@@ -67,40 +76,48 @@ export function StoreProvider({ children }) {
         // Admin needs the full cross-tenant dataset; buyer and distributor accounts must
         // only ever see their own orders/quotations/invoices, never another buyer's or
         // another distributor partner's data.
-        const ordersUrl = (portal === "buyer" && currentUser?.email)
-          ? `/api/orders?customer_email=${encodeURIComponent(currentUser.email)}&order_type=B2C`
-          : (portal === "distributor" && currentUser?.email)
-          ? `/api/orders?customer_email=${encodeURIComponent(currentUser.email)}&order_type=B2B`
+        const ordersUrl = portal === "buyer"
+          ? `/api/orders?customer_email=${encodeURIComponent(scopedEmail)}&order_type=B2C`
+          : portal === "distributor"
+          ? `/api/orders?customer_email=${encodeURIComponent(scopedEmail)}&order_type=B2B`
           : "/api/orders";
         const ordersRes = await fetch(ordersUrl);
         if (ordersRes.ok) setOrders(await ordersRes.json());
 
-        const quotesUrl = (portal === "distributor" && currentUser?.email)
-          ? `/api/quotations?customer_email=${encodeURIComponent(currentUser.email)}`
+        const quotesUrl = isTenantPortal
+          ? `/api/quotations?customer_email=${encodeURIComponent(scopedEmail)}`
           : "/api/quotations";
         const quotesRes = await fetch(quotesUrl);
         if (quotesRes.ok) setQuotations(await quotesRes.json());
 
-        const suppliersRes = await fetch("/api/suppliers");
-        if (suppliersRes.ok) setSuppliers(await suppliersRes.json());
+        // Admin-only datasets -- see the block further down.
 
-        const invoicesUrl = (portal === "distributor" && currentUser?.email)
-          ? `/api/invoices?customer_email=${encodeURIComponent(currentUser.email)}`
+        const invoicesUrl = isTenantPortal
+          ? `/api/invoices?customer_email=${encodeURIComponent(scopedEmail)}`
           : "/api/invoices";
         const invoicesRes = await fetch(invoicesUrl);
         if (invoicesRes.ok) setInvoices(await invoicesRes.json());
 
-        const paymentsRes = await fetch("/api/payments");
-        if (paymentsRes.ok) setPayments(await paymentsRes.json());
+        // Company-wide datasets. Only AdminPortal reads suppliers/payments/stock movements/
+        // audit logs/distributors, so requesting them from a partner's browser leaked the
+        // whole company's operational history to an account with no business seeing it --
+        // and made every tenant page load far heavier than it needed to be.
+        if (portal === "admin") {
+          const suppliersRes = await fetch("/api/suppliers");
+          if (suppliersRes.ok) setSuppliers(await suppliersRes.json());
 
-        const movementsRes = await fetch("/api/stock-movements");
-        if (movementsRes.ok) setStockMovements(await movementsRes.json());
+          const paymentsRes = await fetch("/api/payments");
+          if (paymentsRes.ok) setPayments(await paymentsRes.json());
 
-        const logsRes = await fetch("/api/audit-logs");
-        if (logsRes.ok) setAuditLogs(await logsRes.json());
+          const movementsRes = await fetch("/api/stock-movements");
+          if (movementsRes.ok) setStockMovements(await movementsRes.json());
 
-        const distRes = await fetch("/api/admin/distributors");
-        if (distRes.ok) setDistributors(await distRes.json());
+          const logsRes = await fetch("/api/audit-logs");
+          if (logsRes.ok) setAuditLogs(await logsRes.json());
+
+          const distRes = await fetch("/api/admin/distributors");
+          if (distRes.ok) setDistributors(await distRes.json());
+        }
       } catch (err) {
         console.error("Error fetching data from database:", err);
       }
@@ -108,6 +125,41 @@ export function StoreProvider({ children }) {
 
   useEffect(() => {
     fetchAllData();
+  }, [fetchAllData]);
+
+  // Live refresh. Each portal is a separate browser session, so nothing that happens in one
+  // reaches another on its own: a distributor placing a direct order, or an admin approving
+  // it, stayed invisible to the other side until someone manually reloaded. Polling keeps
+  // the portals in step without the complexity of a socket layer.
+  //
+  // Paused while the tab is hidden -- a backgrounded demo laptop should not keep hammering
+  // the API -- and it refetches immediately on refocus so returning to the tab shows current
+  // data straight away rather than waiting out the interval.
+  useEffect(() => {
+    const REFRESH_MS = 15000;
+    let timer = null;
+
+    const start = () => {
+      stop();
+      timer = setInterval(() => {
+        if (document.visibilityState === "visible") fetchAllData();
+      }, REFRESH_MS);
+    };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { fetchAllData(); start(); }
+      else stop();
+    };
+
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", fetchAllData);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", fetchAllData);
+    };
   }, [fetchAllData]);
   const markNotificationRead = useCallback((id) => {
     setNotifications(
