@@ -12,6 +12,8 @@ build/
 .env.local
 __pycache__/
 *.pyc
+venv/
+.venv/
 
 # ── Capacitor native builds ──────────────────────────────────────────────────
 # The native projects themselves ARE committed (they hold app id, permissions, icons and
