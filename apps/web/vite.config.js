@@ -92,6 +92,12 @@ export default defineConfig(({ mode }) => ({
     extensions: ['.jsx', '.js', '.ts', '.tsx', '.json'],
   },
   server: {
+    // Vite rejects requests whose Host header it doesn't recognize (DNS-rebinding
+    // protection), which is exactly what ngrok sends through unchanged -- so the mobile
+    // app's live tunnel gets a 403 "Blocked request" from Vite itself unless the reserved
+    // domain is allow-listed here.
+    allowedHosts: ['lilac-aluminum-resume.ngrok-free.dev'],
+
     // Directories the dev server must not watch. The Capacitor native project and the build
     // output hold thousands of files that are never imported by the app, and leaving them in
     // the watch set kept the dev server burning ~15% CPU while completely idle -- which on an
