@@ -2379,10 +2379,11 @@ export default function AdminPortal({ onLogout }) {
                                 onClick: async () => {
                                   if (confirm(`Are you sure you want to approve distributor "${dist.business_name}"?`)) {
                                     setIsApproving(prev => ({ ...prev, [dist.id]: true }));
-                                    setTimeout(async () => {
+                                    try {
                                       await approveDistributor(dist.id);
+                                    } finally {
                                       setIsApproving(prev => ({ ...prev, [dist.id]: false }));
-                                    }, 600);
+                                    }
                                   }
                                 },
                                 className: "px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm flex items-center justify-center gap-1 min-w-[76px]",
@@ -2408,10 +2409,11 @@ export default function AdminPortal({ onLogout }) {
                                 onClick: async () => {
                                   if (confirm(`Are you sure you want to reject distributor application from "${dist.business_name}"?`)) {
                                     setIsRejecting(prev => ({ ...prev, [dist.id]: true }));
-                                    setTimeout(async () => {
+                                    try {
                                       await removeDistributor(dist.id);
+                                    } finally {
                                       setIsRejecting(prev => ({ ...prev, [dist.id]: false }));
-                                    }, 600);
+                                    }
                                   }
                                 },
                                 className: "px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border-0 shadow-sm flex items-center justify-center gap-1 min-w-[68px]",

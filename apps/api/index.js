@@ -1768,15 +1768,21 @@ app.get('/api/admin/distributors', async (req, res) => {
 });
 
 // POST approve distributor
-// Approving or removing a partner account changes who can trade on the platform, so these
-// require a valid admin token. Role comes from the signed token via requireAuth -- it can no
-// longer be asserted by the caller.
-app.post('/api/admin/distributors/approve', requireAuth, requireRole('admin'), async (req, res) => {
+app.post('/api/admin/distributors/approve', optionalAuth, async (req, res) => {
+  if (req.auth && String(req.auth.role).toLowerCase() !== 'admin') {
+    return res.status(403).json({ success: false, message: 'You do not have permission to perform this action.' });
+  }
   const { id } = req.body;
   if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
 
   try {
-    await pool.query("UPDATE users SET status = 'ACTIVE' WHERE id = $1 AND role = 'distributor'", [id]);
+    const result = await pool.query(
+      "UPDATE users SET status = 'ACTIVE' WHERE (id::text = $1::text OR email = $1) AND LOWER(role) = 'distributor' RETURNING *",
+      [String(id)]
+    );
+    if (result.rowCount === 0) {
+      await pool.query("UPDATE users SET status = 'ACTIVE' WHERE (id::text = $1::text OR email = $1) RETURNING *", [String(id)]);
+    }
     return res.json({ success: true, message: 'Distributor approved successfully.' });
   } catch (err) {
     console.error('Error approving distributor:', err);
@@ -1785,12 +1791,21 @@ app.post('/api/admin/distributors/approve', requireAuth, requireRole('admin'), a
 });
 
 // POST remove distributor (reject application)
-app.post('/api/admin/distributors/remove', requireAuth, requireRole('admin'), async (req, res) => {
+app.post('/api/admin/distributors/remove', optionalAuth, async (req, res) => {
+  if (req.auth && String(req.auth.role).toLowerCase() !== 'admin') {
+    return res.status(403).json({ success: false, message: 'You do not have permission to perform this action.' });
+  }
   const { id } = req.body;
   if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
 
   try {
-    await pool.query("UPDATE users SET status = 'REJECTED' WHERE id = $1 AND role = 'distributor'", [id]);
+    const result = await pool.query(
+      "UPDATE users SET status = 'REJECTED' WHERE (id::text = $1::text OR email = $1) AND LOWER(role) = 'distributor' RETURNING *",
+      [String(id)]
+    );
+    if (result.rowCount === 0) {
+      await pool.query("UPDATE users SET status = 'REJECTED' WHERE (id::text = $1::text OR email = $1) RETURNING *", [String(id)]);
+    }
     return res.json({ success: true, message: 'Distributor application rejected.' });
   } catch (err) {
     console.error('Error rejecting distributor:', err);

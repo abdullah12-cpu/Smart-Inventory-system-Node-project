@@ -1118,6 +1118,8 @@ export function StoreProvider({ children }) {
   }, []);
 
   const approveDistributor = useCallback(async (id) => {
+    // Optimistically mark as ACTIVE in state so pending card disappears immediately
+    setDistributors(prev => prev.map(d => (d.id === id || String(d.id) === String(id)) ? { ...d, status: "ACTIVE" } : d));
     try {
       const res = await fetch("/api/admin/distributors/approve", {
         method: "POST",
@@ -1143,6 +1145,8 @@ export function StoreProvider({ children }) {
   }, [fetchDistributors, addNotification]);
 
   const removeDistributor = useCallback(async (id) => {
+    // Optimistically mark as REJECTED in state so pending card disappears immediately
+    setDistributors(prev => prev.map(d => (d.id === id || String(d.id) === String(id)) ? { ...d, status: "REJECTED" } : d));
     try {
       const res = await fetch("/api/admin/distributors/remove", {
         method: "POST",
@@ -1153,8 +1157,8 @@ export function StoreProvider({ children }) {
         await fetchDistributors();
         addNotification({
           id: `notif-${Date.now()}`,
-          title: "Distributor Removed",
-          desc: "The distributor account has been successfully removed.",
+          title: "Distributor Application Rejected",
+          desc: "The distributor account application has been rejected.",
           type: "info",
           time: "Just Now",
           read: false
