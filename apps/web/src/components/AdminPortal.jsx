@@ -206,6 +206,12 @@ export default function AdminPortal({ onLogout }) {
   const [clearShake, setClearShake] = useState(false);
 
   useEffect(() => {
+    if (currentUser && currentUser.role && currentUser.role !== "admin" && currentUser.user_id !== "guest") {
+      onLogout();
+    }
+  }, [currentUser, onLogout]);
+
+  useEffect(() => {
     localStorage.setItem("ciq_admin_activeTab", activeTab);
     const params = new URLSearchParams(window.location.search);
     if (params.get("tab") !== activeTab) {
@@ -239,7 +245,6 @@ export default function AdminPortal({ onLogout }) {
 
   const [search, setSearch] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
-  const [roleSwitcherOpen, setRoleSwitcherOpen] = useState(false);
   const [notifBounce, setNotifBounce] = useState(false);
   const [notifFilter, setNotifFilter] = useState("ALL");
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
@@ -534,44 +539,12 @@ export default function AdminPortal({ onLogout }) {
       }),
       /* @__PURE__ */ jsxs("div", {
         className: "p-4 border-t border-[#1E293B] relative", ref: roleRef, children: [
-          roleSwitcherOpen && /* @__PURE__ */ jsxs("div", {
-            className: "absolute bottom-[calc(100%+8px)] left-4 right-4 bg-[#1E293B] border border-[#334155] rounded-xl p-2 shadow-2xl z-50 animate-dropdown text-white flex flex-col gap-1", children: [
-          /* @__PURE__ */ jsx("p", { className: "text-[10px] text-[#94A3B8] font-bold px-2 py-1 uppercase tracking-wider", children: "Switch System Role" }),
-              AVAILABLE_USER_ROLES.map((roleUser) => /* @__PURE__ */ jsxs(
-                "button",
-                {
-                  onClick: () => {
-                    setCurrentUser(roleUser);
-                    setRoleSwitcherOpen(false);
-                  },
-                  className: `w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-slate-800 transition-colors border-0 text-left cursor-pointer text-xs text-white ${currentUser.role_name === roleUser.role_name ? "bg-[#4F46E5]" : "bg-transparent"}`,
-                  children: [
-                /* @__PURE__ */ jsxs("div", {
-                    children: [
-                  /* @__PURE__ */ jsxs("span", {
-                      className: "font-semibold block", children: [
-                        roleUser.first_name,
-                        " ",
-                        roleUser.last_name
-                      ]
-                    }),
-                  /* @__PURE__ */ jsx("span", { className: "text-[9px] text-slate-300 block", children: roleUser.role_name })
-                    ]
-                  }),
-                    currentUser.role_name === roleUser.role_name && /* @__PURE__ */ jsx(Check, { size: 14, className: "text-white" })
-                  ]
-                },
-                roleUser.user_id
-              ))
-            ]
-          }),
         /* @__PURE__ */ jsxs(
             "div",
             {
-              onClick: () => setRoleSwitcherOpen(!roleSwitcherOpen),
               onMouseEnter: () => setUserCardHovered(true),
               onMouseLeave: () => setUserCardHovered(false),
-              className: "flex items-center justify-between px-2.5 py-2 mb-3 bg-[#1E293B]/40 hover:bg-[#1E293B]/80 rounded-lg cursor-pointer border border-transparent hover:border-[#4F46E5]/40 transition-all",
+              className: "flex items-center justify-between px-2.5 py-2 mb-3 bg-[#1E293B]/40 hover:bg-[#1E293B]/80 rounded-lg border border-transparent hover:border-[#4F46E5]/40 transition-all",
               children: [
               /* @__PURE__ */ jsxs("div", {
                 className: "flex items-center gap-2.5 overflow-hidden", children: [
@@ -625,11 +598,6 @@ export default function AdminPortal({ onLogout }) {
                   ]
                 })
                 ]
-              }),
-              /* @__PURE__ */ jsx(motion.div, {
-                animate: { rotate: roleSwitcherOpen || userCardHovered ? 180 : 0 },
-                transition: { duration: 0.2 },
-                children: /* @__PURE__ */ jsx(ChevronDown, { size: 14, className: "text-[#94A3B8]" })
               })
               ]
             }
