@@ -1,4 +1,5 @@
 const { upsertProductEmbedding } = require('./embeddings');
+const { reserveStockForItems } = require('./inventory');
 
 async function createProductInDb(pool, data) {
   const nameVal = data.name || data.product_name;
@@ -1062,7 +1063,11 @@ async function approveQuotationInDb(pool, identifier, approvedUnitPrice = null) 
       quote.customer_email || 'distributor@commerceiq.com'
     ]
   );
-  
+
+  // Same reservation every other order-creation path uses -- approving a quotation is
+  // still placing an order, and stock has to reflect it the same way.
+  await reserveStockForItems(pool, items);
+
   return res.rows[0];
 }
 

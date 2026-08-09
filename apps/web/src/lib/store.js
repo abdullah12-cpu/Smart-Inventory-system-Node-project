@@ -9,13 +9,20 @@ const GUEST_USER = {
   role_name: "Guest",
   profile_image: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&fit=crop"
 };
+// Session identity (which portal this tab is in, and who's signed in) lives in
+// sessionStorage rather than localStorage. localStorage is shared by every tab on the
+// same origin, so opening the admin portal in one tab and the distributor portal in
+// another would otherwise have each tab clobber the other's portal/user/token the moment
+// either one loaded or logged in. sessionStorage is private to a single tab, so each
+// portal tab keeps its own independent session.
 export function StoreProvider({ children }) {
   const [portal, setPortal] = useState(() => {
-    return localStorage.getItem("ciq_portal") || "admin";
+    return sessionStorage.getItem("ciq_portal") || "admin";
   });
+
   const [currentUser, setCurrentUser] = useState(() => {
     try {
-      const saved = localStorage.getItem("ciq_currentUser");
+      const saved = sessionStorage.getItem("ciq_currentUser");
       return saved ? JSON.parse(saved) : GUEST_USER;
     } catch (e) {
       return GUEST_USER;
@@ -24,15 +31,15 @@ export function StoreProvider({ children }) {
 
   useEffect(() => {
     if (portal) {
-      localStorage.setItem("ciq_portal", portal);
+      sessionStorage.setItem("ciq_portal", portal);
     }
   }, [portal]);
 
   useEffect(() => {
     if (currentUser && currentUser.user_id !== "guest") {
-      localStorage.setItem("ciq_currentUser", JSON.stringify(currentUser));
+      sessionStorage.setItem("ciq_currentUser", JSON.stringify(currentUser));
     } else {
-      localStorage.removeItem("ciq_currentUser");
+      sessionStorage.removeItem("ciq_currentUser");
     }
   }, [currentUser]);
   const [products, setProducts] = useState([]);
@@ -497,6 +504,11 @@ export function StoreProvider({ children }) {
             invoice_id: `inv-${Date.now()}`,
             invoice_number: `INV-2026-${invoiceSuffix}`,
             status: "SENT",
+            order_id: matchingOrder.order_id,
+            order_number: matchingOrder.order_number,
+            product_name: matchingOrder.items_summary || undefined,
+            items_summary: matchingOrder.items_summary || undefined,
+            customer_email: matchingOrder.customer_email,
             total_amount: matchingOrder.total_amount,
             amount_paid: 0,
             due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString(),

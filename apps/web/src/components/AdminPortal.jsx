@@ -1882,22 +1882,22 @@ export default function AdminPortal({ onLogout }) {
                             const items = typeof matchedOrder.items === 'string' ? JSON.parse(matchedOrder.items) : matchedOrder.items;
                             if (Array.isArray(items) && items.length > 0) {
                               const it = items[0];
-                              const name = it.name || it.product_name || "handfree";
-                              const qty = it.qty || it.quantity || 25;
+                              const name = it.name || it.product_name || "Item";
+                              const qty = it.qty || it.quantity || 1;
                               return `${name} (${qty}x)`;
                             }
                           }
                           const matchedQuote = (quotations || []).find(q => q.quotation_number === inv.quotation_number || q.quotation_id === inv.quotation_number);
                           if (matchedQuote) {
-                            const name = matchedQuote.product_name || matchedQuote.item || "handfree";
-                            const qty = matchedQuote.quantity || 25;
+                            const name = matchedQuote.product_name || matchedQuote.item || "Item";
+                            const qty = matchedQuote.quantity || 1;
                             return `${name} (${qty}x)`;
                           }
-                          return "handfree (25x)";
+                          return "Order Items";
                         })() }),
                         /* @__PURE__ */ jsxs("td", { className: "px-6 py-4 text-[#334155]", children: [
-                          /* @__PURE__ */ jsx("div", { className: "font-semibold", children: inv.distributor_name || "Asim Distribution Pak" }),
-                          /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#94A3B8]", children: inv.customer_email || "asim@commerceiq.com" })
+                          /* @__PURE__ */ jsx("div", { className: "font-semibold", children: inv.distributor_name || inv.customer_email || "—" }),
+                          /* @__PURE__ */ jsx("div", { className: "text-[10px] text-[#94A3B8]", children: inv.customer_email || "—" })
                         ] }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-right font-bold text-[#0F172A]", children: formatCurrency(inv.total_amount) }),
                         /* @__PURE__ */ jsx("td", { className: "px-6 py-4 text-[#64748B]", children: formatDate(inv.issue_date || inv.created_at) }),

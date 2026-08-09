@@ -5,6 +5,29 @@ const pool = require('./db');
 const { createProductInDb } = require('./adminOperations');
 const { counterOfferQuotationInDb, buildQuotationDescription } = require('./distributorOperations');
 const { verifyPassword, hashPassword, signToken, requireAuth, optionalAuth, requireRole } = require('./auth');
+const { reserveStockForItems } = require('./inventory');
+
+/**
+ * Looks up the real account name behind an order's customer_email for invoice display.
+ * Invoices used to fall back to a literal hardcoded "Asim Distribution Pak" whenever no
+ * name was supplied, which made every invoice in the admin dashboard show the same
+ * partner name regardless of who actually placed the order. Resolving it from the users
+ * table means the invoice always names the account that's actually on the hook for it.
+ */
+async function resolveAccountDisplayName(pool, email) {
+  if (!email) return null;
+  try {
+    const res = await pool.query(
+      'SELECT role, business_name, contact_name, buyer_store_name, buyer_contact_name FROM users WHERE email = $1 LIMIT 1',
+      [email]
+    );
+    const u = res.rows[0];
+    if (!u) return null;
+    return u.business_name || u.buyer_store_name || u.contact_name || u.buyer_contact_name || null;
+  } catch {
+    return null;
+  }
+}
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -848,7 +871,12 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 // GET all orders (with optional customer_email and order_type filters for buyer portal)
-app.get('/api/orders', optionalAuth, async (req, res) => {
+// requireAuth (not optionalAuth): the customer_email query param below is trusted for
+// admins, and optionalAuth lets an unauthenticated caller through with req.auth unset —
+// under the old role check that unset role fell into the "trust the query param" branch,
+// letting anyone read any account's orders just by naming its email. Every caller now has
+// to prove who they are first.
+app.get('/api/orders', requireAuth, async (req, res) => {
   try {
     const { customer_email, order_type } = req.query;
     let query = 'SELECT * FROM orders';
@@ -968,32 +996,7 @@ app.post('/api/orders', async (req, res) => {
     // decrementing `quantity`) immediately drops `available_quantity`, which is what the
     // buyer/admin stock views read, while the physical count is only decremented at actual
     // shipment (see PUT /api/orders/:order_id/status below).
-    if (orderItems.length > 0) {
-      for (const item of orderItems) {
-        const qty = parseInt(item.qty || item.quantity || 0);
-        if (qty <= 0) continue;
-        const prodRes = await pool.query(
-          'SELECT * FROM products WHERE product_id = $1 OR sku = $2 OR product_name ILIKE $3 LIMIT 1',
-          [item.product_id || '', item.sku || '', `%${item.name || item.product_name || ''}%`]
-        );
-        if (prodRes.rows.length > 0) {
-          const product = prodRes.rows[0];
-          let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : (product.inventory || []);
-          // Reserve from first warehouse with sufficient stock
-          let remaining = qty;
-          inventory = inventory.map(inv => {
-            if (remaining <= 0) return inv;
-            const avail = inv.available_quantity || 0;
-            const toReserve = Math.min(avail, remaining);
-            remaining -= toReserve;
-            const newReserved = (inv.reserved_quantity || 0) + toReserve;
-            const newAvail = Math.max(0, inv.quantity - newReserved);
-            return { ...inv, reserved_quantity: newReserved, available_quantity: newAvail };
-          });
-          await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inventory), product.product_id]);
-        }
-      }
-    }
+    await reserveStockForItems(pool, orderItems);
     const savedOrder = {
       order_id: row.order_id,
       order_number: row.order_number,
@@ -1144,16 +1147,17 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
           const dueDate = dueDateObj.toISOString().split('T')[0];
 
           const itemsArr = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-          let prodName = 'handfree (25x)';
+          let prodName = 'Order Items';
           if (itemsArr && itemsArr.length > 0) {
             const item = itemsArr[0];
-            const name = item.name || item.product_name || 'handfree';
+            const name = item.name || item.product_name || 'Item';
             const qty = item.qty || item.quantity || 1;
             prodName = `${name} (${qty}x)`;
           } else if (order.items_summary && !order.items_summary.includes('Wholesale B2B')) {
             prodName = order.items_summary;
           }
           const itemsSummary = prodName;
+          const distributorName = await resolveAccountDisplayName(pool, order.customer_email);
 
           await pool.query(
             `INSERT INTO invoices (
@@ -1171,7 +1175,7 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
               prodName,
               itemsSummary,
               order.customer_email || null,
-              order.distributor_name || null,
+              distributorName,
               parseFloat(order.total_amount || 0),
               0,
               issueDate,
@@ -1280,7 +1284,9 @@ app.post('/api/warehouses', async (req, res) => {
 });
 
 // GET all quotations
-app.get('/api/quotations', optionalAuth, async (req, res) => {
+// requireAuth: see the identical note on GET /api/orders above -- optionalAuth plus a
+// trusted query-param fallback let an anonymous caller read anyone's quotations by email.
+app.get('/api/quotations', requireAuth, async (req, res) => {
   try {
     const { customer_email } = req.query;
 
@@ -1492,15 +1498,16 @@ app.put('/api/quotations/:quotation_id/status', async (req, res) => {
         const checkOrder = await pool.query('SELECT * FROM orders WHERE order_number = $1', [orderNumber]);
         if (checkOrder.rows.length === 0) {
           const orderId = `ord-b2b-${Date.now()}`;
-          const items = quote.items || [{
+          const items = (quote.items && quote.items.length > 0) ? quote.items : [{
             product_id: 'b2b-stock',
+            sku: quote.sku || null,
             name: quote.product_name || 'B2B Wholesale Order',
-            qty: 1,
+            qty: quote.quantity || 1,
             price: quote.total_amount
           }];
           await pool.query(
             `INSERT INTO orders (
-              order_id, order_number, order_type, status, subtotal, discount_total, 
+              order_id, order_number, order_type, status, subtotal, discount_total,
               tax_total, total_amount, currency, order_date, items_summary, items, customer_email
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
             [
@@ -1519,6 +1526,9 @@ app.put('/api/quotations/:quotation_id/status', async (req, res) => {
               quote.customer_email || 'demo@commerceiq.com'
             ]
           );
+          // Same reservation every other order-creation path uses -- approving a quotation
+          // is still placing an order, and stock has to reflect it the same way.
+          await reserveStockForItems(pool, items);
         }
       } catch (orderErr) {
         console.error('Error auto-creating B2B order from quotation API status update:', orderErr.message);
@@ -1533,7 +1543,9 @@ app.put('/api/quotations/:quotation_id/status', async (req, res) => {
 });
 
 // GET all suppliers
-app.get('/api/suppliers', async (req, res) => {
+// Admin-only: this is company-wide operational data with no per-account scoping possible,
+// so it must never be reachable by a distributor/buyer token or an unauthenticated caller.
+app.get('/api/suppliers', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM suppliers ORDER BY id DESC');
     return res.json(result.rows);
@@ -1592,7 +1604,9 @@ app.delete('/api/suppliers/:id', async (req, res) => {
 });
 
 // GET all invoices
-app.get('/api/invoices', optionalAuth, async (req, res) => {
+// requireAuth: see the identical note on GET /api/orders above -- optionalAuth plus a
+// trusted query-param fallback let an anonymous caller read anyone's invoices by email.
+app.get('/api/invoices', requireAuth, async (req, res) => {
   try {
     const { customer_email } = req.query;
 
@@ -1636,6 +1650,39 @@ app.post('/api/invoices', async (req, res) => {
   const invoiceId = inv.invoice_id || `inv-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
   try {
+    // Callers (e.g. the "ship this order" flow) sometimes only send the invoice number
+    // and total, not the product/customer details -- those used to fall back to a fixed
+    // "Wholesale B2B Order" / hardcoded distributor name for every such invoice. Look the
+    // real order up by whichever identifier was given so the invoice reflects what was
+    // actually ordered and who it belongs to.
+    let productName = inv.product_name || null;
+    let itemsSummary = inv.items_summary || null;
+    let customerEmail = inv.customer_email || null;
+    if ((!productName || !customerEmail) && (inv.order_id || inv.order_number)) {
+      const orderRes = await pool.query(
+        'SELECT * FROM orders WHERE order_id = $1 OR order_number = $2 LIMIT 1',
+        [inv.order_id || '', inv.order_number || '']
+      );
+      const order = orderRes.rows[0];
+      if (order) {
+        customerEmail = customerEmail || order.customer_email || null;
+        if (!productName) {
+          const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+          if (Array.isArray(items) && items.length > 0) {
+            const item = items[0];
+            const name = item.name || item.product_name || 'Item';
+            const qty = item.qty || item.quantity || 1;
+            productName = `${name} (${qty}x)`;
+          } else if (order.items_summary) {
+            productName = order.items_summary;
+          }
+        }
+      }
+    }
+    productName = productName || 'Order Items';
+    itemsSummary = itemsSummary || productName;
+    const distributorName = inv.distributor_name || await resolveAccountDisplayName(pool, customerEmail);
+
     await pool.query(
       `INSERT INTO invoices (
         invoice_id, invoice_number, order_id, order_number, quotation_number,
@@ -1649,10 +1696,10 @@ app.post('/api/invoices', async (req, res) => {
         inv.order_id || null,
         inv.order_number || null,
         inv.quotation_number || null,
-        inv.product_name || inv.items_summary || 'Wholesale B2B Order',
-        inv.items_summary || inv.product_name || 'Wholesale B2B Order',
-        inv.customer_email || null,
-        inv.distributor_name || null,
+        productName,
+        itemsSummary,
+        customerEmail,
+        distributorName,
         inv.total_amount || 0,
         inv.amount_paid || 0,
         inv.issue_date || new Date().toISOString().split('T')[0],
@@ -1700,7 +1747,8 @@ app.put('/api/invoices/:id', async (req, res) => {
 });
 
 // GET all payments
-app.get('/api/payments', async (req, res) => {
+// Admin-only: see the note on GET /api/suppliers above.
+app.get('/api/payments', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM payments ORDER BY id DESC');
     const payments = result.rows.map(row => ({
@@ -1736,7 +1784,8 @@ app.post('/api/payments', async (req, res) => {
 });
 
 // GET all stock movements
-app.get('/api/stock-movements', async (req, res) => {
+// Admin-only: see the note on GET /api/suppliers above.
+app.get('/api/stock-movements', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM stock_movements ORDER BY id DESC');
     return res.json(result.rows);
@@ -1763,7 +1812,8 @@ app.post('/api/stock-movements', async (req, res) => {
 });
 
 // GET all audit logs
-app.get('/api/audit-logs', async (req, res) => {
+// Admin-only: see the note on GET /api/suppliers above.
+app.get('/api/audit-logs', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM audit_logs ORDER BY id DESC');
     return res.json(result.rows);
@@ -1790,7 +1840,7 @@ app.post('/api/audit-logs', async (req, res) => {
 });
 
 // GET all distributors for admin approval/management page
-app.get('/api/admin/distributors', async (req, res) => {
+app.get('/api/admin/distributors', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM users WHERE role = 'distributor' ORDER BY id DESC");
     return res.json(result.rows);
@@ -1801,10 +1851,7 @@ app.get('/api/admin/distributors', async (req, res) => {
 });
 
 // POST approve distributor
-app.post('/api/admin/distributors/approve', optionalAuth, async (req, res) => {
-  if (req.auth && String(req.auth.role).toLowerCase() !== 'admin') {
-    return res.status(403).json({ success: false, message: 'You do not have permission to perform this action.' });
-  }
+app.post('/api/admin/distributors/approve', requireAuth, requireRole('admin'), async (req, res) => {
   const { id } = req.body;
   if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
 
@@ -1824,10 +1871,7 @@ app.post('/api/admin/distributors/approve', optionalAuth, async (req, res) => {
 });
 
 // POST remove distributor (reject application)
-app.post('/api/admin/distributors/remove', optionalAuth, async (req, res) => {
-  if (req.auth && String(req.auth.role).toLowerCase() !== 'admin') {
-    return res.status(403).json({ success: false, message: 'You do not have permission to perform this action.' });
-  }
+app.post('/api/admin/distributors/remove', requireAuth, requireRole('admin'), async (req, res) => {
   const { id } = req.body;
   if (!id) return res.status(400).json({ success: false, message: 'Missing user ID.' });
 

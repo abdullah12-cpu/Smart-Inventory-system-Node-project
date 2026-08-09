@@ -1,3 +1,5 @@
+const { reserveStockForItems } = require('./inventory');
+
 async function getDistributorWholesaleProductsFromDb(pool, identifier) {
   let query = 'SELECT product_id, sku, barcode, product_name, brand, category, prices, inventory, min_wholesale_qty, max_discount, status, image_url FROM products WHERE status = $1';
   let params = ['ACTIVE'];
@@ -128,15 +130,16 @@ async function updateDistributorQuotationStatusInDb(pool, identifier, newStatus)
       const checkOrder = await pool.query('SELECT * FROM orders WHERE order_number = $1', [orderNumber]);
       if (checkOrder.rows.length === 0) {
         const orderId = `ord-b2b-${Date.now()}`;
-        const items = quote.items || [{
+        const items = (quote.items && quote.items.length > 0) ? quote.items : [{
           product_id: 'b2b-stock',
+          sku: quote.sku || null,
           name: quote.product_name || quote.item || 'B2B Wholesale Order',
           qty: quote.quantity || 1,
           price: quote.unit_price || quote.total_amount
         }];
         await pool.query(
           `INSERT INTO orders (
-            order_id, order_number, order_type, status, subtotal, discount_total, 
+            order_id, order_number, order_type, status, subtotal, discount_total,
             tax_total, total_amount, currency, order_date, items_summary, items, customer_email
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [
@@ -155,6 +158,9 @@ async function updateDistributorQuotationStatusInDb(pool, identifier, newStatus)
             quote.customer_email || null
           ]
         );
+        // Same reservation every other order-creation path uses -- approving a quotation
+        // is still placing an order, and stock has to reflect it the same way.
+        await reserveStockForItems(pool, items);
       }
     } catch (orderErr) {
       console.error('Error auto-creating B2B order from quotation status update:', orderErr.message);

@@ -29,18 +29,24 @@ function absolutise(url) {
 // Privileged endpoints derive the caller's role from this signed token rather than from
 // anything in the request body, so it has to travel with every API call. Attaching it
 // centrally (like the base URL above) means no call site has to remember to.
+//
+// Stored in sessionStorage, NOT localStorage. localStorage is shared across every tab of
+// the same origin, so a distributor logging in in one tab would silently overwrite the
+// token an admin tab next door was using -- the admin's next request would then run as
+// that distributor, showing the wrong data or losing access outright. sessionStorage is
+// scoped to a single tab, so each portal opened in its own tab keeps its own session.
 
 const TOKEN_KEY = 'ciq_auth_token';
 
 export function setAuthToken(token) {
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
   } catch { /* private mode / storage disabled */ }
 }
 
 export function getAuthToken() {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
 export function clearAuthToken() {

@@ -32,7 +32,7 @@ export default function LoginPage({
   onBackToLanding,
   portal: propPortal
 }) {
-  const { addNotification, setCurrentUser } = useStore();
+  const { addNotification, setCurrentUser, setPortal: setStorePortal } = useStore();
   const params = new URLSearchParams(window.location.search);
   const portalParam = params.get("portal") || propPortal || "buyer";
 
@@ -109,12 +109,12 @@ export default function LoginPage({
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        // Persist the session token before the user object: the store starts firing
-        // API calls as soon as currentUser is set, and those need to be authenticated.
-        setAuthToken(data.token);
-        setCurrentUser(data.user);
         const userRole = data.user.role || "buyer";
 
+        // Validate the role matches the portal being logged into BEFORE persisting
+        // anything. Otherwise a rejected login (e.g. buyer credentials on the admin
+        // route) still leaves the buyer's token/session sitting in storage, silently
+        // signing the tab in as the wrong account.
         if (isAdminRoute && userRole !== "admin") {
           setErrorMsg("Access denied. Authorized administrator credentials required.");
           return;
@@ -128,7 +128,13 @@ export default function LoginPage({
           return;
         }
 
-        localStorage.setItem("ciq_portal", userRole);
+        // Persist the session token before the user object: the store starts firing
+        // API calls as soon as currentUser is set, and those need to be authenticated.
+        setAuthToken(data.token);
+        setStorePortal(userRole);
+        setCurrentUser(data.user);
+
+        sessionStorage.setItem("ciq_portal", userRole);
         onLogin(userRole);
       } else {
         setErrorMsg(data.message || "Invalid email or password.");
@@ -169,12 +175,8 @@ export default function LoginPage({
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        // Persist the session token before the user object: the store starts firing
-        // API calls as soon as currentUser is set, and those need to be authenticated.
-        setAuthToken(data.token);
-        setCurrentUser(data.user);
         const userRole = data.user.role || targetPortal;
-        
+
         if (isAdminRoute && userRole !== "admin") {
           setErrorMsg("Access denied. Authorized administrator credentials required.");
           return;
@@ -188,7 +190,13 @@ export default function LoginPage({
           return;
         }
 
-        localStorage.setItem("ciq_portal", userRole);
+        // Persist the session token before the user object: the store starts firing
+        // API calls as soon as currentUser is set, and those need to be authenticated.
+        setAuthToken(data.token);
+        setStorePortal(userRole);
+        setCurrentUser(data.user);
+
+        sessionStorage.setItem("ciq_portal", userRole);
         onLogin(userRole);
       } else {
         setErrorMsg(data.message || "Invalid credentials.");

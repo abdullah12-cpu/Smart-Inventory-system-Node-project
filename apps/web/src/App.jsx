@@ -26,7 +26,10 @@ export default function App() {
       if (page === "admin") return "login";
       return page;
     }
-    return localStorage.getItem("ciq_appState") || "landing";
+    // sessionStorage, not localStorage: each browser tab keeps its own app/portal state so
+    // opening the admin portal in one tab and a distributor tab alongside it don't stomp
+    // on each other's session (see apiBase.js and store.js for the same reasoning).
+    return sessionStorage.getItem("ciq_appState") || "landing";
   });
   const [portal, setPortal] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -34,14 +37,14 @@ export default function App() {
     const page = params.get("page");
     if (port) return port;
     if (page === "admin") return "admin";
-    return localStorage.getItem("ciq_portal") || "buyer";
+    return sessionStorage.getItem("ciq_portal") || "buyer";
   });
 
   const handleLogin = (selectedPortal) => {
     setPortal(selectedPortal);
-    localStorage.setItem("ciq_portal", selectedPortal);
+    sessionStorage.setItem("ciq_portal", selectedPortal);
     setAppState("loading");
-    localStorage.setItem("ciq_appState", "loading");
+    sessionStorage.setItem("ciq_appState", "loading");
 
     const params = new URLSearchParams(window.location.search);
     params.set("page", "loading");
@@ -53,7 +56,7 @@ export default function App() {
     if (appState === "loading") {
       const timer = setTimeout(() => {
         setAppState("portal");
-        localStorage.setItem("ciq_appState", "portal");
+        sessionStorage.setItem("ciq_appState", "portal");
 
         const params = new URLSearchParams(window.location.search);
         params.set("page", "portal");
@@ -80,7 +83,7 @@ export default function App() {
     // (hooks cannot be skipped), and letting them stamp ?page=<state> onto a phone's URL is
     // exactly what used to strand phones on the desktop site after one refresh.
     if (appState !== "loading") {
-      localStorage.setItem("ciq_appState", appState);
+      sessionStorage.setItem("ciq_appState", appState);
       const params = new URLSearchParams(window.location.search);
       params.set("page", appState);
       if (appState === "portal" || appState === "login" || appState === "register") {
@@ -110,13 +113,12 @@ export default function App() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("ciq_appState");
-    localStorage.removeItem("ciq_portal");
-    localStorage.removeItem("ciq_currentUser");
+    // Session state lives in sessionStorage, scoped to this tab, so clearing it here can
+    // never touch a portal signed in in another tab.
+    sessionStorage.removeItem("ciq_currentUser");
+    sessionStorage.removeItem("ciq_appState");
+    sessionStorage.removeItem("ciq_portal");
     clearAuthToken();
-    localStorage.removeItem("ciq_admin_activeTab");
-    localStorage.removeItem("ciq_distributor_activeTab");
-    localStorage.removeItem("ciq_buyer_activeTab");
     setAppState("landing");
     window.location.href = "/";
   };

@@ -1161,18 +1161,18 @@ export default function DistributorPortal({ onLogout }) {
                         const items = typeof matchedOrder.items === 'string' ? JSON.parse(matchedOrder.items) : matchedOrder.items;
                         if (Array.isArray(items) && items.length > 0) {
                           const it = items[0];
-                          const name = it.name || it.product_name || "handfree";
-                          const qty = it.qty || it.quantity || 25;
+                          const name = it.name || it.product_name || "Item";
+                          const qty = it.qty || it.quantity || 1;
                           return `${name} (${qty}x)`;
                         }
                       }
                       const matchedQuote = (quotations || []).find(q => q.quotation_number === inv.quotation_number || q.quotation_id === inv.quotation_number);
                       if (matchedQuote) {
-                        const name = matchedQuote.product_name || matchedQuote.item || "handfree";
-                        const qty = matchedQuote.quantity || 25;
+                        const name = matchedQuote.product_name || matchedQuote.item || "Item";
+                        const qty = matchedQuote.quantity || 1;
                         return `${name} (${qty}x)`;
                       }
-                      return "handfree (25x)";
+                      return "Order Items";
                     })() }),
                     /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-[#64748B]", children: formatDate(inv.due_date) }),
                     /* @__PURE__ */ jsx("td", { className: "px-6 py-3.5 text-right font-bold text-[#0F172A]", children: formatCurrency(inv.total_amount) }),
