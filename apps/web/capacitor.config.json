@@ -9,7 +9,7 @@
     "androidScheme": "https",
     "iosScheme": "https",
     "cleartext": false,
-    "url": "https://undivided-manhood-humble.ngrok-free.dev/mobile"
+    "url": "https://lilac-aluminum-resume.ngrok-free.dev/mobile"
   },
   "plugins": {},
   "_comment": "Live mode (server.url): the app loads the hosted build, so web changes need no rebuild. overrideUserAgent exists solely to bypass ngrok's free-tier browser interstitial -- drop it if the app is ever served from a host without one. To go back to an offline-capable bundle, remove server.url and set VITE_API_BASE_URL in .env.capacitor instead.",
