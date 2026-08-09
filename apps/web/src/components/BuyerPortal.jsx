@@ -115,7 +115,7 @@ export default function BuyerPortal({ onLogout }) {
         price: item.product.prices.RETAIL,
         qty: item.qty
       })),
-      customer_email: currentUser?.email || "demo@commerceiq.com"
+      customer_email: currentUser?.email || ""
     };
 
     const success = await placeOrder(orderData);

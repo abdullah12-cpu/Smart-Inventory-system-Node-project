@@ -152,7 +152,7 @@ async function updateDistributorQuotationStatusInDb(pool, identifier, newStatus)
             new Date().toISOString(),
             quote.product_name && quote.product_name !== 'Wholesale Batch' ? quote.product_name : (items.length > 0 ? items.map(i => i.name || i.product_name).join(', ') : `B2B Order for ${quote.quotation_number}`),
             JSON.stringify(items),
-            quote.customer_email || 'asim@commerceiq.com'
+            quote.customer_email || null
           ]
         );
       }
@@ -214,7 +214,7 @@ async function getDistributorOrdersFromDb(pool, customerEmail) {
 async function getDistributorLedgerStatusFromDb(pool, customerEmail) {
   const defaultLedger = {
     distributor_name: 'Authorized Wholesale Partner',
-    email: customerEmail || 'asim@commerceiq.com',
+    email: customerEmail || null,
     credit_limit_pkr: 500000,
     used_credit_pkr: 185000,
     available_credit_pkr: 315000,
@@ -269,7 +269,8 @@ function buildQuotationDescription(quote) {
 }
 
 async function createDistributorQuotationInDb(pool, customerEmail, customerName, productNameOrSku, quantity = 10, targetPrice = null) {
-  const email = customerEmail || 'asim@commerceiq.com';
+  const email = customerEmail;
+  if (!email) throw new Error('Customer email is required to create a quotation.');
   const name = customerName || 'Authorized Wholesale Partner';
   const qty = parseInt(quantity) || 10;
 
@@ -450,7 +451,8 @@ async function counterOfferQuotationInDb(pool, quoteIdentifier, counterUnitPrice
 }
 
 async function createDistributorDirectOrderInDb(pool, customerEmail, customerName, productNameOrSku, quantity = 10, warehouseDepot = 'Karachi Central Depot') {
-  const email = customerEmail || 'asim@commerceiq.com';
+  const email = customerEmail;
+  if (!email) throw new Error('Customer email is required to place a direct order.');
   const qty = parseInt(quantity) || 10;
 
   // Find product by name or SKU

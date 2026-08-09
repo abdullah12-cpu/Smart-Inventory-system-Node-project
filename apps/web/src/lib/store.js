@@ -752,7 +752,7 @@ export function StoreProvider({ children }) {
                     qty: 1
                   }
                 ],
-                customer_email: "asim@commerceiq.com"
+                customer_email: currentUser?.email || matched.customer_email
               };
               await fetch("/api/orders", {
                 method: "POST",

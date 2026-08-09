@@ -302,7 +302,7 @@ export default function DistributorPortal({ onLogout }) {
           qty: qty
         }
       ],
-      customer_email: currentUser?.email || "asim@commerceiq.com"
+      customer_email: currentUser?.email || ""
     };
 
     try {

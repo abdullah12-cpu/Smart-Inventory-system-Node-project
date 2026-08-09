@@ -848,15 +848,25 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 // GET all orders (with optional customer_email and order_type filters for buyer portal)
-app.get('/api/orders', async (req, res) => {
+app.get('/api/orders', optionalAuth, async (req, res) => {
   try {
     const { customer_email, order_type } = req.query;
     let query = 'SELECT * FROM orders';
     const params = [];
     const conditions = [];
-    if (customer_email) {
+
+    // Server-side scoping: distributor and buyer tokens can only see their own data.
+    // The client sends customer_email as a query param, but we must not trust it —
+    // a distributor could name any email to read another account's orders.
+    // We override with the verified identity from the JWT when the role requires it.
+    const role = String(req.auth?.role || '').toLowerCase();
+    const enforcedEmail = (role === 'distributor' || role === 'buyer')
+      ? req.auth.email
+      : customer_email || null;
+
+    if (enforcedEmail) {
       conditions.push(`LOWER(customer_email) = $${params.length + 1}`);
-      params.push(customer_email.toLowerCase());
+      params.push(enforcedEmail.toLowerCase());
     }
     if (order_type) {
       conditions.push(`UPPER(order_type) = $${params.length + 1}`);
@@ -1160,8 +1170,8 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
               null,
               prodName,
               itemsSummary,
-              order.customer_email || 'asim@commerceiq.com',
-              'Asim Distribution Pak',
+              order.customer_email || null,
+              order.distributor_name || null,
               parseFloat(order.total_amount || 0),
               0,
               issueDate,
@@ -1270,11 +1280,18 @@ app.post('/api/warehouses', async (req, res) => {
 });
 
 // GET all quotations
-app.get('/api/quotations', async (req, res) => {
+app.get('/api/quotations', optionalAuth, async (req, res) => {
   try {
     const { customer_email } = req.query;
-    const result = customer_email
-      ? await pool.query('SELECT * FROM quotations WHERE LOWER(customer_email) = $1 ORDER BY id DESC', [customer_email.toLowerCase()])
+
+    // Server-side scoping: distributor tokens can only see their own quotations.
+    const role = String(req.auth?.role || '').toLowerCase();
+    const enforcedEmail = (role === 'distributor' || role === 'buyer')
+      ? req.auth.email
+      : customer_email || null;
+
+    const result = enforcedEmail
+      ? await pool.query('SELECT * FROM quotations WHERE LOWER(customer_email) = $1 ORDER BY id DESC', [enforcedEmail.toLowerCase()])
       : await pool.query('SELECT * FROM quotations ORDER BY id DESC');
     const quotations = result.rows.map(row => ({
       ...row,
@@ -1575,11 +1592,18 @@ app.delete('/api/suppliers/:id', async (req, res) => {
 });
 
 // GET all invoices
-app.get('/api/invoices', async (req, res) => {
+app.get('/api/invoices', optionalAuth, async (req, res) => {
   try {
     const { customer_email } = req.query;
-    const result = customer_email
-      ? await pool.query('SELECT * FROM invoices WHERE LOWER(customer_email) = $1 ORDER BY id DESC', [customer_email.toLowerCase()])
+
+    // Server-side scoping: distributor and buyer tokens can only see their own invoices.
+    const role = String(req.auth?.role || '').toLowerCase();
+    const enforcedEmail = (role === 'distributor' || role === 'buyer')
+      ? req.auth.email
+      : customer_email || null;
+
+    const result = enforcedEmail
+      ? await pool.query('SELECT * FROM invoices WHERE LOWER(customer_email) = $1 ORDER BY id DESC', [enforcedEmail.toLowerCase()])
       : await pool.query('SELECT * FROM invoices ORDER BY id DESC');
     const invoices = result.rows.map(row => ({
       invoice_id: row.invoice_id,
@@ -1589,8 +1613,8 @@ app.get('/api/invoices', async (req, res) => {
       quotation_number: row.quotation_number,
       product_name: row.product_name || row.items_summary || 'Wholesale B2B Order',
       items_summary: row.items_summary || row.product_name || 'Wholesale B2B Batch',
-      customer_email: row.customer_email || 'asim@commerceiq.com',
-      distributor_name: row.distributor_name || 'Asim Distribution Pak',
+      customer_email: row.customer_email || '',
+      distributor_name: row.distributor_name || '',
       total_amount: parseFloat(row.total_amount || 0),
       amount_paid: parseFloat(row.amount_paid || 0),
       issue_date: row.issue_date || (row.due_date ? String(row.due_date).slice(0,10) : new Date().toISOString().split('T')[0]),
@@ -1627,8 +1651,8 @@ app.post('/api/invoices', async (req, res) => {
         inv.quotation_number || null,
         inv.product_name || inv.items_summary || 'Wholesale B2B Order',
         inv.items_summary || inv.product_name || 'Wholesale B2B Order',
-        inv.customer_email || 'asim@commerceiq.com',
-        inv.distributor_name || 'Asim Distribution Pak',
+        inv.customer_email || null,
+        inv.distributor_name || null,
         inv.total_amount || 0,
         inv.amount_paid || 0,
         inv.issue_date || new Date().toISOString().split('T')[0],

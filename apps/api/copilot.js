@@ -811,7 +811,13 @@ function extractSupplierSpecsFromMessage(message) {
   return specs;
 }
 
-async function executeCopilotTool(pool, name, args, message, attached_image) {
+async function executeCopilotTool(pool, name, args, message, attached_image, authEmail = null) {
+  // Override any LLM-supplied customer_email with the verified identity from the JWT.
+  // The LLM fills args.customer_email from context (or could hallucinate any address),
+  // so trusting it would let the AI create orders/quotations under another account's email.
+  if (authEmail && (name === 'createDistributorQuotation' || name === 'createDistributorDirectOrder' || name === 'trackBuyerOrder' || name === 'listBuyerOrders')) {
+    args = { ...args, customer_email: authEmail };
+  }
   if (name === 'createProduct') {
     if (attached_image) {
       args.image_url = attached_image;
@@ -1236,7 +1242,7 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
       const prodName = prodMatch ? prodMatch[1].trim() : 'laptop';
       const qty = qtyMatch ? parseInt(qtyMatch[1]) : 10;
       try {
-        const quote = await createDistributorQuotationInDb(pool, 'asim@commerceiq.com', 'Asim Distribution', prodName, qty, null);
+        const quote = await createDistributorQuotationInDb(pool, userEmail, displayName, prodName, qty, null);
         return res.json({ success: true, action_executed: "createDistributorQuotation", ai_message: `✅ کوٹیشن درخواست کامیابی سے جمع! ID: \`${quote.quotation_id}\`` });
       } catch (err) { return res.json({ success: true, ai_message: `❌ غلطی: ${err.message}` }); }
     }
@@ -1248,7 +1254,7 @@ async function handleLocalFallback(pool, message, attached_image, res, role = 'A
       const prodName = prodMatch ? prodMatch[1].trim() : 'laptop';
       const qty = qtyMatch ? parseInt(qtyMatch[1]) : 10;
       try {
-        const order = await createDistributorDirectOrderInDb(pool, 'asim@commerceiq.com', 'Asim Distribution', prodName, qty, 'Karachi Central Depot');
+        const order = await createDistributorDirectOrderInDb(pool, userEmail, displayName, prodName, qty, 'Karachi Central Depot');
         return res.json({ success: true, action_executed: "createDistributorDirectOrder", ai_message: `✅ B2B تھوک آرڈر کامیاب! نمبر: **${order.order_number}**` });
       } catch (err) { return res.json({ success: true, ai_message: `❌ غلطی: ${err.message}` }); }
     }
@@ -2530,7 +2536,7 @@ function registerCopilotRoutes(app, pool) {
               return res.json({ success: true, ai_message: `❌ Ollama returned invalid JSON for arguments: ${toolCall.function.arguments}` });
             }
             try {
-              const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+              const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image, req.auth?.email || null);
               return res.json({
                 success: true,
                 ...executionResult,
@@ -2610,7 +2616,7 @@ function registerCopilotRoutes(app, pool) {
             args = toolCall.function.arguments;
           }
           try {
-            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image, req.auth?.email || null);
             return res.json({
               success: true,
               ...executionResult
@@ -2680,7 +2686,7 @@ function registerCopilotRoutes(app, pool) {
             args = toolCall.function.arguments;
           }
           try {
-            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image, req.auth?.email || null);
             return res.json({
               success: true,
               ...executionResult
@@ -2728,7 +2734,7 @@ function registerCopilotRoutes(app, pool) {
           const functionName = call.name;
           const args = call.args;
           try {
-            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image);
+            const executionResult = await executeCopilotTool(pool, functionName, args, message, attached_image, req.auth?.email || null);
             return res.json({
               success: true,
               ...executionResult
