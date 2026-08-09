@@ -546,7 +546,14 @@ export default function DistributorPortal({ onLogout }) {
       return matchSearch && matchStatus;
     });
   }, [quotations, quoteSearch, quoteStatusFilter]);
-  const b2bOrders = orders.filter((o) => o.order_type === "B2B");
+  const b2bOrders = useMemo(() => {
+    const userEmail = (currentUser?.email || '').toLowerCase();
+    return orders.filter((o) => 
+      o.order_type === "B2B" && 
+      (!userEmail || (o.customer_email && o.customer_email.toLowerCase() === userEmail))
+    );
+  }, [orders, currentUser?.email]);
+
   const filteredOrders = useMemo(() => {
     return b2bOrders.filter((o) => {
       const matchSearch = !orderSearch || o.order_number.toLowerCase().includes(orderSearch.toLowerCase());

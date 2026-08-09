@@ -1151,7 +1151,7 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
               product_name, items_summary, customer_email, distributor_name,
               total_amount, amount_paid, issue_date, due_date, status, late_payment_probability
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            ON CONFLICT (invoice_id) DO NOTHING`,
+            ON CONFLICT (invoice_number) DO UPDATE SET total_amount = EXCLUDED.total_amount, status = EXCLUDED.status`,
             [
               invId,
               invNum,
@@ -1608,6 +1608,9 @@ app.get('/api/invoices', async (req, res) => {
 // POST new invoice
 app.post('/api/invoices', async (req, res) => {
   const inv = req.body;
+  const invoiceNum = inv.invoice_number || `INV-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+  const invoiceId = inv.invoice_id || `inv-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
   try {
     await pool.query(
       `INSERT INTO invoices (
@@ -1615,10 +1618,10 @@ app.post('/api/invoices', async (req, res) => {
         product_name, items_summary, customer_email, distributor_name,
         total_amount, amount_paid, issue_date, due_date, status, late_payment_probability
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-       ON CONFLICT (invoice_id) DO NOTHING`,
+       ON CONFLICT (invoice_number) DO UPDATE SET total_amount = EXCLUDED.total_amount, status = EXCLUDED.status`,
       [
-        inv.invoice_id,
-        inv.invoice_number,
+        invoiceId,
+        invoiceNum,
         inv.order_id || null,
         inv.order_number || null,
         inv.quotation_number || null,
@@ -1626,7 +1629,7 @@ app.post('/api/invoices', async (req, res) => {
         inv.items_summary || inv.product_name || 'Wholesale B2B Order',
         inv.customer_email || 'asim@commerceiq.com',
         inv.distributor_name || 'Asim Distribution Pak',
-        inv.total_amount,
+        inv.total_amount || 0,
         inv.amount_paid || 0,
         inv.issue_date || new Date().toISOString().split('T')[0],
         inv.due_date || new Date().toISOString().split('T')[0],

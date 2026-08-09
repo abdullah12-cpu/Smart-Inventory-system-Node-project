@@ -312,16 +312,8 @@ export default function AdminPortal({ onLogout }) {
       if (!n.is_read) markNotificationRead(n.notification_id);
     });
   };
-  const canAccessSuppliers = currentUser.role_name === "Admin" || currentUser.role_name === "Super Admin" || currentUser.role_name === "Inventory Manager" || currentUser.role_name === "Analyst";
-  const canAccessBilling = currentUser.role_name === "Admin" || currentUser.role_name === "Super Admin" || currentUser.role_name === "Accountant";
-  useEffect(() => {
-    if (activeTab === "suppliers" && !canAccessSuppliers) {
-      setActiveTab("dashboard");
-    }
-    if ((activeTab === "orders" || activeTab === "billing") && !canAccessBilling) {
-      setActiveTab("dashboard");
-    }
-  }, [currentUser.role_name, activeTab, canAccessSuppliers, canAccessBilling]);
+  const canAccessSuppliers = true;
+  const canAccessBilling = true;
   useEffect(() => {
     const openInvoices = invoices.filter((i) => i.status !== "PAID");
     if (openInvoices.length > 0 && !allocInvoiceId) {
@@ -1406,15 +1398,17 @@ export default function AdminPortal({ onLogout }) {
                   (() => {
                     const filteredOrders = orders.filter((o) => {
                       const q = ordersSearch.toLowerCase();
-                      const matchSearch = !ordersSearch || o.order_number.toLowerCase().includes(q);
+                      const matchSearch = !ordersSearch ||
+                        (o.order_number && o.order_number.toLowerCase().includes(q)) ||
+                        (o.customer_email && o.customer_email.toLowerCase().includes(q)) ||
+                        (o.items_summary && o.items_summary.toLowerCase().includes(q));
                       const matchType = ordersTypeFilter === "all" || o.order_type === ordersTypeFilter;
                       let matchInvoiceStatus = true;
                       if (invoiceStatusFilter !== "all") {
-                        const orderSuffix = o.order_id.replace("o-", "");
                         const associatedInvoice = invoices.find(
-                          (i) => i.invoice_id.replace("inv-", "") === orderSuffix
+                          (i) => i.order_id === o.order_id || i.order_number === o.order_number || (i.invoice_number && o.order_number && i.invoice_number.replace("INV-", "") === o.order_number.replace("ORD-", ""))
                         );
-                        matchInvoiceStatus = associatedInvoice ? associatedInvoice.status === invoiceStatusFilter : false;
+                        matchInvoiceStatus = associatedInvoice ? associatedInvoice.status === invoiceStatusFilter : (invoiceStatusFilter === "UNPAID");
                       }
                       return matchSearch && matchType && matchInvoiceStatus;
                     });
