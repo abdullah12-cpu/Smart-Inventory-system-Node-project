@@ -39,18 +39,9 @@ import {
   Badge
 } from "@/components/ui";
 import AdminDashboard from "./admin/AdminDashboard";
-const AVAILABLE_USER_ROLES = [
-  {
-    user_id: "u-1",
-    first_name: "Zain",
-    last_name: "Shahid",
-    email: "zain@commerceiq.com",
-    phone: "+92 300 1234567",
-    profile_image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
-    role_name: "Admin",
-    is_active: true
-  }
-];
+// No hardcoded user roles - the admin portal uses currentUser from the auth system.
+// AVAILABLE_USER_ROLES is kept for backward compat but is unused when currentUser is populated from login.
+const AVAILABLE_USER_ROLES = [];
 function PaymentMethodIcon({ method }) {
   if (method === "JAZZCASH") {
     return /* @__PURE__ */ jsx("span", { className: "inline-flex items-center justify-center font-extrabold text-[9px] bg-amber-500 text-black px-1.5 py-0.5 rounded scale-90 border border-amber-600", children: "JazzCash" });

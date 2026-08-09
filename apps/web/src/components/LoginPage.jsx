@@ -49,12 +49,8 @@ export default function LoginPage({
 
   const [portal, setPortal] = useState(portalParam);
   const [showPwd, setShowPwd] = useState(false);
-  const [email, setEmail] = useState(() => {
-    if (isAdminRoute) return "zain@commerceiq.com";
-    if (isWholesaleRoute) return "asim@commerceiq.com";
-    return "demo@commerceiq.com";
-  });
-  const [password, setPassword] = useState("demopassword");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [contactName, setContactName] = useState("");
   const [ntnCode, setNtnCode] = useState("");

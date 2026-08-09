@@ -30,28 +30,18 @@ export function computeStockAlertStatus(availableQty, low, over) {
   return "NORMAL";
 }
 
-// LOGGED-IN USERS
+// LOGGED-IN USERS — these are placeholder defaults only.
+// The actual user identity is populated from the auth system at login time
+// via setCurrentUser(data.user) in LoginPage.jsx.
 export const MOCK_USERS = {
   admin: {
     user_id: "u-1",
-    first_name: "Zain",
-    last_name: "Shahid",
-    email: "zain@commerceiq.com",
-    phone: "+92 300 1234567",
-    profile_image:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
+    first_name: "Admin",
+    last_name: "",
+    email: "admin@commerceiq.com",
+    phone: "",
+    profile_image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop",
     role_name: "Admin",
-    is_active: true,
-  },
-  manager: {
-    user_id: "u-2",
-    first_name: "Asim",
-    last_name: "Raza",
-    email: "asim@commerceiq.com",
-    phone: "+92 301 7654321",
-    profile_image:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&fit=crop",
-    role_name: "Inventory Manager",
     is_active: true,
   },
 };

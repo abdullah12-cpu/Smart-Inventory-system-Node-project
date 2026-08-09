@@ -616,7 +616,7 @@ app.post('/api/auth/login', async (req, res) => {
       user_id: `u-${user.id}`,
       email: user.email,
       role: user.role,
-      role_name: user.role === 'admin' ? 'Super Admin' : (user.role === 'distributor' ? 'Inventory Manager' : 'B2B Buyer'),
+      role_name: user.role === 'admin' ? 'Admin' : (user.role === 'distributor' ? 'Distributor Partner' : 'Buyer'),
       profile_image: user.role === 'admin' 
         ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&fit=crop'
         : (user.role === 'distributor' 
