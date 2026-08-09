@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const pool = require('./db');
 const { createProductInDb } = require('./adminOperations');
 const { counterOfferQuotationInDb, buildQuotationDescription } = require('./distributorOperations');
-const { verifyPassword, hashPassword, signToken, requireAuth, requireRole } = require('./auth');
+const { verifyPassword, hashPassword, signToken, requireAuth, optionalAuth, requireRole } = require('./auth');
 
 const app = express();
 const port = process.env.PORT || 5001;
