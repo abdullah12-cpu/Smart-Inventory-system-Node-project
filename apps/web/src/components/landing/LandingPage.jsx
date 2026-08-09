@@ -817,7 +817,8 @@ export default function LandingPage({ onGetStarted, onRegisterClick }) {
                             <span className="w-8 text-center font-extrabold text-slate-800 text-[11px]">{item.qty}</span>
                             <button
                               onClick={() => updateCartQty(item.product.product_id, 1)}
-                              className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:bg-white transition-colors border-0 bg-transparent cursor-pointer"
+                              disabled={item.qty >= (item.product.inventory || []).reduce((sum, i) => sum + (i.available_quantity !== undefined ? i.available_quantity : Math.max(0, (i.quantity || 0) - (i.reserved_quantity || 0))), 0)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:bg-white transition-colors border-0 bg-transparent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                             >
                               <Plus size={10} />
                             </button>

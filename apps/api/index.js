@@ -1044,40 +1044,48 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Order not found.' });
     }
 
-    // Stock deduction logic if shipping order from a specific warehouse
-    if (status === 'SHIPPED' && warehouse_id) {
+    // Stock deduction logic when shipping an order
+    if (status === 'SHIPPED' || status === 'DELIVERED') {
       const order = result.rows[0];
-      const orderItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-      
-      const whDbRes = await pool.query('SELECT warehouse_name FROM warehouses WHERE warehouse_id = $1', [warehouse_id]);
-      const warehouseName = whDbRes.rows.length > 0 ? whDbRes.rows[0].warehouse_name : 'Unknown Depot';
+      const orderItems = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+      const targetWh = warehouse_id || 'wh-1';
+
+      const whDbRes = await pool.query('SELECT warehouse_name FROM warehouses WHERE warehouse_id = $1', [targetWh]);
+      const warehouseName = whDbRes.rows.length > 0 ? whDbRes.rows[0].warehouse_name : 'Central Depot';
 
       for (const item of orderItems) {
         const qty = parseInt(item.qty || item.quantity || 0);
         if (qty <= 0) continue;
 
-        // Find product by id or sku
-        const prodRes = await pool.query('SELECT * FROM products WHERE product_id = $1 OR sku = $2', [item.product_id, item.sku]);
+        // Find product by id, sku, or name
+        const prodRes = await pool.query(
+          'SELECT * FROM products WHERE product_id = $1 OR sku = $2 OR product_name ILIKE $3 LIMIT 1',
+          [item.product_id || '', item.sku || '', `%${item.name || item.product_name || ''}%`]
+        );
+
         if (prodRes.rows.length > 0) {
           const product = prodRes.rows[0];
-          let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : product.inventory;
+          let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : (product.inventory || []);
           
-          let updated = false;
+          let remainingToDeductPhysical = qty;
           let remainingToDeductReserved = qty;
+
           inventory = inventory.map(inv => {
-            let invQty = inv.quantity;
+            let invQty = inv.quantity || 0;
             let invReserved = inv.reserved_quantity || 0;
 
-            if (inv.warehouse_id === warehouse_id) {
-              updated = true;
-              invQty = Math.max(0, invQty - qty);
+            // Deduct physical count for real (from specified warehouse first, or any warehouse with stock)
+            if (remainingToDeductPhysical > 0 && (inv.warehouse_id === targetWh || !warehouse_id || invQty > 0)) {
+              const deductPhys = Math.min(invQty, remainingToDeductPhysical);
+              invQty = Math.max(0, invQty - deductPhys);
+              remainingToDeductPhysical -= deductPhys;
             }
 
+            // Release reserved count
             if (invReserved > 0 && remainingToDeductReserved > 0) {
-              updated = true;
               const deductRes = Math.min(invReserved, remainingToDeductReserved);
-              invReserved = invReserved - deductRes;
-              remainingToDeductReserved = remainingToDeductReserved - deductRes;
+              invReserved = Math.max(0, invReserved - deductRes);
+              remainingToDeductReserved -= deductRes;
             }
 
             const invAvail = Math.max(0, invQty - invReserved);
@@ -1089,28 +1097,26 @@ app.put('/api/orders/:order_id/status', async (req, res) => {
             };
           });
 
-          if (updated) {
-            await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inventory), product.product_id]);
-            
-            // Record stock movement
-            const movementId = `mv-${Date.now()}-${Math.floor(Math.random()*1000)}`;
-            await pool.query(
-              `INSERT INTO stock_movements (movement_id, product_id, product_name, warehouse_id, warehouse_name, movement_type, quantity, notes, performed_by, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-              [
-                movementId,
-                product.product_id,
-                product.product_name,
-                warehouse_id,
-                warehouseName,
-                'OUT',
-                -qty,
-                `Shipped for order ${order.order_number}`,
-                'System Admin',
-                new Date().toISOString()
-              ]
-            );
-          }
+          await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inventory), product.product_id]);
+          
+          // Record stock movement
+          const movementId = `mv-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+          await pool.query(
+            `INSERT INTO stock_movements (movement_id, product_id, product_name, warehouse_id, warehouse_name, movement_type, quantity, notes, performed_by, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [
+              movementId,
+              product.product_id,
+              product.product_name,
+              targetWh,
+              warehouseName,
+              'OUT',
+              -qty,
+              `Shipped for order ${order.order_number}`,
+              'System Admin',
+              new Date().toISOString()
+            ]
+          );
         }
       }
     }

@@ -425,7 +425,8 @@ export default function BuyerPortal({ onLogout }) {
                         "button",
                         {
                           onClick: () => updateCartQty(item.product.product_id, 1),
-                          className: "w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors border-0 bg-transparent cursor-pointer",
+                          disabled: item.qty >= (item.product.inventory || []).reduce((sum, i) => sum + (i.available_quantity !== undefined ? i.available_quantity : Math.max(0, (i.quantity || 0) - (i.reserved_quantity || 0))), 0),
+                          className: "w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors border-0 bg-transparent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
                           children: /* @__PURE__ */ jsx(Plus, { size: 12 })
                         }
                       )

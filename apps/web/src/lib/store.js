@@ -818,16 +818,17 @@ export function StoreProvider({ children }) {
     (productId) => {
       const product = products.find((p) => p.product_id === productId);
       if (!product || product.status !== "ACTIVE") return;
-      const totalAvail = product.inventory.reduce(
-        (sum, i) => sum + i.available_quantity,
+      const totalAvail = (product.inventory || []).reduce(
+        (sum, i) => sum + (i.available_quantity !== undefined ? i.available_quantity : Math.max(0, (i.quantity || 0) - (i.reserved_quantity || 0))),
         0
       );
-      if (totalAvail === 0) return;
+      if (totalAvail <= 0) return;
       setCart((prev) => {
         const existing = prev.find(
           (item) => item.product.product_id === productId
         );
         if (existing) {
+          if (existing.qty >= totalAvail) return prev;
           return prev.map(
             (item) => item.product.product_id === productId ? { ...item, qty: Math.min(item.qty + 1, totalAvail) } : item
           );
@@ -841,7 +842,11 @@ export function StoreProvider({ children }) {
     setCart((prev) => {
       const updated = prev.map((item) => {
         if (item.product.product_id !== productId) return item;
-        const totalAvail = item.product.inventory.reduce((sum, i) => sum + i.available_quantity, 0);
+        const totalAvail = (item.product.inventory || []).reduce(
+          (sum, i) => sum + (i.available_quantity !== undefined ? i.available_quantity : Math.max(0, (i.quantity || 0) - (i.reserved_quantity || 0))),
+          0
+        );
+        if (dir > 0 && item.qty >= totalAvail) return item;
         return { ...item, qty: Math.min(item.qty + dir, totalAvail) };
       });
       return updated.filter((item) => item.qty > 0);

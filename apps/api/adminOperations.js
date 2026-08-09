@@ -554,6 +554,50 @@ async function updateOrderStatusInDb(pool, identifier, newStatus) {
   );
   if (res.rows.length === 0) throw new Error(`Order not found: "${identifier}"`);
 
+  // Deduct physical count for real when order status changes to SHIPPED or DELIVERED via chatbot/admin operations
+  if (status === 'SHIPPED' || status === 'DELIVERED') {
+    const order = res.rows[0];
+    const orderItems = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+    for (const item of orderItems) {
+      const qty = parseInt(item.qty || item.quantity || 0);
+      if (qty <= 0) continue;
+      const prodRes = await pool.query(
+        'SELECT * FROM products WHERE product_id = $1 OR sku = $2 OR product_name ILIKE $3 LIMIT 1',
+        [item.product_id || '', item.sku || '', `%${item.name || item.product_name || ''}%`]
+      );
+      if (prodRes.rows.length === 0) continue;
+      const product = prodRes.rows[0];
+      let inventory = typeof product.inventory === 'string' ? JSON.parse(product.inventory) : (product.inventory || []);
+      let remainingDeductQty = qty;
+      let remainingDeductReserved = qty;
+      inventory = inventory.map(inv => {
+        let invQty = inv.quantity || 0;
+        let invReserved = inv.reserved_quantity || 0;
+
+        if (remainingDeductQty > 0) {
+          const deductPhys = Math.min(invQty, remainingDeductQty);
+          invQty = Math.max(0, invQty - deductPhys);
+          remainingDeductQty -= deductPhys;
+        }
+
+        if (invReserved > 0 && remainingDeductReserved > 0) {
+          const deductRes = Math.min(invReserved, remainingDeductReserved);
+          invReserved = Math.max(0, invReserved - deductRes);
+          remainingDeductReserved -= deductRes;
+        }
+
+        const invAvail = Math.max(0, invQty - invReserved);
+        return {
+          ...inv,
+          quantity: invQty,
+          reserved_quantity: invReserved,
+          available_quantity: invAvail
+        };
+      });
+      await pool.query('UPDATE products SET inventory = $1 WHERE product_id = $2', [JSON.stringify(inventory), product.product_id]);
+    }
+  }
+
   // Release reserved stock back to available when an order is rejected/cancelled via the
   // chatbot -- mirrors the same reversal PUT /api/orders/:order_id/status performs, so stock
   // stays correct regardless of which surface (admin UI or AI copilot) changed the status.
